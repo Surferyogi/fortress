@@ -111,13 +111,15 @@ table.hist th:first-child,table.hist td:first-child{text-align:left}
 <nav class="tabs" id="tabs"></nav>
 
 <input type="file" id="pdfInput" accept="application/pdf" class="hidden">
+<input type="file" id="anyInput" accept="application/pdf,image/*,text/plain,.txt,.csv,.md" class="hidden">
 <div id="modalRoot"></div>
 
 <script src="parser.js"></script>
+<script src="recognizers.js"></script>
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:AUG:19-00:30';
+const VERSION = 'v2026:AUG:19-03:05';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -141,7 +143,7 @@ const store = {
 /* migrate data saved under the app's former name — runs once, keeps your history */
 (function migrate(){
   try{
-    ['snapshots','manual','settings'].forEach(key=>{
+    ['snapshots','manual','income','mrtl','settings'].forEach(key=>{
       const oldK='dw.'+key, newK='fortress.'+key;
       if(localStorage.getItem(oldK) && !localStorage.getItem(newK)){
         localStorage.setItem(newK, localStorage.getItem(oldK));
@@ -163,15 +165,51 @@ const MANUAL_SEED = {
 };
 const MORTGAGE_META = { bank:'UOB', account:'168-821-222-2', original:1347500.00, tenorMonths:276, type:'SGD Housing Loan, floating rate' };
 
+/* recurring income — seeded from the GIRO credits in CK's UOB statements */
+const INCOME_SEED = [{
+  id:'rent-atelier', label:'Rent — The Atelier', payer:'PLOETNER MATHIAS ALE',
+  amount:5800.00, ccy:'SGD', frequency:'monthly', dayOfMonth:11,
+  account:'UOB 372-304-221-4', startMonth:'2026-05', endMonth:null,
+  source:'Inward CR - GIRO, observed on the May and Jun 2026 UOB statements'
+}];
+
+/* DBS MRTL facility — seeded from the iBanking draw-down screen */
+const MRTL_SEED = { '2026-08-19': {
+  asOf:'2026-08-19', borrowingPotential:1240212.07, creditLimit:3000000.00,
+  amountDrawn:567326.23, availableForDrawdown:1120577.90,
+  source:'DBS iBanking — "Your MRTL loan draw down" screen'
+}};
+
 /* ================= state ================= */
 let state = {
   snapshots: store.get('fortress.snapshots', null),
   manual: store.get('fortress.manual', null),
+  income: store.get('fortress.income', null),
+  mrtl: store.get('fortress.mrtl', null),
   settings: store.get('fortress.settings', { lendingValue:null, ltvAlert:35, homeValue:null, tab:'dash' })
 };
 if(!state.snapshots){ state.snapshots = { [SEED.statementDate]: SEED }; store.set('fortress.snapshots', state.snapshots); }
 if(!state.manual){ state.manual = MANUAL_SEED; store.set('fortress.manual', state.manual); }
-function saveAll(){ store.set('fortress.snapshots', state.snapshots); store.set('fortress.manual', state.manual); store.set('fortress.settings', state.settings); }
+if(!state.income){ state.income = INCOME_SEED; store.set('fortress.income', state.income); }
+if(!state.mrtl){ state.mrtl = MRTL_SEED; store.set('fortress.mrtl', state.mrtl); }
+function saveAll(){ store.set('fortress.snapshots', state.snapshots); store.set('fortress.manual', state.manual);
+  store.set('fortress.income', state.income); store.set('fortress.mrtl', state.mrtl); store.set('fortress.settings', state.settings); }
+
+/* ---- income + MRTL helpers ---- */
+const monthlyIncome = ()=> (state.income||[]).filter(i=>i.endMonth==null)
+  .reduce((s,i)=> s + (i.frequency==='monthly'? i.amount : i.frequency==='quarterly'? i.amount/3 : i.amount/12), 0);
+const latestDate = ()=>{ const d=dates(); return d[d.length-1]; };
+const mrtlDates = ()=> Object.keys(state.mrtl||{}).sort();
+const latestMrtl = ()=>{ const d=mrtlDates(); return d.length? state.mrtl[d[d.length-1]] : null; };
+// conservative: a call bites when drawn exceeds the collateral's lending value.
+// DBS gives two candidate capacity figures that don't agree — always use the smaller.
+function mrtlCapacity(m){
+  if(!m) return null;
+  const cands=[m.borrowingPotential, m.availableForDrawdown!=null&&m.amountDrawn!=null? m.availableForDrawdown+m.amountDrawn : null]
+    .filter(v=>v!=null&&v>0);
+  if(!cands.length) return null;
+  return { capacity:Math.min(...cands), optimistic:Math.max(...cands), disputed:Math.max(...cands)-Math.min(...cands)>1 };
+}
 const dates = ()=> Object.keys(state.snapshots).sort();
 const latest = ()=> state.snapshots[dates()[dates().length-1]];
 const manualMonths = ()=> Object.keys(state.manual).sort();
@@ -221,6 +259,16 @@ function drawdownToTrigger(debt, assets, lvPct){
 function marginStatus(a){
   const lv = state.settings.lendingValue;
   if(a.debt<=0) return {cls:'b-good', ic:'✔', title:'No outstanding loans', body:'No margin-call exposure this month.'};
+  // DBS's own borrowing-potential figure beats any assumed ratio — use it when we have it
+  const mr=latestMrtl(), cap=mrtlCapacity(mr);
+  if(mr && cap && mr.amountDrawn!=null){
+    const util=mr.amountDrawn/cap.capacity*100, fall=100-util;
+    const body=`Drawn ${money(mr.amountDrawn,0)} against DBS's assessed capacity of ${money(cap.capacity,0)} (as of ${mr.asOf}). Your collateral's lending value can fall ${pct(fall,1)} before the loan exceeds it.`;
+    if(util>=100) return {cls:'b-critical', ic:'⛔', title:'Drawn amount exceeds capacity', body};
+    if(util>=85)  return {cls:'b-serious',  ic:'⚠', title:'Margin buffer thin', body};
+    if(util>=65)  return {cls:'b-warn',     ic:'⚠', title:'Watch the buffer', body};
+    return {cls:'b-good', ic:'✔', title:'No margin-call risk in sight', body};
+  }
   if(lv){
     const dd = drawdownToTrigger(a.debt,a.assets,lv);
     const util = a.ltv/lv*100;
@@ -337,7 +385,10 @@ function alertList(snap,a){
     if(d!==null&&d<=45) out.push({cls:'b-warn',ic:'⇄',t:`FX forward ${f.pair} settles in ${d} day${d===1?'':'s'}`,b:`Sell ${f.sellCcy} ${fmt(Math.abs(f.sellAmt),0)} / buy ${f.buyCcy} ${fmt(f.buyAmt,0)} @ ${f.contractRate}. Current MTM ${money(f.mtmSGD,0)}. Ensure the ${f.sellCcy} leg is funded at settlement.`});
   }
   if(a.ltv!==null && a.ltv>=state.settings.ltvAlert) out.push({cls:'b-serious',ic:'⚠',t:`LTV ${pct(a.ltv,1)} above your ${state.settings.ltvAlert}% alert level`,b:'Consider partial repayment or trimming positions.'});
-  if(!state.settings.lendingValue && a.debt>0) out.push({cls:'b-warn',ic:'ℹ',t:'Lending value not set',b:'DBS statements don’t disclose per-security lending values. Ask your RM for the portfolio’s lending value and enter it in Settings — until then margin lines are illustrative.'});
+  if(!state.settings.lendingValue && a.debt>0 && !latestMrtl()) out.push({cls:'b-warn',ic:'ℹ',t:'Lending value not set',b:'DBS statements don’t disclose per-security lending values. Ask your RM for the portfolio’s lending value and enter it in Settings — until then margin lines are illustrative.'});
+  {(function(){ const m=latestMrtl(), c=mrtlCapacity(m);
+    if(m && c && c.disputed) out.push({cls:'b-warn',ic:'ℹ',t:'DBS shows two different capacity figures',b:`Borrowing potential ${money(m.borrowingPotential,0)} vs available-for-drawdown implying ${money(c.optimistic,0)}. Fortress uses the smaller. Worth one question to Mark Chen.`});
+  })();}
   if(a.estMonthlyInterest>0 && a.plMtd < -6*a.estMonthlyInterest) out.push({cls:'b-warn',ic:'📉',t:`This month’s P&L (${money(a.plMtd,0)}) is ${fmt(Math.abs(a.plMtd)/a.estMonthlyInterest,0)}× your monthly interest`,b:'Market risk, not the loan, is the dominant driver of your net worth.'});
   return out;
 }
@@ -374,8 +425,44 @@ function viewDash(){
     <div class="tile"><div class="v">${money(allInMo)}</div><div class="l">All-in interest / month</div><div class="d">DBS ≈ ${money(a.estMonthlyInterest)} + mortgage ${impInt!==null?money(impInt):(mm?.mortgageRatePct!=null?'≈ '+money(mtg*mm.mortgageRatePct/100/12):'—')}</div></div>
     <div class="tile"><div class="v ${(liquid-totDebt)>=0?'pos':'neg'}">${money(liquid-totDebt)}</div><div class="l">Liquid assets − all debt</div><div class="d">${state.settings.homeValue?'Incl. property: '+money(liquid-totDebt+state.settings.homeValue):'Excl. property (value not entered)'}${depVal!=null?'<br>Incl. bank cash '+money(depVal,0)+' ('+depMonth+')':'<br>Bank cash not entered'}</div></div>
   </div>`; })()}
+  ${(()=>{ const m=latestMrtl(); const c=mrtlCapacity(m); if(!m||!c||m.amountDrawn==null) return '';
+    const util=m.amountDrawn/c.capacity*100;
+    const headroom=c.capacity-m.amountDrawn;
+    const fall=(1-m.amountDrawn/c.capacity)*100;
+    const band=util>=90?'critical':util>=75?'serious':util>=60?'warn':'good';
+    return `
   <div class="card">
-    <h2>Margin headroom${lv?'':'<span class="pill">illustrative — LV not set</span>'}</h2>
+    <h2>MRTL facility — DBS's own figures<span class="pill">as of ${esc(m.asOf)}</span></h2>
+    <div class="banner b-${band}" style="margin:0 0 10px"><span class="ic">${band==='good'?'✔':'!'}</span><div>
+      <b>Facility ${pct(util,1)} used</b>
+      Your collateral's lending value can fall ${pct(fall,1)} before the drawn amount exceeds it.</div></div>
+    <div class="kv"><span class="k">Amount drawn</span><span class="v">${money(m.amountDrawn,2)}</span></div>
+    <div class="kv"><span class="k">Borrowing potential (collateral capacity)</span><span class="v">${money(m.borrowingPotential,2)}</span></div>
+    <div class="kv"><span class="k">Available for drawdown (as DBS states it)</span><span class="v">${money(m.availableForDrawdown,2)}</span></div>
+    <div class="kv"><span class="k">Approved credit limit</span><span class="v">${money(m.creditLimit,2)}</span></div>
+    <div class="kv"><span class="k">Headroom used by Fortress (conservative)</span><span class="v">${money(headroom,2)}</span></div>
+    ${c.disputed?`<div class="warnbox"><b>These two DBS numbers disagree.</b> Borrowing potential − amount drawn = ${money(m.borrowingPotential-m.amountDrawn,2)}, but DBS shows ${money(m.availableForDrawdown,2)} available — a ${money(c.disputed?c.optimistic-c.capacity:0,2)} gap. Fortress uses the smaller capacity (${money(c.capacity,2)}). Ask Mark Chen which figure governs a margin call.</div>`:''}
+    <p class="note">This is the real margin metric — it uses DBS's own assessment of what your collateral supports, not an assumed advance ratio. Update it by importing a screenshot of the MRTL draw-down screen.</p>
+  </div>`; })()}
+  ${(()=>{ const inc=(state.income||[]).filter(i=>i.endMonth==null); if(!inc.length) return '';
+    const mm=latestMrtl?latestManual():null;
+    const rentTotal=monthlyIncome();
+    const inst=mm?.mortgagePayment ?? null;
+    const cover=inst? rentTotal/inst*100 : null;
+    return `
+  <div class="card">
+    <h2>Rental income vs debt service</h2>
+    ${inc.map(i=>`<div class="kv"><span class="k">${esc(i.label)}${i.payer?' · '+esc(i.payer):''}</span><span class="v">${money(i.amount,2)}/mo</span></div>`).join('')}
+    ${inst!=null?`<div class="kv"><span class="k">Mortgage instalment</span><span class="v">-${money(inst,2)}/mo</span></div>
+    <div class="kv"><span class="k">Net after instalment</span><span class="v ${rentTotal-inst>=0?'pos':'neg'}">${money(rentTotal-inst,2)}/mo</span></div>
+    <div class="kv"><span class="k">Rent covers instalment</span><span class="v ${cover>=100?'pos':'neg'}">${pct(cover,1)}</span></div>`:''}
+    <p class="note">${cover!=null && cover>=100
+      ? 'The tenant services the entire mortgage payment — principal and interest — with '+money(rentTotal-inst,2)+' left over each month. The home loan is self-funding at the current rent and rate; it is the floating rate, not the balance, that would break that.'
+      : 'Rent does not fully cover the instalment — the shortfall comes from your own cash flow.'}</p>
+    <p class="note">Credited around day ${esc(String(inc[0].dayOfMonth||'?'))} each month to ${esc(inc[0].account||'')}. Source: ${esc(inc[0].source||'manual entry')}.</p>
+  </div>`; })()}
+  <div class="card">
+    <h2>Margin headroom${latestMrtl()?'<span class="pill">from DBS MRTL figures</span>':(lv?'':'<span class="pill">illustrative — LV not set</span>')}</h2>
     <div class="gauge" style="margin-top:26px">
       <div class="track">
         <div class="fill" style="width:${Math.min(100,a.ltv/gaugeMax*100)}%"></div>
@@ -383,10 +470,23 @@ function viewDash(){
       </div>
       <div class="axis"><span>0%</span><span>LTV ${pct(a.ltv,1)}</span><span>${gaugeMax}%</span></div>
     </div>
-    ${lv
-      ? `<div class="kv"><span class="k">Drawdown before margin call (at your ${lv}% LV)</span><span class="v">${pct(drawdownToTrigger(a.debt,a.assets,lv),1)}</span></div>`
-      : ILLUSTRATIVE_LV.map(v=>`<div class="kv"><span class="k">If lending value were ${v}% <em>(illustrative)</em></span><span class="v">call after −${pct(drawdownToTrigger(a.debt,a.assets,v),1)}</span></div>`).join('')}
-    <p class="note">A margin call occurs when the loan exceeds the portfolio's lending value (bank's advance ratio × market value). The DBS statement does not publish these ratios${lv?'; the '+lv+'% figure is the one you entered in Settings':' — get them from your RM and set them in Settings'}.</p>
+    ${(()=>{ const m=latestMrtl(), c=mrtlCapacity(m);
+      if(m && c && m.amountDrawn!=null){
+        const impliedLV = a.assets>0 ? c.capacity/a.assets*100 : null;
+        const gap = (lv!=null && impliedLV!=null) ? Math.abs(impliedLV-lv) : null;
+        return `<div class="kv"><span class="k">Fall in collateral value before a call <b>(DBS figures)</b></span><span class="v">${pct(100-m.amountDrawn/c.capacity*100,1)}</span></div>
+        ${impliedLV!=null?`<div class="kv"><span class="k">Implied average advance ratio</span><span class="v">${pct(impliedLV,1)}</span></div>`:''}
+        ${lv!=null?`<div class="kv"><span class="k">Your entered lending value (cross-check)</span><span class="v">${pct(lv,1)} → call after −${pct(drawdownToTrigger(a.debt,a.assets,lv),1)}</span></div>`:''}
+        ${gap!=null && gap>5?`<div class="warnbox">Your entered lending value (${pct(lv,1)}) and the ratio implied by DBS's borrowing potential (${pct(impliedLV,1)}) differ by ${fmt(gap,1)} points. Fortress leads with DBS's own figure — worth reconciling with your RM.</div>`:''}`;
+      }
+      return lv
+        ? `<div class="kv"><span class="k">Drawdown before margin call (at your ${lv}% LV)</span><span class="v">${pct(drawdownToTrigger(a.debt,a.assets,lv),1)}</span></div>`
+        : ILLUSTRATIVE_LV.map(v=>`<div class="kv"><span class="k">If lending value were ${v}% <em>(illustrative)</em></span><span class="v">call after −${pct(drawdownToTrigger(a.debt,a.assets,v),1)}</span></div>`).join('');
+    })()}
+    <p class="note">A margin call occurs when the loan exceeds the portfolio's lending value (advance ratio × market value). ${(()=>{ const m=latestMrtl(), c=mrtlCapacity(m);
+      if(m&&c) return `The headline figure above now comes from DBS's own borrowing-potential number (${esc(m.asOf)}), not an assumption. The implied advance ratio divides that capacity by the ${esc(latestDate())} portfolio value — the two dates differ, so treat the ratio as approximate.`;
+      return `The DBS statement does not publish these ratios${lv?'; the '+lv+'% figure is the one you entered in Settings':' — get them from your RM, or import the MRTL draw-down screen, which states your capacity directly'}.`;
+    })()}</p>
   </div>
   <div class="card">
     <h2>Interest vs portfolio gains (YTD)</h2>
@@ -429,8 +529,8 @@ function viewDash(){
     <div class="kv"><span class="k">Maturity</span><span class="v">${l.maturityDate||'—'}${d!==null?` (${d>=0?d+' days':'past due'})`:''}</span></div>
   </div>`;}).join('')}
   ${alertList(snap,a).map(x=>`<div class="banner ${x.cls}"><span class="ic">${x.ic}</span><div><b>${x.t}</b>${x.b}</div></div>`).join('')}
-  <button class="btn" onclick="startImport()">⤒ Import monthly DBS statement (PDF)</button>
-  <p class="note" style="text-align:center">Parsed entirely on this device — the PDF never leaves your phone.</p>`;
+  <button class="btn" onclick="startImport()">⤒ Add data — statement, screenshot or text</button>
+  <p class="note" style="text-align:center">Read entirely on this device — nothing is uploaded.</p>`;
 }
 
 function viewTrends(){
@@ -524,7 +624,7 @@ function viewHist(){
     <button class="btn ghost" onclick="document.getElementById('jsonInput').click()">Restore backup</button>
   </div>
   <input type="file" id="jsonInput" accept="application/json" class="hidden" onchange="importData(this)">
-  <button class="btn" style="margin-top:10px" onclick="startImport()">⤒ Import monthly DBS statement (PDF)</button>`;
+  <button class="btn" style="margin-top:10px" onclick="startImport()">⤒ Add data — statement, screenshot or text</button>`;
 }
 
 function viewSet(){
@@ -552,6 +652,20 @@ function viewSet(){
     <button class="btn" style="margin-top:12px" onclick="saveManual()">Save month</button>
     ${manualMonths().length?`<div style="margin-top:12px">${manualMonths().slice().reverse().map(m=>`<div class="kv"><span class="k">${esc(m)}</span><span class="v">${money(state.manual[m].mortgageBalance,2)} <button class="btn ghost" style="width:auto;padding:2px 8px;font-size:11px;margin-left:8px" onclick="delManual('${esc(m)}')">×</button></span></div>`).join('')}</div>`:''}
   </div>
+  <div class="card"><h2>Recurring income</h2>
+    ${(state.income||[]).map((i,ix)=>`<div class="kv"><span class="k">${esc(i.label)}${i.payer?' · '+esc(i.payer):''}</span><span class="v">${money(i.amount,2)}/mo
+      <button class="btn ghost" style="width:auto;padding:2px 8px;font-size:11px;margin-left:8px" onclick="delIncome(${ix})">×</button></span></div>`).join('') || '<p class="note">None yet.</p>'}
+    <label class="fld">Label</label><input type="text" id="incLabel" placeholder="e.g. Rent — The Atelier">
+    <label class="fld">Amount per month (S$)</label><input type="number" id="incAmt" step="0.01" inputmode="decimal">
+    <label class="fld">Payer / source (optional)</label><input type="text" id="incPayer">
+    <button class="btn" style="margin-top:12px" onclick="addIncome()">Add income</button>
+    <p class="note">Counted against your debt service on the dashboard. Rent is the one income stream that directly offsets the mortgage.</p>
+  </div>
+  <div class="card"><h2>MRTL facility (DBS)</h2>
+    ${mrtlDates().length?mrtlDates().slice().reverse().map(d=>`<div class="kv"><span class="k">${esc(d)}</span><span class="v">drawn ${money(state.mrtl[d].amountDrawn,0)} / cap ${money(mrtlCapacity(state.mrtl[d])?.capacity,0)}
+      <button class="btn ghost" style="width:auto;padding:2px 8px;font-size:11px;margin-left:8px" onclick="delMrtl('${esc(d)}')">×</button></span></div>`).join(''):'<p class="note">None yet.</p>'}
+    <p class="note">Update by importing a screenshot of DBS iBanking → “Your MRTL loan draw down” through Add data.</p>
+  </div>
   <div class="card"><h2>Property (optional)</h2>
     <label class="fld">Estimated market value of the mortgaged property (S$). Used only to show mortgage LTV and total net worth — leave blank and both stay hidden rather than guessed.</label>
     <input type="number" id="setHome" step="1000" inputmode="decimal" value="${s.homeValue??''}" placeholder="leave blank if unknown">
@@ -559,7 +673,7 @@ function viewSet(){
   </div>
   <div class="card"><h2>Data</h2>
     <p class="note">Everything is stored only in this browser (localStorage). Use Export in History for a backup before clearing browser data.</p>
-    <button class="btn ghost" style="margin-top:8px" onclick="if(confirm('Delete all snapshots, home-loan entries and settings?')){['fortress.snapshots','fortress.manual','fortress.settings'].forEach(k=>localStorage.removeItem(k));location.reload();}">Clear all data</button>
+    <button class="btn ghost" style="margin-top:8px" onclick="if(confirm('Delete all snapshots, home-loan entries and settings?')){['fortress.snapshots','fortress.manual','fortress.income','fortress.mrtl','fortress.settings'].forEach(k=>localStorage.removeItem(k));location.reload();}">Clear all data</button>
   </div>
   <div class="card"><h2>About</h2>
     <div class="kv"><span class="k">Version</span><span class="v">${VERSION}</span></div>
@@ -601,12 +715,23 @@ function saveManual(){
 function delManual(m){
   if(confirm('Delete home-loan entry '+m+'?')){ delete state.manual[m]; saveAll(); render(); }
 }
+function addIncome(){
+  const label=(document.getElementById('incLabel').value||'').trim();
+  const amt=document.getElementById('incAmt').value;
+  if(!label || amt===''){ alert('Label and monthly amount are both needed.'); return; }
+  state.income=state.income||[];
+  state.income.push({ id:'inc-'+state.income.length, label, amount:+amt, ccy:'SGD', frequency:'monthly',
+    payer:(document.getElementById('incPayer').value||'').trim()||null, endMonth:null, source:'manual entry' });
+  saveAll(); render();
+}
+function delIncome(ix){ if(confirm('Remove this income entry?')){ state.income.splice(ix,1); saveAll(); render(); } }
+function delMrtl(d){ if(confirm('Delete MRTL entry '+d+'?')){ delete state.mrtl[d]; saveAll(); render(); } }
 function delSnap(d){
   if(dates().length<=1){ alert('Keep at least one snapshot.'); return; }
   if(confirm('Delete snapshot '+d+'?')){ delete state.snapshots[d]; saveAll(); render(); }
 }
 function exportData(){
-  const blob=new Blob([JSON.stringify({app:'Fortress',snapshots:state.snapshots,manual:state.manual,settings:state.settings},null,1)],{type:'application/json'});
+  const blob=new Blob([JSON.stringify({app:'Fortress',snapshots:state.snapshots,manual:state.manual,income:state.income,mrtl:state.mrtl,settings:state.settings},null,1)],{type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download='fortress-backup-'+new Date().toISOString().slice(0,10)+'.json'; a.click();
 }
@@ -614,7 +739,7 @@ function importData(inp){
   const f=inp.files[0]; if(!f) return;
   f.text().then(t=>{ const d=JSON.parse(t);
     if(!d.snapshots) throw new Error('not a Fortress backup');
-    state.snapshots=d.snapshots; if(d.manual) state.manual=d.manual; if(d.settings) state.settings={...state.settings,...d.settings};
+    state.snapshots=d.snapshots; if(d.manual) state.manual=d.manual; if(d.income) state.income=d.income; if(d.mrtl) state.mrtl=d.mrtl; if(d.settings) state.settings={...state.settings,...d.settings};
     saveAll(); render(); alert('Backup restored: '+Object.keys(d.snapshots).length+' snapshot(s).');
   }).catch(e=>alert('Could not restore: '+e.message));
   inp.value='';
@@ -636,27 +761,167 @@ function loadPdfjs(){
     .catch(()=>{ pdfjsReady=null; throw new Error('Could not load the PDF engine. If you opened index.html without the pdf.min.js files beside it, re-download the full app folder.'); });
   return pdfjsReady;
 }
-function startImport(){ document.getElementById('pdfInput').click(); }
-document.getElementById('pdfInput').addEventListener('change', async e=>{
+/* ---------- universal import: PDF · image (OCR) · text · paste ---------- */
+function startImport(){
+  showModal(`
+  <h2>Add data</h2>
+  <p class="note" style="margin:0 0 12px">Fortress reads the file on this device and always shows you the numbers before saving. Nothing is uploaded.</p>
+  <button class="btn" onclick="pickFile()">Choose a file — PDF, screenshot or text</button>
+  <button class="btn ghost" style="margin-top:10px" onclick="pasteSheet()">Paste text instead</button>
+  <p class="note">Recognises: DBS investment eStatement (PDF) · UOB Statement of Account · UOB home-loan screen · DBS MRTL draw-down screen. Anything else lands in a manual-mapping screen rather than being guessed at.</p>
+  <p class="note"><b>On iPhone, pasting is more accurate than OCR:</b> open the screenshot in Photos, long-press the text, Copy, then use Paste text here.</p>
+  <button class="btn ghost" style="margin-top:10px" onclick="closeModal()">Cancel</button>`);
+}
+function pickFile(){ document.getElementById('anyInput').click(); }
+function pasteSheet(){
+  showModal(`
+  <h2>Paste text</h2>
+  <p class="note" style="margin:0 0 8px">Paste anything containing the figures — a copied screenshot's text, a statement extract, an email.</p>
+  <textarea id="pasteBox" rows="10" style="width:100%;background:var(--page);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:10px;font:inherit;font-size:13px" placeholder="Paste here…"></textarea>
+  <div class="row2" style="margin-top:12px">
+    <button class="btn ghost" onclick="closeModal()">Cancel</button>
+    <button class="btn" onclick="routeText(document.getElementById('pasteBox').value,'pasted text')">Read it</button>
+  </div>`);
+  setTimeout(()=>document.getElementById('pasteBox')?.focus(),50);
+}
+const busy = msg=>showModal(`<h2>${esc(msg)}</h2><div style="display:flex;justify-content:center;padding:26px"><div class="spin" style="border-color:var(--ink);border-top-color:transparent"></div></div>`);
+
+let tessReady=null;
+function loadTesseract(){
+  if(window.Tesseract) return Promise.resolve();
+  if(tessReady) return tessReady;
+  tessReady=new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+    s.onload=()=>res(); s.onerror=()=>rej(new Error('Could not load the OCR engine (needs a network connection the first time). Use “Paste text instead” — on iPhone, copy the text straight off the screenshot in Photos.'));
+    document.head.appendChild(s);
+  }).catch(e=>{ tessReady=null; throw e; });
+  return tessReady;
+}
+async function pdfText(file){
+  await loadPdfjs();
+  const doc=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;
+  const pages=[];
+  for(let i=1;i<=doc.numPages;i++){
+    const tc=await (await doc.getPage(i)).getTextContent();
+    pages.push(DBSParser.itemsToLines(tc.items));
+  }
+  return pages;
+}
+document.getElementById('anyInput').addEventListener('change', async e=>{
   const f=e.target.files[0]; e.target.value='';
   if(!f) return;
-  showModal(`<h2>Reading statement…</h2><div style="display:flex;justify-content:center;padding:26px"><div class="spin" style="border-color:var(--ink);border-top-color:transparent"></div></div>`);
   try{
-    await loadPdfjs();
-    const buf=await f.arrayBuffer();
-    const doc=await pdfjsLib.getDocument({data:buf}).promise;
-    const pages=[];
-    for(let i=1;i<=doc.numPages;i++){
-      const tc=await (await doc.getPage(i)).getTextContent();
-      pages.push(DBSParser.itemsToLines(tc.items));
+    if(f.type==='application/pdf' || /\.pdf$/i.test(f.name)){
+      busy('Reading PDF…');
+      const pages=await pdfText(f);
+      // a DBS investment statement has its own rich parser — prefer it
+      const dbs=DBSParser.parseLines(pages);
+      if(dbs.portfolios.length){ reviewParse(dbs); return; }
+      routeText(pages.map(p=>p.join('\n')).join('\n'), f.name);
+      return;
     }
-    const res=DBSParser.parseLines(pages);
-    if(!res.portfolios.length) throw new Error('No DBS portfolio sections found — is this a DBS Treasures investment eStatement?');
-    reviewParse(res);
+    if(/^image\//.test(f.type)){
+      busy('Reading image with OCR…');
+      await loadTesseract();
+      const { data } = await Tesseract.recognize(f,'eng');
+      routeText(data.text, f.name, true);
+      return;
+    }
+    busy('Reading file…');
+    routeText(await f.text(), f.name);
   }catch(err){
     showModal(`<h2>Import failed</h2><p class="note" style="font-size:13px">${esc(err.message)}</p><button class="btn" style="margin-top:14px" onclick="closeModal()">Close</button>`);
   }
 });
+function routeText(text, sourceName, viaOcr){
+  if(!text || !text.trim()){ showModal(`<h2>Nothing to read</h2><p class="note">No text came out of that. If it's a photo of a screen, try the paste route instead.</p><button class="btn" style="margin-top:14px" onclick="closeModal()">Close</button>`); return; }
+  const r=FortressRecognizers.detect(text);
+  r.sourceName=sourceName; r.viaOcr=!!viaOcr;
+  window.__rec=r;
+  reviewRecognized(r);
+}
+
+const KINDLABEL={ dbsMrtl:'DBS MRTL draw-down screen', uobLoanScreen:'UOB home-loan screen', uobStatement:'UOB Statement of Account', generic:'Unrecognised document' };
+const fld=(id,label,val,step)=>`<label class="fld">${label}</label><input type="${typeof val==='string'&&!/^-?[\d.]*$/.test(val||'')?'text':'number'}" id="${id}" step="${step||'0.01'}" inputmode="decimal" value="${val==null?'':esc(String(val))}">`;
+
+function reviewRecognized(r){
+  const f=r.fields;
+  const head=`
+  <h2>Review — ${esc(KINDLABEL[r.kind]||r.kind)}</h2>
+  <p class="note" style="margin:0 0 8px">From ${esc(r.sourceName||'input')}${r.viaOcr?' · read by OCR':''}. Every value is editable — check them against the source before saving.</p>
+  ${r.viaOcr?`<div class="warnbox"><b>OCR can misread digits.</b> Compare each number with the screenshot before you save.</div>`:''}
+  ${r.warnings.length?`<div class="warnbox"><b>Check these:</b><br>${r.warnings.map(esc).join('<br>')}</div>`:''}`;
+
+  if(r.kind==='dbsMrtl'){
+    showModal(head+`
+    ${fld('rBP','Borrowing potential (SGD)',f.borrowingPotential)}
+    ${fld('rDrawn','Amount drawn (SGD)',f.amountDrawn)}
+    ${fld('rAvail','Available for drawdown (SGD)',f.availableForDrawdown)}
+    ${fld('rLimit','Approved credit limit (SGD)',f.creditLimit)}
+    <label class="fld">As-of date</label><input type="text" id="rAsOf" value="${new Date().toISOString().slice(0,10)}" placeholder="YYYY-MM-DD">
+    <div class="row2" style="margin-top:12px"><button class="btn ghost" onclick="closeModal()">Cancel</button>
+    <button class="btn" onclick="saveMrtlFromReview()">Save MRTL figures</button></div>`);
+    return;
+  }
+  if(r.kind==='uobLoanScreen' || r.kind==='uobStatement'){
+    const month=f.month || new Date().toISOString().slice(0,7);
+    const rent=(f.rentCredits||[]).find(c=>c.amount);
+    showModal(head+`
+    <label class="fld">Month (YYYY-MM)</label><input type="text" id="rMonth" value="${esc(month)}">
+    ${fld('rBal','Home-loan outstanding balance (SGD)',f.mortgageBalance)}
+    ${fld('rPay','Monthly instalment (SGD)',f.mortgagePayment ?? latestManual()?.mortgagePayment)}
+    ${fld('rRate','Interest rate (% p.a.)',f.mortgageRatePct ?? latestManual()?.mortgageRatePct)}
+    ${fld('rDep','Bank deposits / cash (SGD)',f.deposits)}
+    ${rent?`<div class="card" style="margin:12px 0"><h2>Rent credit found</h2>
+      <div class="kv"><span class="k">${esc(rent.payer||'payer')} · ${esc(rent.reference||'')}</span><span class="v">${money(rent.amount,2)}</span></div>
+      <label class="fld"><input type="checkbox" id="rUseRent" checked style="width:auto;margin-right:6px">Update the recurring rent amount to ${money(rent.amount,2)}/mo</label></div>`:''}
+    <div class="row2" style="margin-top:12px"><button class="btn ghost" onclick="closeModal()">Cancel</button>
+    <button class="btn" onclick="saveLoanFromReview()">Save</button></div>`);
+    return;
+  }
+  // unrecognised — show what was found, let CK map it by hand
+  const cands=(r.fields.candidates||[]);
+  showModal(head+`
+  <p class="note">Fortress didn't recognise this format, so it is not guessing. Here are the money-shaped values it found — pick what each one is, or cancel and paste a cleaner extract.</p>
+  <div class="card" style="margin:8px 0;max-height:200px;overflow:auto">
+    ${cands.length?cands.map(c=>`<div class="kv"><span class="k" style="font-size:11px">${esc(c.line)}</span><span class="v">${c.values.map(v=>money(v,2)).join(' · ')}</span></div>`).join(''):'<p class="note">No money-formatted values found at all.</p>'}
+  </div>
+  <label class="fld">Month (YYYY-MM)</label><input type="text" id="rMonth" value="${new Date().toISOString().slice(0,7)}">
+  ${fld('rBal','Home-loan outstanding balance (SGD) — leave blank to skip',null)}
+  ${fld('rDep','Bank deposits / cash (SGD) — optional',null)}
+  <div class="row2" style="margin-top:12px"><button class="btn ghost" onclick="closeModal()">Cancel</button>
+  <button class="btn" onclick="saveLoanFromReview()">Save what I entered</button></div>`);
+}
+const gv=id=>{ const el=document.getElementById(id); if(!el) return null; const v=el.value; return v===''?null:(+v); };
+function saveMrtlFromReview(){
+  const asOf=(document.getElementById('rAsOf').value||'').trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(asOf)){ alert('As-of date must be YYYY-MM-DD.'); return; }
+  const rec={ asOf, borrowingPotential:gv('rBP'), amountDrawn:gv('rDrawn'),
+    availableForDrawdown:gv('rAvail'), creditLimit:gv('rLimit'),
+    source:(window.__rec?.sourceName||'manual')+(window.__rec?.viaOcr?' (OCR, reviewed)':' (reviewed)') };
+  if(rec.amountDrawn==null || rec.borrowingPotential==null){ alert('Amount drawn and borrowing potential are both needed for the margin metric.'); return; }
+  state.mrtl[asOf]=rec; saveAll(); closeModal(); go('dash');
+}
+function saveLoanFromReview(){
+  const m=(document.getElementById('rMonth').value||'').trim();
+  if(!/^\d{4}-\d{2}$/.test(m)){ alert('Month must be YYYY-MM.'); return; }
+  const bal=gv('rBal'), pay=gv('rPay'), rate=gv('rRate'), dep=gv('rDep');
+  if(bal==null && dep==null){ alert('Nothing to save — enter at least a balance or a deposits figure.'); return; }
+  const prev=state.manual[m]||{};
+  state.manual[m]={ ...prev,
+    ...(bal!=null?{mortgageBalance:bal}:{}),
+    ...(pay!=null?{mortgagePayment:pay}:{}),
+    ...(rate!=null?{mortgageRatePct:rate}:{}),
+    ...(dep!=null?{deposits:dep}:{}) };
+  const useRent=document.getElementById('rUseRent');
+  if(useRent && useRent.checked){
+    const c=(window.__rec?.fields?.rentCredits||[]).find(x=>x.amount);
+    const entry=(state.income||[]).find(i=>i.id==='rent-atelier') || (state.income||[])[0];
+    if(c && entry) entry.amount=c.amount;
+  }
+  saveAll(); closeModal(); go('dash');
+}
 function reviewParse(res){
   const a=agg(res);
   const exists=!!state.snapshots[res.statementDate];

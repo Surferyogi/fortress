@@ -19,21 +19,51 @@ home loan.
 > unguessable repo name — snapshots stay only in your browser's localStorage, but the
 > app shell itself is public on Pages.
 
+## What it reads
+
+**Add data** accepts a PDF, a screenshot, a text file, or pasted text, and routes it:
+
+| Source | Recognised as |
+|---|---|
+| DBS Treasures investment eStatement (PDF) | full portfolio snapshot — assets, loans, FX, income, fees |
+| UOB Statement of Account | home-loan balance, deposits, rent credits |
+| UOB home-loan screen (screenshot/paste) | balance, rate, instalment, next due date |
+| DBS iBanking "Your MRTL loan draw down" | borrowing potential, credit limit, drawn, available |
+| anything else | manual-mapping screen — values are never guessed |
+
+Screenshots go through in-browser OCR (tesseract.js, fetched once from a CDN and then
+cached for offline use). **OCR can misread digits** — the review screen makes you check
+them. On iPhone the accurate route is Photos → long-press the text → Copy → **Paste text**.
+
+Nothing auto-saves. Every route ends at an editable review screen.
+
 ## Monthly routine
 
 1. Download the DBS Investment Statement PDF (iBanking → eStatements).
-2. Open Fortress → **Import monthly DBS statement (PDF)**.
+2. Open Fortress → **Add data** → choose the file.
 3. Review the parsed figures against the statement's Portfolio Summary page → Save.
-4. Settings → **Home loan** → enter the month, UOB outstanding balance (and cash balance
-   if you have the statement). The interest portion is then derived as
-   *instalment − principal reduction* — arithmetic from your own two figures, never an estimate.
-5. Dashboard, Trends and FX tabs update; history accumulates month by month.
+4. Add the UOB home loan the same way — import its statement/screenshot, or type the
+   balance in Settings → Home loan. The interest portion is derived as
+   *instalment − principal reduction*: arithmetic from your own two figures, never an estimate.
+5. Screenshot DBS iBanking → **Your MRTL loan draw down** and import it. This is what
+   makes the margin-call number real rather than assumed.
+6. Dashboard, Trends and FX tabs update; history accumulates month by month.
 
-## One-time setup
+## The margin-call number
 
-Ask your Relationship Manager for the portfolio's **lending value / advance ratio**
-(the DBS statement does not publish it) and enter it in Settings. Until then the
-margin-call lines shown are labelled *illustrative* (50/60/70% arithmetic), not DBS figures.
+The DBS *statement* never publishes advance ratios. The DBS *MRTL draw-down screen* does
+publish your borrowing potential, which is the same information from the other end — so
+importing that screen replaces the illustrative 50/60/70% lines with a real figure.
+
+Where DBS's own "borrowing potential" and "available for drawdown" imply different
+capacities, Fortress uses the **smaller** one and flags the discrepancy. A lending value
+typed into Settings is kept as a cross-check, not as the headline.
+
+## Income
+
+Settings → **Recurring income** tracks rent and similar. Rent is compared directly against
+the mortgage instalment, since that is the pairing that decides whether the property funds
+itself.
 
 ## Data & backup
 

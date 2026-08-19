@@ -1,6 +1,6 @@
 /* Fortress service worker — offline app shell + cached PDF engine */
-const CACHE = 'fortress-v2026-08-19a';
-const SHELL = ['./', './index.html', './parser.js', './pdf.min.js', './pdf.worker.min.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon.svg'];
+const CACHE = 'fortress-v2026-08-19b';
+const SHELL = ['./', './index.html', './parser.js', './recognizers.js', './pdf.min.js', './pdf.worker.min.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon.svg'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -14,7 +14,7 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET') return;
   // pdf.js CDN: cache-first after first successful fetch
-  if (url.hostname === 'cdnjs.cloudflare.com') {
+  if (url.hostname === 'cdnjs.cloudflare.com' || url.hostname === 'cdn.jsdelivr.net') {
     e.respondWith(
       caches.match(e.request).then(hit => hit || fetch(e.request).then(r => {
         if (r.ok) { const cp = r.clone(); caches.open(CACHE).then(c => c.put(e.request, cp)); }
