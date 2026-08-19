@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
+<title>Fortress — Debt &amp; Margin Monitor</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="icon" type="image/png" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+:root{
+  color-scheme: light;
+  --page:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#898781;
+  --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,.10);
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100;
+  --div-pos:#2a78d6; --div-neg:#e34948; --div-mid:#f0efec;
+  --good:#0ca30c; --warn:#fab219; --serious:#ec835a; --critical:#d03b3b;
+  --delta-good:#006300;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    color-scheme: dark;
+    --page:#0d0d0d; --surface:#1a1a19; --ink:#ffffff; --ink2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10);
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
+    --div-pos:#3987e5; --div-neg:#e66767; --div-mid:#383835;
+    --delta-good:#0ca30c;
+  }
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--page);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+body{padding-bottom:76px;max-width:760px;margin:0 auto}
+header{padding:18px 16px 8px;display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+header h1{font-size:20px;font-weight:700;letter-spacing:-.02em}
+header .stamp{font-size:11px;color:var(--muted)}
+.tabs{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--surface);border-top:1px solid var(--border);z-index:40;max-width:760px;margin:0 auto;padding-bottom:env(safe-area-inset-bottom)}
+.tabs button{flex:1;background:none;border:none;color:var(--muted);font:inherit;font-size:11px;padding:10px 2px 8px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px}
+.tabs button.on{color:var(--ink);font-weight:600}
+.tabs button svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+main{padding:0 12px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px;margin:10px 0}
+.card h2{font-size:13px;font-weight:600;color:var(--ink2);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em}
+.hero{font-size:34px;font-weight:700;letter-spacing:-.02em}
+.hero-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tile{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px}
+.tile .v{font-size:20px;font-weight:700;letter-spacing:-.01em}
+.tile .l{font-size:11px;color:var(--muted);margin-top:2px}
+.tile .d{font-size:11px;margin-top:2px;color:var(--ink2)}
+.pos{color:var(--delta-good)} .neg{color:var(--critical)}
+.banner{border-radius:14px;padding:12px 14px;margin:10px 0;display:flex;gap:10px;align-items:flex-start;font-size:13px;line-height:1.45}
+.banner b{display:block;font-size:14px}
+.banner .ic{font-size:16px;line-height:1.3}
+.b-good{background:color-mix(in srgb,var(--good) 12%,var(--surface));border:1px solid color-mix(in srgb,var(--good) 40%,transparent)}
+.b-warn{background:color-mix(in srgb,var(--warn) 14%,var(--surface));border:1px solid color-mix(in srgb,var(--warn) 45%,transparent)}
+.b-serious{background:color-mix(in srgb,var(--serious) 14%,var(--surface));border:1px solid color-mix(in srgb,var(--serious) 45%,transparent)}
+.b-critical{background:color-mix(in srgb,var(--critical) 14%,var(--surface));border:1px solid color-mix(in srgb,var(--critical) 45%,transparent)}
+.gauge{margin:6px 0 2px}
+.gauge .track{position:relative;height:22px;border-radius:6px;background:var(--grid);overflow:visible}
+.gauge .fill{position:absolute;left:0;top:0;bottom:0;border-radius:6px 0 0 6px;background:var(--s1)}
+.gauge .mark{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--ink2)}
+.gauge .mark.actual{background:var(--critical);width:3px}
+.gauge .mlab{position:absolute;top:-20px;transform:translateX(-50%);font-size:10px;color:var(--muted);white-space:nowrap}
+.gauge .axis{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:4px}
+.kv{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--grid);font-size:13px;gap:10px}
+.kv:last-child{border-bottom:none}
+.kv .k{color:var(--ink2)} .kv .v{font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+.note{font-size:11.5px;color:var(--muted);line-height:1.5;margin-top:8px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--ink2);margin:2px 0 8px}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.sw{width:10px;height:10px;border-radius:3px;display:inline-block}
+svg.chart{width:100%;height:auto;display:block}
+svg.chart text{font-family:inherit;fill:var(--muted);font-size:10px}
+svg.chart .lab{fill:var(--ink2);font-size:10.5px}
+svg.chart .grid{stroke:var(--grid);stroke-width:1}
+svg.chart .axisline{stroke:var(--axis);stroke-width:1}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:var(--ink);color:var(--page);border:none;border-radius:12px;padding:12px 18px;font:inherit;font-size:14px;font-weight:600;cursor:pointer;width:100%}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--border)}
+.btn:disabled{opacity:.5}
+.row2{display:flex;gap:10px}
+.row2>*{flex:1}
+input[type=number],input[type=text]{width:100%;background:var(--page);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:10px;font:inherit;font-size:14px}
+label.fld{display:block;font-size:12px;color:var(--ink2);margin:10px 0 4px}
+table.hist{width:100%;border-collapse:collapse;font-size:12px}
+table.hist th{color:var(--muted);font-weight:600;text-align:right;padding:6px 4px;border-bottom:1px solid var(--axis);font-size:10.5px;text-transform:uppercase;letter-spacing:.03em}
+table.hist td{padding:8px 4px;border-bottom:1px solid var(--grid);text-align:right;font-variant-numeric:tabular-nums}
+table.hist th:first-child,table.hist td:first-child{text-align:left}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center;z-index:60}
+.sheet{background:var(--page);border-radius:18px 18px 0 0;width:100%;max-width:760px;max-height:88vh;overflow:auto;padding:16px 14px calc(16px + env(safe-area-inset-bottom))}
+.sheet h2{font-size:17px;margin-bottom:10px}
+.hidden{display:none !important}
+.spin{width:18px;height:18px;border:2px solid var(--page);border-top-color:transparent;border-radius:50%;animation:sp 0.8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.pill{display:inline-block;font-size:10.5px;padding:2px 8px;border-radius:99px;border:1px solid var(--border);color:var(--ink2);margin-left:6px;vertical-align:middle}
+.warnbox{background:color-mix(in srgb,var(--warn) 12%,var(--surface));border:1px solid color-mix(in srgb,var(--warn) 40%,transparent);border-radius:10px;padding:10px;font-size:12px;margin:8px 0}
+.fine{font-size:10.5px;color:var(--muted);line-height:1.5;margin:14px 4px 20px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Fortress</h1>
+  <span class="stamp" id="stamp"></span>
+</header>
+<main id="main"></main>
+
+<nav class="tabs" id="tabs"></nav>
+
+<input type="file" id="pdfInput" accept="application/pdf" class="hidden">
+<div id="modalRoot"></div>
+
+<script src="parser.js"></script>
+<script>
+'use strict';
+/* ================= constants / helpers ================= */
+const VERSION = 'v2026:AUG:19-00:30';
+const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
+const PDFJS_WORKER = 'pdf.worker.min.js';
+const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
+const ILLUSTRATIVE_LV = [50,60,70]; // % — labelled illustrative, NOT DBS figures
+
+const fmt = (n,dp=0)=> n===null||n===undefined||isNaN(n) ? '—' :
+  n.toLocaleString('en-SG',{minimumFractionDigits:dp,maximumFractionDigits:dp});
+const money = (n,dp=0)=> n===null||n===undefined||isNaN(n) ? '—' : (n<0?'-':'')+'S$'+fmt(Math.abs(n),dp);
+const pct = (n,dp=2)=> n===null||n===undefined||isNaN(n) ? '—' : fmt(n,dp)+'%';
+const esc = s=> String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const monthLabel = iso=>{ const [y,m]=iso.split('-'); return new Date(+y,+m-1,1).toLocaleString('en',{month:'short'})+'-'+y.slice(2); };
+const daysUntil = iso=>{ if(!iso) return null; return Math.ceil((new Date(iso+'T00:00:00')-new Date())/86400000); };
+
+/* ================= storage (guarded — works without localStorage) ================= */
+const memStore = {};
+const store = {
+  get(k,fb){ try{ const v = localStorage.getItem(k); return v?JSON.parse(v):fb; }catch(e){ return memStore[k]??fb; } },
+  set(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){ memStore[k]=v; } },
+  del(k){ try{ localStorage.removeItem(k); }catch(e){ delete memStore[k]; } }
+};
+/* migrate data saved under the app's former name — runs once, keeps your history */
+(function migrate(){
+  try{
+    ['snapshots','manual','settings'].forEach(key=>{
+      const oldK='dw.'+key, newK='fortress.'+key;
+      if(localStorage.getItem(oldK) && !localStorage.getItem(newK)){
+        localStorage.setItem(newK, localStorage.getItem(oldK));
+      }
+    });
+  }catch(e){}
+})();
+
+/* ================= seed: parsed from the 31-Jul-2026 DBS statement ================= */
+const SEED = {"statementDate":"2026-07-31","source":"DBS eStatement S/N S-6075227990332902 (seeded)","portfolios":[{"id":"S-607522-0","refCurrency":"SGD","totalAssets":2697000.94,"totalCash":58732.22,"totalEquity":2638268.72,"netAssets":2129445.83,"totalLoans":-567555.11,"loans":[{"ccy":"SGD","principal":-565472.93,"description":"MRTL SGD, 2.10%, 28/05/2026-31/08/2026","ratePct":2.1,"startDate":"2026-05-28","maturityDate":"2026-08-31","accrIntSGD":-2082.18,"valueSGD":-565472.93}],"ccyAlloc":{"USD":2002259.39,"SGD":454608.92,"HKD":191043.71,"JPY":28128.14,"EUR":20960.78},"perf":{"startMtd":2200678.77,"startYtd":1981070.61,"addWithMtd":1585.34,"addWithYtd":-127104.04,"end":2130397.76,"plMtd":-71866.35,"plYtd":276431.19,"pctMtd":-3.27,"pctYtd":15.06},"income":{"divMtd":876.86,"divYtd":17054.57,"intRecMtd":1.56,"intRecYtd":1426.33},"expenses":{"custodyMtd":0,"custodyYtd":1962.31,"txnMtd":146,"txnYtd":1827.52,"intPaidMtd":0,"intPaidYtd":8354.34},"leverageFactor":1.3,"leverageThreshold":6,"riskRating":4.2,"riskThreshold":5,"fxForwards":[{"buyCcy":"SGD","buyAmt":568563.67,"pair":"CHF/SGD","contractRate":1.6334936,"maturityDate":"2026-08-31","sellCcy":"CHF","sellAmt":-348066.05,"mtmSGD":15387.54}]},{"id":"S-607522-1","refCurrency":"SGD","totalAssets":40157.73,"totalCash":2.67,"totalEquity":40155.06,"netAssets":40157.73,"totalLoans":0,"loans":[],"ccyAlloc":{"USD":40155.07,"SGD":2.66},"perf":{"startMtd":40379.45,"startYtd":360839.25,"addWithMtd":-1585.25,"addWithYtd":-355972.7,"end":40157.73,"plMtd":1363.53,"plYtd":35291.18,"pctMtd":3.38,"pctYtd":13.71},"income":{"divMtd":125.7,"divYtd":429.77,"intRecMtd":0.04,"intRecYtd":6706.31},"expenses":{"custodyMtd":0,"custodyYtd":227.48,"txnMtd":0,"txnYtd":458.06,"intPaidMtd":0,"intPaidYtd":0},"leverageFactor":1,"leverageThreshold":6,"riskRating":4,"riskThreshold":5,"fxForwards":[]}],"fxRates":{"AUD":0.901837,"CAD":0.914943,"CHF":1.58766,"EUR":1.476189,"GBP":1.723823,"HKD":0.1635941503966831,"JPY":0.008003,"USD":1.28275}};
+
+/* ================= other-bank debts (manual) — seeded from CK's UOB screenshots ================= */
+const MANUAL_SEED = {
+  "2026-05": { mortgageBalance:1347500.00, deposits:25073.57 },
+  "2026-06": { mortgageBalance:1343116.85, deposits:25387.90 },
+  "2026-07": { mortgageBalance:1338729.99, deposits:17702.23, mortgageRatePct:1.13, mortgagePayment:5485.67 },
+  "2026-08": { mortgageBalance:1334490.74, mortgageRatePct:1.13, mortgagePayment:5485.67, nextDue:"2026-09-01",
+               note:"Balance after the 03-Aug-2026 instalment (UOB app) — not a month-end statement figure" }
+};
+const MORTGAGE_META = { bank:'UOB', account:'168-821-222-2', original:1347500.00, tenorMonths:276, type:'SGD Housing Loan, floating rate' };
+
+/* ================= state ================= */
+let state = {
+  snapshots: store.get('fortress.snapshots', null),
+  manual: store.get('fortress.manual', null),
+  settings: store.get('fortress.settings', { lendingValue:null, ltvAlert:35, homeValue:null, tab:'dash' })
+};
+if(!state.snapshots){ state.snapshots = { [SEED.statementDate]: SEED }; store.set('fortress.snapshots', state.snapshots); }
+if(!state.manual){ state.manual = MANUAL_SEED; store.set('fortress.manual', state.manual); }
+function saveAll(){ store.set('fortress.snapshots', state.snapshots); store.set('fortress.manual', state.manual); store.set('fortress.settings', state.settings); }
+const dates = ()=> Object.keys(state.snapshots).sort();
+const latest = ()=> state.snapshots[dates()[dates().length-1]];
+const manualMonths = ()=> Object.keys(state.manual).sort();
+const latestManual = ()=>{ const m=manualMonths(); return m.length? {month:m[m.length-1], ...state.manual[m[m.length-1]]} : null; };
+// implied interest for a month = that month's payment − principal reduction vs previous month (both stated; no estimates)
+function impliedMortgageInterest(month){
+  const ms=manualMonths(); const i=ms.indexOf(month);
+  if(i<1) return null;
+  const cur=state.manual[ms[i]], prev=state.manual[ms[i-1]];
+  if(cur.mortgagePayment==null || cur.mortgageBalance==null || prev.mortgageBalance==null) return null;
+  return cur.mortgagePayment - (prev.mortgageBalance - cur.mortgageBalance);
+}
+
+/* ================= derived metrics ================= */
+function agg(snap){
+  const a = { assets:0, cash:0, equity:0, net:0, debt:0, plMtd:0, plYtd:0,
+    divMtd:0, divYtd:0, intRecMtd:0, intRecYtd:0, intPaidMtd:0, intPaidYtd:0, feesYtd:0,
+    loans:[], forwards:[], ccy:{} };
+  for(const p of snap.portfolios){
+    a.assets += p.totalAssets||0; a.cash += p.totalCash||0; a.equity += p.totalEquity||0;
+    a.net += p.netAssets||0; a.debt += Math.abs(p.totalLoans||0);
+    a.plMtd += p.perf.plMtd||0; a.plYtd += p.perf.plYtd||0;
+    a.divMtd += p.income.divMtd||0; a.divYtd += p.income.divYtd||0;
+    a.intRecMtd += p.income.intRecMtd||0; a.intRecYtd += p.income.intRecYtd||0;
+    a.intPaidMtd += p.expenses.intPaidMtd||0; a.intPaidYtd += p.expenses.intPaidYtd||0;
+    a.custodyYtd = (a.custodyYtd||0)+(p.expenses.custodyYtd||0);
+    a.custodyMtd = (a.custodyMtd||0)+(p.expenses.custodyMtd||0);
+    a.txnYtd = (a.txnYtd||0)+(p.expenses.txnYtd||0);
+    a.feesYtd += (p.expenses.custodyYtd||0)+(p.expenses.txnYtd||0);
+    a.loans.push(...p.loans.map(l=>({...l, pf:p.id})));
+    a.forwards.push(...p.fxForwards.map(f=>({...f, pf:p.id})));
+    for(const [c,v] of Object.entries(p.ccyAlloc||{})) a.ccy[c]=(a.ccy[c]||0)+v;
+  }
+  a.ltv = a.assets>0 ? a.debt/a.assets*100 : null;
+  a.estMonthlyInterest = a.loans.reduce((s,l)=> s + Math.abs(l.principal||0)*(l.ratePct||0)/100/12, 0);
+  a.carryYtd = a.divYtd + a.intRecYtd - a.intPaidYtd - a.feesYtd;
+  a.gainsVsInterest = a.intPaidYtd>0 ? a.plYtd/a.intPaidYtd : null;
+  a.divCover = a.intPaidYtd>0 ? a.divYtd/a.intPaidYtd : null;
+  return a;
+}
+// drawdown (%) until debt exceeds lendingValue% of remaining assets
+function drawdownToTrigger(debt, assets, lvPct){
+  if(!debt || !assets || !lvPct) return null;
+  const trigAssets = debt/(lvPct/100);
+  return Math.max(0,(1 - trigAssets/assets)*100);
+}
+function marginStatus(a){
+  const lv = state.settings.lendingValue;
+  if(a.debt<=0) return {cls:'b-good', ic:'✔', title:'No outstanding loans', body:'No margin-call exposure this month.'};
+  if(lv){
+    const dd = drawdownToTrigger(a.debt,a.assets,lv);
+    const util = a.ltv/lv*100;
+    if(util>=100) return {cls:'b-critical', ic:'⛔', title:'Loan exceeds lending value', body:`LTV ${pct(a.ltv,1)} is above your configured lending value of ${lv}%. Expect a margin call — contact your RM.`};
+    if(util>=85) return {cls:'b-serious', ic:'⚠', title:'Margin buffer thin', body:`LTV ${pct(a.ltv,1)} is at ${fmt(util,0)}% of your ${lv}% lending value. A further ${pct(dd,1)} portfolio fall triggers a call.`};
+    if(util>=65) return {cls:'b-warn', ic:'⚠', title:'Watch the buffer', body:`LTV ${pct(a.ltv,1)} vs lending value ${lv}%. Portfolio can fall ${pct(dd,1)} before a margin call.`};
+    return {cls:'b-good', ic:'✔', title:'No margin-call risk in sight', body:`LTV ${pct(a.ltv,1)} vs your configured lending value ${lv}%. Portfolio would need to fall ${pct(dd,1)} before a call.`};
+  }
+  // no configured LV — use conservative illustrative 50%
+  const dd50 = drawdownToTrigger(a.debt,a.assets,50);
+  return {cls: a.ltv<35 ? 'b-good':'b-warn', ic: a.ltv<35?'✔':'⚠',
+    title: a.ltv<35 ? 'No margin-call risk in sight' : 'Leverage building — verify buffer',
+    body:`LTV ${pct(a.ltv,1)}. DBS lending values are not in the statement — even at an illustrative 50% lending value the portfolio must fall ${pct(dd50,1)} before a call. Enter the actual ratio from your RM in Settings for a precise trigger.`};
+}
+
+/* ================= SVG chart helpers (hand-rolled, dataviz method) ================= */
+function svgEl(w,h){ return `viewBox="0 0 ${w} ${h}" class="chart" role="img"`; }
+function niceTicks(min,max,n=4){
+  if(min===max){ max=min+1; }
+  const span=max-min, step0=span/n, mag=Math.pow(10,Math.floor(Math.log10(step0)));
+  const step=[1,2,2.5,5,10].map(m=>m*mag).find(s=>span/s<=n)|| step0;
+  const lo=Math.floor(min/step)*step, hi=Math.ceil(max/step)*step, t=[];
+  for(let v=lo;v<=hi+1e-9;v+=step) t.push(+v.toFixed(10));
+  return t;
+}
+// series: [{name,color,values:[{x:label,y}] }] — single shared y axis
+function lineChart(series, {h=190, yFmt=v=>fmt(v), refLines=[]}={}){
+  const W=340, padL=44, padR=12, padT=14, padB=26;
+  const labels = series[0].values.map(v=>v.x);
+  const all = series.flatMap(s=>s.values.map(v=>v.y)).filter(v=>v!==null&&!isNaN(v));
+  refLines.forEach(r=>all.push(r.y));
+  if(!all.length) return '<p class="note">No data yet.</p>';
+  let ticks = niceTicks(Math.min(...all,0), Math.max(...all));
+  const y0=ticks[0], y1=ticks[ticks.length-1];
+  const X=i=> labels.length===1 ? (padL+(W-padL-padR)/2) : padL + i*(W-padL-padR)/(labels.length-1);
+  const Y=v=> padT + (1-(v-y0)/(y1-y0))*(h-padT-padB);
+  let g='';
+  ticks.forEach(t=>{ g+=`<line class="grid" x1="${padL}" x2="${W-padR}" y1="${Y(t)}" y2="${Y(t)}"/><text x="${padL-6}" y="${Y(t)+3}" text-anchor="end">${yFmt(t)}</text>`; });
+  labels.forEach((l,i)=>{ if(labels.length<=8 || i%Math.ceil(labels.length/8)===0) g+=`<text x="${X(i)}" y="${h-8}" text-anchor="middle">${l}</text>`; });
+  refLines.forEach(r=>{ g+=`<line x1="${padL}" x2="${W-padR}" y1="${Y(r.y)}" y2="${Y(r.y)}" stroke="${r.color}" stroke-width="1.5" stroke-dasharray="4 4"/><text x="${W-padR}" y="${Y(r.y)-4}" text-anchor="end" style="fill:${r.color}">${r.label}</text>`; });
+  for(const s of series){
+    const pts=s.values.map((v,i)=>[X(i),Y(v.y)]);
+    if(pts.length>1) g+=`<path d="M${pts.map(p=>p.join(',')).join('L')}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round"/>`;
+    pts.forEach((p,i)=>{ g+=`<circle cx="${p[0]}" cy="${p[1]}" r="${pts.length===1?5:3.5}" fill="${s.color}" stroke="var(--surface)" stroke-width="2"><title>${esc(s.name)} ${labels[i]}: ${yFmt(s.values[i].y)}</title></circle>`; });
+    const lp=pts[pts.length-1];
+    g+=`<text class="lab" x="${Math.min(lp[0]+6,W-padR-2)}" y="${lp[1]-7}" text-anchor="${lp[0]>W-70?'end':'start'}">${yFmt(s.values[s.values.length-1].y)}</text>`;
+  }
+  return `<svg ${svgEl(W,h)}>${g}</svg>`;
+}
+// diverging / grouped bars: groups=[{x, vals:[{name,color,y}]}]
+function barChart(groups,{h=190,yFmt=v=>fmt(v)}={}){
+  const W=340, padL=44, padR=10, padT=14, padB=26;
+  const all=groups.flatMap(gr=>gr.vals.map(v=>v.y)).filter(v=>v!==null&&!isNaN(v));
+  if(!all.length) return '<p class="note">No data yet.</p>';
+  const ticks=niceTicks(Math.min(...all,0),Math.max(...all,0));
+  const y0=ticks[0], y1=ticks[ticks.length-1];
+  const Y=v=> padT + (1-(v-y0)/(y1-y0))*(h-padT-padB);
+  const gw=(W-padL-padR)/groups.length, n=groups[0].vals.length;
+  const bw=Math.min(26,(gw-8)/n);
+  let g='';
+  ticks.forEach(t=>{ g+=`<line class="grid" x1="${padL}" x2="${W-padR}" y1="${Y(t)}" y2="${Y(t)}"/><text x="${padL-6}" y="${Y(t)+3}" text-anchor="end">${yFmt(t)}</text>`; });
+  g+=`<line class="axisline" x1="${padL}" x2="${W-padR}" y1="${Y(0)}" y2="${Y(0)}"/>`;
+  groups.forEach((gr,gi)=>{
+    const cx=padL+gw*gi+gw/2;
+    gr.vals.forEach((v,vi)=>{
+      if(v.y===null||isNaN(v.y)) return;
+      const x=cx-(n*bw+(n-1)*2)/2+vi*(bw+2);
+      const yA=Y(Math.max(0,v.y)), yB=Y(Math.min(0,v.y));
+      const hh=Math.max(2,yB-yA);
+      const rTop=v.y>=0?4:0, rBot=v.y<0?4:0;
+      g+=`<path d="M${x},${yA+rTop} q0,-${rTop} ${rTop},-${rTop} h${bw-2*rTop} q${rTop},0 ${rTop},${rTop} v${hh-rTop-rBot} q0,${rBot} -${rBot},${rBot} h-${bw-2*rBot} q-${rBot},0 -${rBot},-${rBot} z" fill="${v.color}"><title>${esc(v.name)} ${esc(gr.x)}: ${yFmt(v.y)}</title></path>`;
+    });
+    if(groups.length<=8 || gi%Math.ceil(groups.length/8)===0) g+=`<text x="${cx}" y="${h-8}" text-anchor="middle">${esc(gr.x)}</text>`;
+  });
+  return `<svg ${svgEl(W,h)}>${g}</svg>`;
+}
+// horizontal bars for currency exposure
+function hBars(items,{yFmt=v=>fmt(v)}={}){
+  const W=340, padL=44, padR=54, rowH=26, padT=4;
+  const max=Math.max(...items.map(i=>Math.abs(i.v)));
+  const h=padT+items.length*rowH+4;
+  let g='';
+  items.forEach((it,i)=>{
+    const y=padT+i*rowH, bw=Math.max(6,Math.abs(it.v)/max*(W-padL-padR));
+    g+=`<text class="lab" x="${padL-6}" y="${y+15}" text-anchor="end" style="font-weight:600">${esc(it.label)}</text>`;
+    g+=`<path d="M${padL},${y+4} h${bw-4} q4,0 4,4 v8 q0,4 -4,4 h-${bw-4} z" fill="${it.color}"><title>${esc(it.label)}: ${yFmt(it.v)} (${pct(it.pct,1)})</title></path>`;
+    g+=`<text x="${padL+bw+5}" y="${y+15}">${pct(it.pct,1)}</text>`;
+  });
+  return `<svg ${svgEl(W,h)}>${g}</svg>`;
+}
+
+/* ================= tabs / rendering ================= */
+const TABS=[
+  {id:'dash', label:'Dashboard', icon:'<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>'},
+  {id:'trends', label:'Trends', icon:'<polyline points="3,17 9,11 13,14 21,6"/><polyline points="15,6 21,6 21,12"/>'},
+  {id:'fx', label:'FX Risk', icon:'<circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/>'},
+  {id:'hist', label:'History', icon:'<circle cx="12" cy="12" r="9"/><polyline points="12,7 12,12 15.5,14"/>'},
+  {id:'set', label:'Settings', icon:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>'}
+];
+function renderTabs(){
+  document.getElementById('tabs').innerHTML = TABS.map(t=>
+    `<button class="${state.settings.tab===t.id?'on':''}" onclick="go('${t.id}')"><svg viewBox="0 0 24 24">${t.icon}</svg>${t.label}</button>`).join('');
+}
+function go(tab){ state.settings.tab=tab; saveAll(); render(); window.scrollTo(0,0); }
+
+function alertList(snap,a){
+  const out=[];
+  for(const l of a.loans){
+    const d=daysUntil(l.maturityDate);
+    if(d!==null&&d<=45) out.push({cls:d<=14?'b-warn':'b-good',ic:'⏳',t:`Loan matures in ${d} day${d===1?'':'s'} (${l.maturityDate})`,b:`${l.ccy} ${fmt(Math.abs(l.principal),2)} @ ${l.ratePct}% — decide rollover vs repay before maturity.`});
+  }
+  for(const f of a.forwards){
+    const d=daysUntil(f.maturityDate);
+    if(d!==null&&d<=45) out.push({cls:'b-warn',ic:'⇄',t:`FX forward ${f.pair} settles in ${d} day${d===1?'':'s'}`,b:`Sell ${f.sellCcy} ${fmt(Math.abs(f.sellAmt),0)} / buy ${f.buyCcy} ${fmt(f.buyAmt,0)} @ ${f.contractRate}. Current MTM ${money(f.mtmSGD,0)}. Ensure the ${f.sellCcy} leg is funded at settlement.`});
+  }
+  if(a.ltv!==null && a.ltv>=state.settings.ltvAlert) out.push({cls:'b-serious',ic:'⚠',t:`LTV ${pct(a.ltv,1)} above your ${state.settings.ltvAlert}% alert level`,b:'Consider partial repayment or trimming positions.'});
+  if(!state.settings.lendingValue && a.debt>0) out.push({cls:'b-warn',ic:'ℹ',t:'Lending value not set',b:'DBS statements don’t disclose per-security lending values. Ask your RM for the portfolio’s lending value and enter it in Settings — until then margin lines are illustrative.'});
+  if(a.estMonthlyInterest>0 && a.plMtd < -6*a.estMonthlyInterest) out.push({cls:'b-warn',ic:'📉',t:`This month’s P&L (${money(a.plMtd,0)}) is ${fmt(Math.abs(a.plMtd)/a.estMonthlyInterest,0)}× your monthly interest`,b:'Market risk, not the loan, is the dominant driver of your net worth.'});
+  return out;
+}
+
+function viewDash(){
+  const snap=latest(), a=agg(snap), st=marginStatus(a);
+  const lv=state.settings.lendingValue;
+  const gaugeMax=Math.max(80, lv?lv+10:80);
+  const marks=(lv?[{v:lv,actual:true,label:`Your LV ${lv}%`}]:ILLUSTRATIVE_LV.map(v=>({v,label:v+'%'})));
+  const upd=daysUntil(snap.statementDate); // negative → days since
+  return `
+  <div class="banner ${st.cls}"><span class="ic">${st.ic}</span><div><b>${st.title}</b>${st.body}</div></div>
+  <div class="card">
+    <div class="hero">${money(a.net)}</div>
+    <div class="hero-sub">Combined net assets · statement ${snap.statementDate}${upd<-40?' · <span style="color:var(--serious)">statement is '+Math.abs(upd)+' days old — import the new one</span>':''}</div>
+  </div>
+  ${(()=>{ const mm=latestManual();
+    const mtg = mm?.mortgageBalance ?? null;
+    const totDebt = a.debt + (mtg||0);
+    // deposits: use the most recent month that actually reports one (never silently treat "unknown" as zero)
+    const depMonth = manualMonths().slice().reverse().find(m=>state.manual[m].deposits!=null) || null;
+    const depVal = depMonth ? state.manual[depMonth].deposits : null;
+    const liquid = a.assets + (depVal||0);
+    const impInt = mm ? impliedMortgageInterest(mm.month) : null;
+    const allInMo = a.estMonthlyInterest + (impInt ?? (mm?.mortgageRatePct!=null && mtg!=null ? mtg*mm.mortgageRatePct/100/12 : 0));
+    return `
+  <div class="tiles">
+    <div class="tile"><div class="v">${money(a.assets)}</div><div class="l">Investment assets (DBS)</div></div>
+    <div class="tile"><div class="v">${money(totDebt)}</div><div class="l">Total debt</div><div class="d">DBS ${money(a.debt)} + UOB ${money(mtg)}</div></div>
+    <div class="tile"><div class="v">${pct(a.ltv,1)}</div><div class="l">Margin loan-to-assets (LTV)</div></div>
+    <div class="tile"><div class="v">${fmt(snap.portfolios.find(p=>Math.abs(p.totalLoans||0)>0)?.leverageFactor ?? snap.portfolios[0].leverageFactor,1)} / ${fmt(snap.portfolios[0].leverageThreshold,0)}</div><div class="l">DBS leverage factor / limit</div></div>
+    <div class="tile"><div class="v ${a.plYtd>=0?'pos':'neg'}">${money(a.plYtd)}</div><div class="l">YTD portfolio P&L</div></div>
+    <div class="tile"><div class="v ${a.plMtd>=0?'pos':'neg'}">${money(a.plMtd)}</div><div class="l">This month P&L</div></div>
+    <div class="tile"><div class="v">${money(allInMo)}</div><div class="l">All-in interest / month</div><div class="d">DBS ≈ ${money(a.estMonthlyInterest)} + mortgage ${impInt!==null?money(impInt):(mm?.mortgageRatePct!=null?'≈ '+money(mtg*mm.mortgageRatePct/100/12):'—')}</div></div>
+    <div class="tile"><div class="v ${(liquid-totDebt)>=0?'pos':'neg'}">${money(liquid-totDebt)}</div><div class="l">Liquid assets − all debt</div><div class="d">${state.settings.homeValue?'Incl. property: '+money(liquid-totDebt+state.settings.homeValue):'Excl. property (value not entered)'}${depVal!=null?'<br>Incl. bank cash '+money(depVal,0)+' ('+depMonth+')':'<br>Bank cash not entered'}</div></div>
+  </div>`; })()}
+  <div class="card">
+    <h2>Margin headroom${lv?'':'<span class="pill">illustrative — LV not set</span>'}</h2>
+    <div class="gauge" style="margin-top:26px">
+      <div class="track">
+        <div class="fill" style="width:${Math.min(100,a.ltv/gaugeMax*100)}%"></div>
+        ${marks.map(m=>`<div class="mark ${m.actual?'actual':''}" style="left:${m.v/gaugeMax*100}%"></div><div class="mlab" style="left:${m.v/gaugeMax*100}%">${m.label}</div>`).join('')}
+      </div>
+      <div class="axis"><span>0%</span><span>LTV ${pct(a.ltv,1)}</span><span>${gaugeMax}%</span></div>
+    </div>
+    ${lv
+      ? `<div class="kv"><span class="k">Drawdown before margin call (at your ${lv}% LV)</span><span class="v">${pct(drawdownToTrigger(a.debt,a.assets,lv),1)}</span></div>`
+      : ILLUSTRATIVE_LV.map(v=>`<div class="kv"><span class="k">If lending value were ${v}% <em>(illustrative)</em></span><span class="v">call after −${pct(drawdownToTrigger(a.debt,a.assets,v),1)}</span></div>`).join('')}
+    <p class="note">A margin call occurs when the loan exceeds the portfolio's lending value (bank's advance ratio × market value). The DBS statement does not publish these ratios${lv?'; the '+lv+'% figure is the one you entered in Settings':' — get them from your RM and set them in Settings'}.</p>
+  </div>
+  <div class="card">
+    <h2>Interest vs portfolio gains (YTD)</h2>
+    <div class="kv"><span class="k">Portfolio P&L</span><span class="v ${a.plYtd>=0?'pos':'neg'}">${money(a.plYtd)}</span></div>
+    <div class="kv"><span class="k">Dividends + interest received</span><span class="v">${money(a.divYtd+a.intRecYtd,0)}</span></div>
+    <div class="kv"><span class="k">Margin loan interest paid</span><span class="v">${money(-a.intPaidYtd,0)}</span></div>
+    <div class="kv"><span class="k">DBS custody fees</span><span class="v">${money(-a.custodyYtd,0)}</span></div>
+    <div class="kv"><span class="k">Transaction costs</span><span class="v">${money(-a.txnYtd,0)}</span></div>
+    <div class="kv"><span class="k">Gains ÷ margin interest</span><span class="v">${a.gainsVsInterest===null?'—':fmt(a.gainsVsInterest,1)+'×'}</span></div>
+    <div class="kv"><span class="k">Dividend cover of margin interest</span><span class="v">${a.divCover===null?'—':fmt(a.divCover,1)+'×'}</span></div>
+    ${(()=>{ const mm=latestManual(); if(!mm) return '';
+      const impInt = impliedMortgageInterest(mm.month);
+      const annAllIn = (a.estMonthlyInterest + (impInt ?? (mm.mortgageRatePct!=null&&mm.mortgageBalance!=null? mm.mortgageBalance*mm.mortgageRatePct/100/12 : 0)))*12;
+      return `<div class="kv"><span class="k">Gains ÷ all-in interest (incl. mortgage, annualised)</span><span class="v">${annAllIn>0?fmt(a.plYtd/annAllIn,1)+'×':'—'}</span></div>`; })()}
+  </div>
+  ${(()=>{ const mm=latestManual(); if(!mm) return '';
+    const impInt = impliedMortgageInterest(mm.month);
+    const paidOff = MORTGAGE_META.original && mm.mortgageBalance!=null ? MORTGAGE_META.original - mm.mortgageBalance : null;
+    return `
+  <div class="card">
+    <h2>Home loan — ${esc(MORTGAGE_META.bank)} ${esc(MORTGAGE_META.account)}<span class="pill">manual entry</span></h2>
+    <div class="kv"><span class="k">Outstanding balance (${esc(mm.month)})</span><span class="v">${money(mm.mortgageBalance,2)}</span></div>
+    <div class="kv"><span class="k">Original / repaid so far</span><span class="v">${money(MORTGAGE_META.original,0)} / ${paidOff!==null?money(paidOff,0):'—'}</span></div>
+    <div class="kv"><span class="k">Rate</span><span class="v">${mm.mortgageRatePct!=null?pct(mm.mortgageRatePct,2)+' p.a. float':'—'}</span></div>
+    <div class="kv"><span class="k">Monthly instalment</span><span class="v">${mm.mortgagePayment!=null?money(mm.mortgagePayment,2):'—'}</span></div>
+    <div class="kv"><span class="k">Interest portion this month (implied)</span><span class="v">${impInt!==null?money(impInt,2):'— (needs prior month + instalment)'}</span></div>
+    <div class="kv"><span class="k">UOB deposits</span><span class="v">${mm.deposits!=null?money(mm.deposits,2):'—'}</span></div>
+    ${mm.nextDue?`<div class="kv"><span class="k">Next payment due</span><span class="v">${esc(mm.nextDue)}</span></div>`:''}
+    ${mm.note?`<p class="note" style="margin-top:6px">${esc(mm.note)}</p>`:''}
+    ${state.settings.homeValue?`<div class="kv"><span class="k">Mortgage LTV vs your entered property value</span><span class="v">${pct(mm.mortgageBalance/state.settings.homeValue*100,1)}</span></div>`:''}
+    <p class="note">Implied interest = instalment − principal reduction between your two latest entries (pure arithmetic from UOB statements, no assumptions). A property loan has no market-linked margin call, but its interest is part of the hurdle your portfolio must beat. Update monthly in Settings → Home loan.</p>
+  </div>`; })()}
+  ${a.loans.map(l=>{const d=daysUntil(l.maturityDate);return `
+  <div class="card">
+    <h2>Loan — ${esc(l.pf)}</h2>
+    <div class="kv"><span class="k">Description</span><span class="v">${esc(l.description||'')}</span></div>
+    <div class="kv"><span class="k">Principal</span><span class="v">${l.ccy} ${fmt(Math.abs(l.principal),2)}</span></div>
+    <div class="kv"><span class="k">Rate</span><span class="v">${pct(l.ratePct,2)} p.a.</span></div>
+    <div class="kv"><span class="k">Accrued interest</span><span class="v">${money(Math.abs(l.accrIntSGD||0),2)}</span></div>
+    <div class="kv"><span class="k">Maturity</span><span class="v">${l.maturityDate||'—'}${d!==null?` (${d>=0?d+' days':'past due'})`:''}</span></div>
+  </div>`;}).join('')}
+  ${alertList(snap,a).map(x=>`<div class="banner ${x.cls}"><span class="ic">${x.ic}</span><div><b>${x.t}</b>${x.b}</div></div>`).join('')}
+  <button class="btn" onclick="startImport()">⤒ Import monthly DBS statement (PDF)</button>
+  <p class="note" style="text-align:center">Parsed entirely on this device — the PDF never leaves your phone.</p>`;
+}
+
+function viewTrends(){
+  const ds=dates(); const snaps=ds.map(d=>({d, a:agg(state.snapshots[d])}));
+  const lv=state.settings.lendingValue;
+  const one = ds.length===1;
+  const ltvSeries=[{name:'LTV',color:'var(--s1)',values:snaps.map(s=>({x:monthLabel(s.d),y:+s.a.ltv.toFixed(2)}))}];
+  const refs = lv? [{y:lv,color:'var(--critical)',label:`LV ${lv}%`}] : [{y:50,color:'var(--muted)',label:'50% (illustrative)'}];
+  return `
+  ${one?'<div class="banner b-warn"><span class="ic">ℹ</span><div><b>One month of data so far</b>Trends build as you import each monthly statement.</div></div>':''}
+  <div class="card"><h2>Loan-to-assets over time</h2>${lineChart(ltvSeries,{yFmt:v=>fmt(v,0)+'%',refLines:refs})}</div>
+  <div class="card"><h2>Monthly portfolio P&L (S$)</h2>
+    ${barChart(snaps.map(s=>({x:monthLabel(s.d),vals:[{name:'Monthly P&L',color:s.a.plMtd>=0?'var(--div-pos)':'var(--div-neg)',y:Math.round(s.a.plMtd)}]})),{yFmt:v=>fmt(v/1000,0)+'k'})}
+    <p class="note">Blue = gain, red = loss. Compare against ~${money(agg(latest()).estMonthlyInterest)} of monthly interest — the bar you can barely see.</p></div>
+  <div class="card"><h2>Income vs debt cost (YTD, S$)</h2>
+    <div class="legend"><span><span class="sw" style="background:var(--s1)"></span>Dividends + interest received</span><span><span class="sw" style="background:var(--s2)"></span>Interest paid + fees</span></div>
+    ${barChart(snaps.map(s=>({x:monthLabel(s.d),vals:[
+      {name:'Income YTD',color:'var(--s1)',y:Math.round(s.a.divYtd+s.a.intRecYtd)},
+      {name:'Debt cost YTD',color:'var(--s2)',y:Math.round(s.a.intPaidYtd+s.a.feesYtd)}]})),{yFmt:v=>fmt(v/1000,1)+'k'})}
+    <p class="note">Positive carry = the portfolio's cash income alone outruns all financing and account costs.</p></div>
+  <div class="card"><h2>Net assets (S$)</h2>${lineChart([{name:'Net assets',color:'var(--s3)',values:snaps.map(s=>({x:monthLabel(s.d),y:Math.round(s.a.net)}))}],{yFmt:v=>fmt(v/1e6,2)+'M'})}</div>
+  ${(()=>{ const mm=manualMonths(); if(!mm.length) return '';
+    const withBal=mm.filter(m=>state.manual[m].mortgageBalance!=null);
+    if(withBal.length<2) return '';
+    const series=[{name:'Home loan balance',color:'var(--s2)',values:withBal.map(m=>({x:monthLabel(m+'-01'),y:Math.round(state.manual[m].mortgageBalance)}))}];
+    const first=state.manual[withBal[0]].mortgageBalance, last=state.manual[withBal[withBal.length-1]].mortgageBalance;
+    return `
+  <div class="card"><h2>Home loan balance (S$)</h2>
+    ${lineChart(series,{yFmt:v=>fmt(v/1e6,3)+'M'})}
+    <p class="note">Down ${money(first-last,0)} across ${withBal.length} months — amortising, and it shrinks whether or not markets cooperate. Add each month in Settings → Home loan.</p></div>`; })()}`;
+}
+
+function viewFX(){
+  const snap=latest(), a=agg(snap);
+  const ccys=Object.entries(a.ccy).sort((x,y)=>y[1]-x[1]);
+  const palette=['var(--s1)','var(--s2)','var(--s3)','var(--s4)','var(--muted)','var(--axis)'];
+  const items=ccys.map(([c,v],i)=>({label:c,v,pct:v/a.assets*100,color:palette[Math.min(i,palette.length-1)]}));
+  const loanCcy={}; a.loans.forEach(l=>{loanCcy[l.ccy]=(loanCcy[l.ccy]||0)+Math.abs(l.principal);});
+  const rates=snap.fxRates||{};
+  const shocks=[-10,-5,5,10];
+  const nonSgd=ccys.filter(([c])=>c!=='SGD');
+  const stressRows=nonSgd.map(([c,v])=>{
+    const cells=shocks.map(s=>{ const dA=v*s/100; const ltv2=a.debt/(a.assets+dA)*100; return `<td>${money(dA/1000,0).replace('S$','')}k<br><span style="color:var(--muted)">${fmt(ltv2,1)}%</span></td>`; }).join('');
+    return `<tr><td><b>${c}</b><br><span style="color:var(--muted)">${pct(v/a.assets*100,1)} of assets</span></td>${cells}</tr>`;
+  }).join('');
+  return `
+  <div class="card"><h2>Currency exposure (assets, SGD-equivalent)</h2>
+    ${hBars(items,{yFmt:v=>money(v)})}
+    <p class="note">Loans by currency: ${Object.entries(loanCcy).map(([c,v])=>`${c} ${money(v)}`).join(', ')||'none'}. ${(()=>{const usd=a.ccy.USD||0; return usd/a.assets>0.5 && !loanCcy.USD ? `Mismatch: ${pct(usd/a.assets*100,1)} of assets are USD while the loan is ${Object.keys(loanCcy).join('/')||'—'} — a USD fall shrinks assets but not the debt, so LTV and net worth both take the hit.`:''})()}</p>
+  </div>
+  <div class="card"><h2>FX stress — asset impact & resulting LTV</h2>
+    <table class="hist"><tr><th>vs SGD</th>${shocks.map(s=>`<th>${s>0?'+':''}${s}%</th>`).join('')}</tr>${stressRows}</table>
+    <p class="note">Each cell: change in asset value (S$ thousands) and the LTV after the move, holding the loan constant. Computed from this statement's currency allocation — indicative rates as printed by DBS.</p>
+  </div>
+  ${a.forwards.length?`<div class="card"><h2>FX forwards</h2>
+    ${a.forwards.map(f=>{
+      const d=daysUntil(f.maturityDate);
+      const spot=rates[f.sellCcy]||null;
+      const sellAbs=Math.abs(f.sellAmt);
+      const shock=spot? [5,10].map(s=>`${f.sellCcy} +${s}% → MTM ${money(f.buyAmt - sellAbs*spot*(1+s/100),0)}`).join(' · ') : '';
+      const loan=a.loans[0];
+      const fundsLoan = loan && f.buyCcy===loan.ccy && Math.abs(f.buyAmt-(Math.abs(loan.principal)+Math.abs(loan.accrIntSGD||0)))<Math.abs(loan.principal)*0.02 && f.maturityDate===loan.maturityDate;
+      return `<div class="kv"><span class="k">Position</span><span class="v">Sell ${f.sellCcy} ${fmt(sellAbs,0)} / Buy ${f.buyCcy} ${fmt(f.buyAmt,0)}</span></div>
+      <div class="kv"><span class="k">Contract rate</span><span class="v">${f.contractRate}</span></div>
+      <div class="kv"><span class="k">Settles</span><span class="v">${f.maturityDate}${d!==null?` (${d>=0?d+' days':'settled'})`:''}</span></div>
+      <div class="kv"><span class="k">Mark-to-market</span><span class="v ${f.mtmSGD>=0?'pos':'neg'}">${money(f.mtmSGD,0)}</span></div>
+      ${shock?`<div class="kv"><span class="k">Sensitivity</span><span class="v" style="font-weight:400;font-size:12px">${shock}</span></div>`:''}
+      ${fundsLoan?`<p class="note">This forward's ${f.buyCcy} leg (${money(f.buyAmt)}) matches the ${loan.ccy} loan + accrued interest (${money(Math.abs(loan.principal)+Math.abs(loan.accrIntSGD||0))}) and settles on the loan's maturity date — it looks structured to fund the loan repayment. Confirm the ${f.sellCcy} you must deliver at settlement is available, since this statement shows no ${f.sellCcy} assets.`:''}`;
+    }).join('')}
+  </div>`:''}
+  <div class="card"><h2>Indicative FX rates (statement)</h2>
+    ${Object.entries(rates).sort().map(([c,v])=>`<div class="kv"><span class="k">1 ${c}</span><span class="v">${fmt(v,c==='JPY'||c==='HKD'?4:4)} SGD</span></div>`).join('')}
+  </div>`;
+}
+
+function viewHist(){
+  const ds=dates().slice().reverse();
+  return `
+  <div class="card"><h2>Monthly snapshots</h2>
+  <div style="overflow-x:auto"><table class="hist">
+    <tr><th>Month</th><th>Assets</th><th>Loan</th><th>LTV</th><th>Net</th><th>MTD P&L</th><th>Int. YTD</th><th></th></tr>
+    ${ds.map(d=>{const a=agg(state.snapshots[d]);return `<tr>
+      <td><b>${monthLabel(d)}</b></td><td>${fmt(a.assets/1000,0)}k</td><td>${fmt(a.debt/1000,0)}k</td>
+      <td>${pct(a.ltv,1)}</td><td>${fmt(a.net/1000,0)}k</td>
+      <td class="${a.plMtd>=0?'pos':'neg'}">${fmt(a.plMtd/1000,1)}k</td><td>${fmt(a.intPaidYtd/1000,1)}k</td>
+      <td><button class="btn ghost" style="width:auto;padding:4px 10px;font-size:11px" onclick="delSnap('${d}')">✕</button></td></tr>`;}).join('')}
+  </table></div>
+  <p class="note">All values S$ (thousands where marked k). Source: figures parsed verbatim from each DBS eStatement.</p></div>
+  <div class="row2">
+    <button class="btn ghost" onclick="exportData()">Export backup (JSON)</button>
+    <button class="btn ghost" onclick="document.getElementById('jsonInput').click()">Restore backup</button>
+  </div>
+  <input type="file" id="jsonInput" accept="application/json" class="hidden" onchange="importData(this)">
+  <button class="btn" style="margin-top:10px" onclick="startImport()">⤒ Import monthly DBS statement (PDF)</button>`;
+}
+
+function viewSet(){
+  const s=state.settings;
+  return `
+  <div class="card"><h2>Margin-call model</h2>
+    <label class="fld">Portfolio lending value (%) — the advance ratio DBS applies to your collateral. Ask your RM (statement doesn't publish it). Leave blank to keep illustrative 50/60/70% lines.</label>
+    <input type="number" id="setLV" min="1" max="95" step="1" inputmode="decimal" value="${s.lendingValue??''}" placeholder="e.g. 60">
+    <label class="fld">LTV alert level (%)</label>
+    <input type="number" id="setAlert" min="5" max="95" step="1" inputmode="decimal" value="${s.ltvAlert}">
+    <button class="btn" style="margin-top:12px" onclick="saveSettings()">Save settings</button>
+  </div>
+  <div class="card"><h2>Home loan (${esc(MORTGAGE_META.bank)}) — monthly entry</h2>
+    <p class="note" style="margin-top:0">Your UOB statement isn't a machine-readable PDF here, so add these three numbers each month from the app or statement. Interest is then derived, not assumed.</p>
+    <label class="fld">Month</label>
+    <input type="text" id="mMonth" placeholder="YYYY-MM" inputmode="numeric" value="${new Date().toISOString().slice(0,7)}">
+    <label class="fld">Outstanding balance (S$)</label>
+    <input type="number" id="mBal" step="0.01" inputmode="decimal" placeholder="e.g. 1338729.99">
+    <label class="fld">Monthly instalment (S$) — leave as-is if unchanged</label>
+    <input type="number" id="mPay" step="0.01" inputmode="decimal" value="${latestManual()?.mortgagePayment ?? ''}">
+    <label class="fld">Interest rate (% p.a.) — optional, floating</label>
+    <input type="number" id="mRate" step="0.01" inputmode="decimal" value="${latestManual()?.mortgageRatePct ?? ''}">
+    <label class="fld">Bank deposits / cash buffer (S$) — optional</label>
+    <input type="number" id="mDep" step="0.01" inputmode="decimal" placeholder="e.g. 17702.23">
+    <button class="btn" style="margin-top:12px" onclick="saveManual()">Save month</button>
+    ${manualMonths().length?`<div style="margin-top:12px">${manualMonths().slice().reverse().map(m=>`<div class="kv"><span class="k">${esc(m)}</span><span class="v">${money(state.manual[m].mortgageBalance,2)} <button class="btn ghost" style="width:auto;padding:2px 8px;font-size:11px;margin-left:8px" onclick="delManual('${esc(m)}')">×</button></span></div>`).join('')}</div>`:''}
+  </div>
+  <div class="card"><h2>Property (optional)</h2>
+    <label class="fld">Estimated market value of the mortgaged property (S$). Used only to show mortgage LTV and total net worth — leave blank and both stay hidden rather than guessed.</label>
+    <input type="number" id="setHome" step="1000" inputmode="decimal" value="${s.homeValue??''}" placeholder="leave blank if unknown">
+    <button class="btn" style="margin-top:12px" onclick="saveSettings()">Save</button>
+  </div>
+  <div class="card"><h2>Data</h2>
+    <p class="note">Everything is stored only in this browser (localStorage). Use Export in History for a backup before clearing browser data.</p>
+    <button class="btn ghost" style="margin-top:8px" onclick="if(confirm('Delete all snapshots, home-loan entries and settings?')){['fortress.snapshots','fortress.manual','fortress.settings'].forEach(k=>localStorage.removeItem(k));location.reload();}">Clear all data</button>
+  </div>
+  <div class="card"><h2>About</h2>
+    <div class="kv"><span class="k">Version</span><span class="v">${VERSION}</span></div>
+    <div class="kv"><span class="k">Source of figures</span><span class="v" style="font-weight:400">DBS Treasures Private Client eStatements you import; parsed on-device</span></div>
+    <p class="note">Fortress is a personal monitoring tool, not financial advice. Margin-call estimates depend on lending values that only DBS can confirm; scenario lines shown without a configured lending value are illustrative arithmetic, not DBS figures.</p>
+  </div>`;
+}
+
+function render(){
+  renderTabs();
+  document.getElementById('stamp').textContent = VERSION;
+  const v={dash:viewDash,trends:viewTrends,fx:viewFX,hist:viewHist,set:viewSet}[state.settings.tab]||viewDash;
+  document.getElementById('main').innerHTML = v() + `<p class="fine">Monitoring aid only — verify against your official DBS statements. ${VERSION}</p>`;
+}
+
+/* ================= actions ================= */
+function saveSettings(){
+  const lv=document.getElementById('setLV').value;
+  const al=document.getElementById('setAlert').value;
+  const hv=document.getElementById('setHome');
+  state.settings.lendingValue = lv===''?null:Math.min(95,Math.max(1,+lv));
+  state.settings.ltvAlert = al===''?35:Math.min(95,Math.max(5,+al));
+  if(hv) state.settings.homeValue = hv.value===''?null:Math.max(0,+hv.value);
+  saveAll(); go('dash');
+}
+function saveManual(){
+  const m=document.getElementById('mMonth').value.trim();
+  if(!/^\d{4}-\d{2}$/.test(m)){ alert('Month must be YYYY-MM, e.g. 2026-08'); return; }
+  const num=id=>{ const v=document.getElementById(id).value; return v===''?null:+v; };
+  const bal=num('mBal');
+  if(bal===null){ alert('Outstanding balance is required — without it there is nothing to track.'); return; }
+  const prev=state.manual[m]||{};
+  state.manual[m]={ ...prev, mortgageBalance:bal,
+    mortgagePayment:num('mPay') ?? prev.mortgagePayment ?? null,
+    mortgageRatePct:num('mRate') ?? prev.mortgageRatePct ?? null,
+    deposits:num('mDep') ?? prev.deposits ?? null };
+  saveAll(); go('dash');
+}
+function delManual(m){
+  if(confirm('Delete home-loan entry '+m+'?')){ delete state.manual[m]; saveAll(); render(); }
+}
+function delSnap(d){
+  if(dates().length<=1){ alert('Keep at least one snapshot.'); return; }
+  if(confirm('Delete snapshot '+d+'?')){ delete state.snapshots[d]; saveAll(); render(); }
+}
+function exportData(){
+  const blob=new Blob([JSON.stringify({app:'Fortress',snapshots:state.snapshots,manual:state.manual,settings:state.settings},null,1)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='fortress-backup-'+new Date().toISOString().slice(0,10)+'.json'; a.click();
+}
+function importData(inp){
+  const f=inp.files[0]; if(!f) return;
+  f.text().then(t=>{ const d=JSON.parse(t);
+    if(!d.snapshots) throw new Error('not a Fortress backup');
+    state.snapshots=d.snapshots; if(d.manual) state.manual=d.manual; if(d.settings) state.settings={...state.settings,...d.settings};
+    saveAll(); render(); alert('Backup restored: '+Object.keys(d.snapshots).length+' snapshot(s).');
+  }).catch(e=>alert('Could not restore: '+e.message));
+  inp.value='';
+}
+
+/* ================= PDF import flow ================= */
+let pdfjsReady=null;
+function loadPdfjs(){
+  if(window.pdfjsLib) return Promise.resolve();
+  if(pdfjsReady) return pdfjsReady;
+  const tryLoad=(src,worker)=>new Promise((res,rej)=>{
+    const s=document.createElement('script'); s.src=src;
+    s.onload=()=>{ window.pdfjsLib.GlobalWorkerOptions.workerSrc=worker; res(); };
+    s.onerror=()=>rej(new Error('load failed: '+src));
+    document.head.appendChild(s);
+  });
+  pdfjsReady=tryLoad(PDFJS_URL,PDFJS_WORKER)
+    .catch(()=>tryLoad(PDFJS_CDN+'pdf.min.js',PDFJS_CDN+'pdf.worker.min.js'))
+    .catch(()=>{ pdfjsReady=null; throw new Error('Could not load the PDF engine. If you opened index.html without the pdf.min.js files beside it, re-download the full app folder.'); });
+  return pdfjsReady;
+}
+function startImport(){ document.getElementById('pdfInput').click(); }
+document.getElementById('pdfInput').addEventListener('change', async e=>{
+  const f=e.target.files[0]; e.target.value='';
+  if(!f) return;
+  showModal(`<h2>Reading statement…</h2><div style="display:flex;justify-content:center;padding:26px"><div class="spin" style="border-color:var(--ink);border-top-color:transparent"></div></div>`);
+  try{
+    await loadPdfjs();
+    const buf=await f.arrayBuffer();
+    const doc=await pdfjsLib.getDocument({data:buf}).promise;
+    const pages=[];
+    for(let i=1;i<=doc.numPages;i++){
+      const tc=await (await doc.getPage(i)).getTextContent();
+      pages.push(DBSParser.itemsToLines(tc.items));
+    }
+    const res=DBSParser.parseLines(pages);
+    if(!res.portfolios.length) throw new Error('No DBS portfolio sections found — is this a DBS Treasures investment eStatement?');
+    reviewParse(res);
+  }catch(err){
+    showModal(`<h2>Import failed</h2><p class="note" style="font-size:13px">${esc(err.message)}</p><button class="btn" style="margin-top:14px" onclick="closeModal()">Close</button>`);
+  }
+});
+function reviewParse(res){
+  const a=agg(res);
+  const exists=!!state.snapshots[res.statementDate];
+  window.__pending=res;
+  showModal(`
+  <h2>Review parsed statement</h2>
+  <p class="note" style="margin-bottom:8px">Statement date <b style="color:var(--ink)">${esc(res.statementDate||'?')}</b> · ${res.portfolios.length} portfolio(s): ${res.portfolios.map(p=>esc(p.id)).join(', ')}</p>
+  ${res.warnings.length?`<div class="warnbox"><b>Check these:</b><br>${res.warnings.map(esc).join('<br>')}</div>`:''}
+  ${exists?`<div class="warnbox">A snapshot for ${esc(res.statementDate)} already exists — saving will replace it.</div>`:''}
+  <div class="card" style="margin:8px 0">
+    <div class="kv"><span class="k">Total assets</span><span class="v">${money(a.assets,2)}</span></div>
+    <div class="kv"><span class="k">Loans</span><span class="v">${money(-a.debt,2)}</span></div>
+    <div class="kv"><span class="k">Net assets</span><span class="v">${money(a.net,2)}</span></div>
+    <div class="kv"><span class="k">LTV</span><span class="v">${pct(a.ltv,2)}</span></div>
+    <div class="kv"><span class="k">MTD / YTD P&L</span><span class="v">${money(a.plMtd,0)} / ${money(a.plYtd,0)}</span></div>
+    <div class="kv"><span class="k">Interest paid YTD</span><span class="v">${money(a.intPaidYtd,2)}</span></div>
+    <div class="kv"><span class="k">Dividends YTD</span><span class="v">${money(a.divYtd,2)}</span></div>
+    <div class="kv"><span class="k">Loans found</span><span class="v">${a.loans.length}</span></div>
+    <div class="kv"><span class="k">FX forwards found</span><span class="v">${a.forwards.length}</span></div>
+  </div>
+  <p class="note">Cross-check these against the statement's Portfolio Summary page before saving. If anything is off, cancel and tell me — the parser can be adjusted.</p>
+  <div class="row2" style="margin-top:12px">
+    <button class="btn ghost" onclick="closeModal()">Cancel</button>
+    <button class="btn" onclick="confirmSave()">Save snapshot</button>
+  </div>`);
+}
+function confirmSave(){
+  const res=window.__pending; if(!res) return;
+  res.source='Imported '+new Date().toISOString().slice(0,10);
+  state.snapshots[res.statementDate]=res; saveAll();
+  closeModal(); go('dash');
+}
+function showModal(html){ document.getElementById('modalRoot').innerHTML=`<div class="modal" onclick="if(event.target===this)closeModal()"><div class="sheet">${html}</div></div>`; }
+function closeModal(){ document.getElementById('modalRoot').innerHTML=''; window.__pending=null; }
+
+/* ================= boot ================= */
+render();
+if('serviceWorker' in navigator && location.protocol==='https:'){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
+</script>
+</body>
+</html>
