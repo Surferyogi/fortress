@@ -29,6 +29,7 @@ home loan.
 | UOB Statement of Account | home-loan balance, deposits, rent credits |
 | UOB home-loan screen (screenshot/paste) | balance, rate, instalment, next due date |
 | DBS iBanking "Your MRTL loan draw down" | borrowing potential, credit limit, drawn, available |
+| DBS app → Portfolio details → Performance | TWRR / MWRR **with its date range** |
 | anything else | manual-mapping screen — values are never guessed |
 
 Screenshots go through in-browser OCR (tesseract.js, fetched once from a CDN and then
@@ -58,6 +59,17 @@ importing that screen replaces the illustrative 50/60/70% lines with a real figu
 Where DBS's own "borrowing potential" and "available for drawdown" imply different
 capacities, Fortress uses the **smaller** one and flags the discrepancy. A lending value
 typed into Settings is kept as a cross-check, not as the headline.
+
+## Returns
+
+The DBS app reports a % that depends on two things at once: the **TWRR/MWRR toggle** and the
+**range picker**. A 1Y TWRR and a year-to-date MWRR are different measures over different
+windows and must never be read against each other. Fortress therefore refuses to store a
+return without its period, and the dashboard prints the window beside every percentage.
+
+- **TWRR** strips your deposits and withdrawals out — it judges the holdings.
+- **MWRR** keeps them in — it measures what your own capital earned, and is the right one
+  for asking whether your wealth is outgrowing the debt.
 
 ## Income
 

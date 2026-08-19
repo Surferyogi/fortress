@@ -197,6 +197,35 @@
     };
   }
 
+  /* ---------- 3c. DBS app "Performance summary" (TWRR / MWRR over a picked range) ---------- */
+  function dbsPerformance(text) {
+    const warnings = [];
+    // which toggle is active can't be read from text alone; take whichever label the % follows
+    const pctM = text.match(/(-?\d+(?:\.\d+)?)\s*%/);
+    const pctVal = pctM ? parseFloat(pctM[1]) : null;
+    const hasT = /\bTWRR\b/i.test(text), hasM = /\bMWRR\b/i.test(text);
+    // "18 Aug 2025-18 Aug 2026" / "18 Aug 2025 - 18 Aug 2026"
+    const rangeM = text.match(/(\d{1,2}\s+[A-Za-z]{3}[a-z]*\s+\d{4})\s*[-–]\s*(\d{1,2}\s+[A-Za-z]{3}[a-z]*\s+\d{4})/);
+    const from = rangeM ? dmy(rangeM[1]) : null;
+    const to = rangeM ? dmy(rangeM[2]) : null;
+    const pidM = text.match(/(S-\d{6}-\d)/);
+
+    if (pctVal === null) warnings.push('No percentage found.');
+    if (!from || !to) warnings.push('No date range found — enter the period by hand; a return without its window is not usable.');
+    if (hasT && hasM) warnings.push('Both TWRR and MWRR appear on screen. Confirm below which one the % belongs to — it is the selected toggle.');
+
+    return {
+      kind: 'dbsPerformance',
+      fields: {
+        metric: hasT && !hasM ? 'TWRR' : (hasM && !hasT ? 'MWRR' : 'TWRR'),
+        metricAmbiguous: hasT && hasM,
+        pct: pctVal, from, to, portfolioId: pidM ? pidM[1] : null
+      },
+      warnings,
+      confidence: (pctVal !== null ? 0.4 : 0) + (from && to ? 0.4 : 0) + (hasT || hasM ? 0.2 : 0)
+    };
+  }
+
   /* ---------- 4. generic: any text with money in it ---------- */
   function generic(text) {
     const hits = [];
@@ -211,6 +240,7 @@
   function detect(rawText) {
     const text = norm(rawText);
     const scored = [];
+    if ((has(text,'TWRR')||has(text,'MWRR')) && has(text,'Performance')) scored.push(dbsPerformance(text));
     if (has(text, 'borrowing potential') && (has(text, 'Total assets') || has(text, 'Leverage Factor'))) scored.push(dbsPortfolioSummary(text));
     if (has(text, 'MRTL') && (has(text, 'borrowing potential') || has(text, 'Amount drawn'))) scored.push(dbsMrtl(text));
     if (/OUTSTANDING BALANCE/i.test(text) && /(MONTHLY REPAYMENT|LOAN TERM|Housing Loan)/i.test(text)) scored.push(uobLoanScreen(text));
@@ -223,5 +253,5 @@
     return best;
   }
 
-  return { detect, uobStatement, uobLoanScreen, dbsMrtl, dbsPortfolioSummary, generic, toNum, norm, after, dmy };
+  return { detect, uobStatement, uobLoanScreen, dbsMrtl, dbsPortfolioSummary, dbsPerformance, generic, toNum, norm, after, dmy };
 }));

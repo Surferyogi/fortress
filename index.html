@@ -119,7 +119,7 @@ table.hist th:first-child,table.hist td:first-child{text-align:left}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:AUG:19-08:05';
+const VERSION = 'v2026:AUG:19-09:20';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -143,7 +143,7 @@ const store = {
 /* migrate data saved under the app's former name — runs once, keeps your history */
 (function migrate(){
   try{
-    ['snapshots','manual','income','mrtl','lv','settings'].forEach(key=>{
+    ['snapshots','manual','income','mrtl','lv','reported','settings'].forEach(key=>{
       const oldK='dw.'+key, newK='fortress.'+key;
       if(localStorage.getItem(oldK) && !localStorage.getItem(newK)){
         localStorage.setItem(newK, localStorage.getItem(oldK));
@@ -201,6 +201,19 @@ const LV_SEED = {
                   source:'DBS iBanking Portfolio Summary 19-Aug-2026 12:05 — "Your borrowing potential (indicative)" with "Apply with RM"; no MRTL facility on this account' }
 };
 
+/* Returns exactly as DBS reports them, each stamped with its metric AND its period.
+   TWRR and MWRR over different windows are not comparable — the card exists so the
+   two never look like they contradict each other. */
+const REPORTED_SEED = [{
+  id:'rep-twrr-1y', portfolioId:'S-607522-0', metric:'TWRR', pct:34.93,
+  from:'2025-08-18', to:'2026-08-18', capturedOn:'2026-08-19',
+  source:'DBS app → Portfolio details → Performance, 1Y, TWRR toggle'
+}];
+const METRIC_NOTE = {
+  TWRR:'Time-weighted: strips your deposits and withdrawals out, so it measures how the holdings performed.',
+  MWRR:'Money-weighted: keeps your cash flows in, so it measures what your own capital actually earned.'
+};
+
 /* ================= state ================= */
 let state = {
   snapshots: store.get('fortress.snapshots', null),
@@ -208,6 +221,7 @@ let state = {
   income: store.get('fortress.income', null),
   mrtl: store.get('fortress.mrtl', null),
   lv: store.get('fortress.lv', null),
+  reported: store.get('fortress.reported', null),
   settings: store.get('fortress.settings', { lendingValue:null, ltvAlert:35, homeValue:null, tab:'dash' })
 };
 if(!state.snapshots){ state.snapshots = { [SEED.statementDate]: SEED }; store.set('fortress.snapshots', state.snapshots); }
@@ -215,9 +229,10 @@ if(!state.manual){ state.manual = MANUAL_SEED; store.set('fortress.manual', stat
 if(!state.income){ state.income = INCOME_SEED; store.set('fortress.income', state.income); }
 if(!state.mrtl){ state.mrtl = MRTL_SEED; store.set('fortress.mrtl', state.mrtl); }
 if(!state.lv){ state.lv = LV_SEED; store.set('fortress.lv', state.lv); }
+if(!state.reported){ state.reported = REPORTED_SEED; store.set('fortress.reported', state.reported); }
 function saveAll(){ store.set('fortress.snapshots', state.snapshots); store.set('fortress.manual', state.manual);
   store.set('fortress.income', state.income); store.set('fortress.mrtl', state.mrtl);
-  store.set('fortress.lv', state.lv); store.set('fortress.settings', state.settings); }
+  store.set('fortress.lv', state.lv); store.set('fortress.reported', state.reported); store.set('fortress.settings', state.settings); }
 
 /* lending value per portfolio: an entered ratio wins; otherwise derive it from
    borrowing potential ÷ total assets read off the same screen at the same time. */
@@ -278,6 +293,19 @@ function blendedReturn(snap, period){
   const w=parts.reduce((s,p)=>s+p.start,0);
   return { pct:parts.reduce((s,p)=>s+p.pct*p.start,0)/w, blended:true, parts };
 }
+/* "1 Jan – 31 Jul 2026" style labels, so every % on screen names its own window */
+const dayMon = iso=>{ const d=new Date(iso+'T00:00:00'); return d.getDate()+' '+d.toLocaleString('en',{month:'short'}); };
+const dayMonYr = iso=>{ const d=new Date(iso+'T00:00:00'); return dayMon(iso)+' '+d.getFullYear(); };
+function rangeLabel(fromIso,toIso){
+  if(!fromIso||!toIso) return '';
+  return fromIso.slice(0,4)===toIso.slice(0,4) ? dayMon(fromIso)+' – '+dayMonYr(toIso) : dayMonYr(fromIso)+' – '+dayMonYr(toIso);
+}
+function periodOf(statementDate, period){
+  if(!statementDate) return null;
+  const y=statementDate.slice(0,4), m=statementDate.slice(5,7);
+  return period==='mtd' ? {from:y+'-'+m+'-01', to:statementDate} : {from:y+'-01-01', to:statementDate};
+}
+const monthsBetween=(a,b)=> (new Date(b+'T00:00:00')-new Date(a+'T00:00:00'))/86400000/30.4375;
 const mrtlDates = ()=> Object.keys(state.mrtl||{}).sort();
 const latestMrtl = ()=>{ const d=mrtlDates(); return d.length? state.mrtl[d[d.length-1]] : null; };
 // conservative: a call bites when drawn exceeds the collateral's lending value.
@@ -531,14 +559,15 @@ function viewDash(){
     <div class="tile"><div class="v">${pct(a.ltv,1)}</div><div class="l">Margin LTV — pledged collateral only</div><div class="d">${a.unpledgedAssets>0?pct(a.ltvAllAssets,1)+' if free assets were counted':'all DBS assets secure the loan'}</div></div>
     <div class="tile"><div class="v">${fmt(snap.portfolios.find(p=>Math.abs(p.totalLoans||0)>0)?.leverageFactor ?? snap.portfolios[0].leverageFactor,1)} / ${fmt(snap.portfolios[0].leverageThreshold,0)}</div><div class="l">DBS leverage factor / limit</div></div>
     ${(()=>{ const ry=blendedReturn(snap,'ytd'), rm=blendedReturn(snap,'mtd');
-      const sub=r=> r? (r.blended? r.parts.map(p=>esc(p.id.slice(-2))+' '+pct(p.pct,2)).join(' · ') : 'DBS money-weighted return') : '';
+      const py=periodOf(snap.statementDate,'ytd'), pm=periodOf(snap.statementDate,'mtd');
+      const sub=(r,p)=> (p?rangeLabel(p.from,p.to)+' · ':'')+'MWRR'+(r&&r.blended?' · '+r.parts.map(x=>esc(x.id.slice(-2))+' '+pct(x.pct,2)).join(' · '):'');
       return `
     <div class="tile"><div class="v ${a.plYtd>=0?'pos':'neg'}">${money(a.plYtd)}</div>
       <div class="l">YTD portfolio P&L${ry?' · <b>'+(ry.pct>=0?'+':'')+pct(ry.pct,1)+'</b>':''}</div>
-      <div class="d">${sub(ry)}</div></div>
+      <div class="d">${sub(ry,py)}</div></div>
     <div class="tile"><div class="v ${a.plMtd>=0?'pos':'neg'}">${money(a.plMtd)}</div>
       <div class="l">This month P&L${rm?' · <b>'+(rm.pct>=0?'+':'')+pct(rm.pct,1)+'</b>':''}</div>
-      <div class="d">${sub(rm)}</div></div>`; })()}
+      <div class="d">${sub(rm,pm)}</div></div>`; })()}
     <div class="tile"><div class="v">${money(allInMo)}</div><div class="l">All-in interest / month</div><div class="d">DBS ≈ ${money(a.estMonthlyInterest)} + mortgage ${impInt!==null?money(impInt):(mm?.mortgageRatePct!=null?'≈ '+money(mtg*mm.mortgageRatePct/100/12):'—')}</div></div>
     <div class="tile"><div class="v">${liquid>0?pct(totDebt/liquid*100,1):'—'}</div><div class="l">Total debt ÷ liquid assets</div><div class="d">${money(totDebt,0)} of debt against ${money(liquid,0)}${state.settings.homeValue?'<br>'+pct(totDebt/(liquid+state.settings.homeValue)*100,1)+' incl. property':'<br>property not counted'}</div></div>
   </div>`; })()}
@@ -645,8 +674,26 @@ function viewDash(){
       return `The DBS statement does not publish these ratios${lv?'; the '+lv+'% figure is the one you entered in Settings':' — get them from your RM, or import the MRTL draw-down screen, which states your capacity directly'}.`;
     })()}</p>
   </div>
+  ${(()=>{ const reps=(state.reported||[]).slice().sort((x,y)=>(y.to||'').localeCompare(x.to||''));
+    const py=periodOf(snap.statementDate,'ytd');
+    const ry=blendedReturn(snap,'ytd');
+    if(!reps.length) return '';
+    const metrics=[...new Set(reps.map(r=>r.metric))];
+    return `
   <div class="card">
-    <h2>Interest vs portfolio gains (YTD)</h2>
+    <h2>Returns as DBS reports them</h2>
+    ${reps.map(r=>`
+      <div class="kv"><span class="k"><b>${esc(r.metric)}</b> · ${esc(r.portfolioId||'')}<br>
+        <span style="font-size:11px">${esc(rangeLabel(r.from,r.to))} · ${fmt(monthsBetween(r.from,r.to),0)} months${r.capturedOn?' · read '+esc(r.capturedOn):''}</span></span>
+        <span class="v ${r.pct>=0?'pos':'neg'}">${r.pct>=0?'+':''}${pct(r.pct,2)}</span></div>`).join('')}
+    ${ry&&py?`<div class="kv"><span class="k"><b>MWRR</b> · statement${ry.blended?' (weighted)':''}<br>
+      <span style="font-size:11px">${esc(rangeLabel(py.from,py.to))} · ${fmt(monthsBetween(py.from,py.to),0)} months · from the eStatement</span></span>
+      <span class="v ${ry.pct>=0?'pos':'neg'}">${ry.pct>=0?'+':''}${pct(ry.pct,2)}</span></div>`:''}
+    <p class="note">${metrics.map(m=>'<b>'+esc(m)+'</b> — '+esc(METRIC_NOTE[m]||'')).join('<br>')}${metrics.includes('MWRR')||!ry?'':'<br><b>MWRR</b> — '+esc(METRIC_NOTE.MWRR)}</p>
+    <p class="note">These do not disagree — they measure different things over different windows, so never read one against the other. For “is my wealth outgrowing the debt”, MWRR is the one that counts: it reflects what your own capital earned. TWRR judges the holdings, ignoring when you added or withdrew money. Record a new reading whenever you check the app: Settings → Reported returns.</p>
+  </div>`; })()}
+  <div class="card">
+    <h2>Interest vs portfolio gains${(()=>{const p=periodOf(snap.statementDate,'ytd');return p?' · '+esc(rangeLabel(p.from,p.to)):' (YTD)';})()}</h2>
     <div class="kv"><span class="k">Portfolio P&L</span><span class="v ${a.plYtd>=0?'pos':'neg'}">${money(a.plYtd)}</span></div>
     ${(()=>{ const r=blendedReturn(snap,'ytd'); if(!r) return '';
       return `<div class="kv"><span class="k">Return YTD${r.blended?' <em>(weighted)</em>':''}</span><span class="v ${r.pct>=0?'pos':'neg'}">${r.pct>=0?'+':''}${pct(r.pct,2)}</span></div>
@@ -834,6 +881,25 @@ function viewSet(){
     <button class="btn" style="margin-top:12px" onclick="addIncome()">Add income</button>
     <p class="note">Counted against your debt service on the dashboard. Rent is the one income stream that directly offsets the mortgage.</p>
   </div>
+  <div class="card"><h2>Reported returns (DBS app)</h2>
+    ${(state.reported||[]).map((r,ix)=>`<div class="kv"><span class="k">${esc(r.metric)} · ${esc(r.portfolioId||'')}<br><span style="font-size:11px">${esc(rangeLabel(r.from,r.to))}</span></span>
+      <span class="v">${r.pct>=0?'+':''}${pct(r.pct,2)}
+      <button class="btn ghost" style="width:auto;padding:2px 8px;font-size:11px;margin-left:8px" onclick="delReported(${ix})">×</button></span></div>`).join('') || '<p class="note">None yet.</p>'}
+    <label class="fld">Portfolio</label>
+    <select id="repPid" style="width:100%;background:var(--page);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:10px;font:inherit;font-size:14px">
+      ${Object.keys(state.lv||{}).map(k=>`<option value="${esc(k)}">${esc(k)}</option>`).join('')}
+    </select>
+    <label class="fld">Metric</label>
+    <select id="repMetric" style="width:100%;background:var(--page);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:10px;font:inherit;font-size:14px">
+      <option value="TWRR">TWRR — time-weighted</option>
+      <option value="MWRR">MWRR — money-weighted</option>
+    </select>
+    <label class="fld">Return (%)</label><input type="number" id="repPct" step="0.01" inputmode="decimal" placeholder="e.g. 34.93">
+    <label class="fld">Period from (YYYY-MM-DD)</label><input type="text" id="repFrom" placeholder="2025-08-18">
+    <label class="fld">Period to (YYYY-MM-DD)</label><input type="text" id="repTo" placeholder="2026-08-18">
+    <button class="btn" style="margin-top:12px" onclick="addReported()">Add reading</button>
+    <p class="note">The app's Performance tab reports a % that depends on both the metric toggle and the range picker. Recording the period with the number is the whole point — a TWRR over 1Y and an MWRR year-to-date are not comparable.</p>
+  </div>
   <div class="card"><h2>MRTL facility (DBS)</h2>
     ${mrtlDates().length?mrtlDates().slice().reverse().map(d=>`<div class="kv"><span class="k">${esc(d)}</span><span class="v">drawn ${money(state.mrtl[d].amountDrawn,0)} / cap ${money(mrtlCapacity(state.mrtl[d])?.capacity,0)}
       <button class="btn ghost" style="width:auto;padding:2px 8px;font-size:11px;margin-left:8px" onclick="delMrtl('${esc(d)}')">×</button></span></div>`).join(''):'<p class="note">None yet.</p>'}
@@ -846,7 +912,7 @@ function viewSet(){
   </div>
   <div class="card"><h2>Data</h2>
     <p class="note">Everything is stored only in this browser (localStorage). Use Export in History for a backup before clearing browser data.</p>
-    <button class="btn ghost" style="margin-top:8px" onclick="if(confirm('Delete all snapshots, home-loan entries and settings?')){['fortress.snapshots','fortress.manual','fortress.income','fortress.mrtl','fortress.lv','fortress.settings'].forEach(k=>localStorage.removeItem(k));location.reload();}">Clear all data</button>
+    <button class="btn ghost" style="margin-top:8px" onclick="if(confirm('Delete all snapshots, home-loan entries and settings?')){['fortress.snapshots','fortress.manual','fortress.income','fortress.mrtl','fortress.lv','fortress.reported','fortress.settings'].forEach(k=>localStorage.removeItem(k));location.reload();}">Clear all data</button>
   </div>
   <div class="card"><h2>About</h2>
     <div class="kv"><span class="k">Version</span><span class="v">${VERSION}</span></div>
@@ -908,6 +974,20 @@ function saveLvOverrides(){
   });
   saveAll(); go('dash');
 }
+function addReported(){
+  const pct_=document.getElementById('repPct').value;
+  const from=(document.getElementById('repFrom').value||'').trim();
+  const to=(document.getElementById('repTo').value||'').trim();
+  if(pct_===''){ alert('Enter the return %.'); return; }
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)){ alert('Both dates must be YYYY-MM-DD — the period is what makes the number meaningful.'); return; }
+  if(from>=to){ alert('The "from" date must be before the "to" date.'); return; }
+  state.reported=state.reported||[];
+  state.reported.push({ id:'rep-'+state.reported.length, portfolioId:document.getElementById('repPid').value,
+    metric:document.getElementById('repMetric').value, pct:+pct_, from, to,
+    capturedOn:new Date().toISOString().slice(0,10), source:'manual entry from the DBS app' });
+  saveAll(); go('dash');
+}
+function delReported(ix){ if(confirm('Remove this reading?')){ state.reported.splice(ix,1); saveAll(); render(); } }
 function delIncome(ix){ if(confirm('Remove this income entry?')){ state.income.splice(ix,1); saveAll(); render(); } }
 function delMrtl(d){ if(confirm('Delete MRTL entry '+d+'?')){ delete state.mrtl[d]; saveAll(); render(); } }
 function delSnap(d){
@@ -915,7 +995,7 @@ function delSnap(d){
   if(confirm('Delete snapshot '+d+'?')){ delete state.snapshots[d]; saveAll(); render(); }
 }
 function exportData(){
-  const blob=new Blob([JSON.stringify({app:'Fortress',snapshots:state.snapshots,manual:state.manual,income:state.income,mrtl:state.mrtl,lv:state.lv,settings:state.settings},null,1)],{type:'application/json'});
+  const blob=new Blob([JSON.stringify({app:'Fortress',snapshots:state.snapshots,manual:state.manual,income:state.income,mrtl:state.mrtl,lv:state.lv,reported:state.reported,settings:state.settings},null,1)],{type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download='fortress-backup-'+new Date().toISOString().slice(0,10)+'.json'; a.click();
 }
@@ -923,7 +1003,7 @@ function importData(inp){
   const f=inp.files[0]; if(!f) return;
   f.text().then(t=>{ const d=JSON.parse(t);
     if(!d.snapshots) throw new Error('not a Fortress backup');
-    state.snapshots=d.snapshots; if(d.manual) state.manual=d.manual; if(d.income) state.income=d.income; if(d.mrtl) state.mrtl=d.mrtl; if(d.lv) state.lv=d.lv; if(d.settings) state.settings={...state.settings,...d.settings};
+    state.snapshots=d.snapshots; if(d.manual) state.manual=d.manual; if(d.income) state.income=d.income; if(d.mrtl) state.mrtl=d.mrtl; if(d.lv) state.lv=d.lv; if(d.reported) state.reported=d.reported; if(d.settings) state.settings={...state.settings,...d.settings};
     saveAll(); render(); alert('Backup restored: '+Object.keys(d.snapshots).length+' snapshot(s).');
   }).catch(e=>alert('Could not restore: '+e.message));
   inp.value='';
@@ -1026,7 +1106,7 @@ function routeText(text, sourceName, viaOcr){
   reviewRecognized(r);
 }
 
-const KINDLABEL={ dbsMrtl:'DBS MRTL draw-down screen', dbsPortfolioSummary:'DBS Portfolio Summary screen', uobLoanScreen:'UOB home-loan screen', uobStatement:'UOB Statement of Account', generic:'Unrecognised document' };
+const KINDLABEL={ dbsPerformance:'DBS Performance summary', dbsMrtl:'DBS MRTL draw-down screen', dbsPortfolioSummary:'DBS Portfolio Summary screen', uobLoanScreen:'UOB home-loan screen', uobStatement:'UOB Statement of Account', generic:'Unrecognised document' };
 const fld=(id,label,val,step)=>`<label class="fld">${label}</label><input type="${typeof val==='string'&&!/^-?[\d.]*$/.test(val||'')?'text':'number'}" id="${id}" step="${step||'0.01'}" inputmode="decimal" value="${val==null?'':esc(String(val))}">`;
 
 function reviewRecognized(r){
@@ -1037,6 +1117,26 @@ function reviewRecognized(r){
   ${r.viaOcr?`<div class="warnbox"><b>OCR can misread digits.</b> Compare each number with the screenshot before you save.</div>`:''}
   ${r.warnings.length?`<div class="warnbox"><b>Check these:</b><br>${r.warnings.map(esc).join('<br>')}</div>`:''}`;
 
+  if(r.kind==='dbsPerformance'){
+    const known=Object.keys(state.lv||{});
+    showModal(head+`
+    <label class="fld">Portfolio</label>
+    <select id="rPid" style="width:100%;background:var(--page);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:10px;font:inherit;font-size:14px">
+      ${known.map(k=>`<option value="${esc(k)}"${f.portfolioId===k?' selected':''}>${esc(k)}</option>`).join('')}
+    </select>
+    <label class="fld">Metric — which toggle was selected on screen?</label>
+    <select id="rMetric" style="width:100%;background:var(--page);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:10px;font:inherit;font-size:14px">
+      <option value="TWRR"${f.metric==='TWRR'?' selected':''}>TWRR — time-weighted</option>
+      <option value="MWRR"${f.metric==='MWRR'?' selected':''}>MWRR — money-weighted</option>
+    </select>
+    ${fld('rPct','Return (%)',f.pct)}
+    <label class="fld">Period from</label><input type="text" id="rFrom" value="${esc(f.from||'')}" placeholder="YYYY-MM-DD">
+    <label class="fld">Period to</label><input type="text" id="rTo" value="${esc(f.to||'')}" placeholder="YYYY-MM-DD">
+    <p class="note">The period is not optional here — a return without its window can't be compared with anything.</p>
+    <div class="row2" style="margin-top:12px"><button class="btn ghost" onclick="closeModal()">Cancel</button>
+    <button class="btn" onclick="saveReportedFromReview()">Save reading</button></div>`);
+    return;
+  }
   if(r.kind==='dbsPortfolioSummary'){
     const known=Object.keys(state.lv||{});
     const lvNow=f.lendingValuePct;
@@ -1103,6 +1203,19 @@ function reviewRecognized(r){
   <button class="btn" onclick="saveLoanFromReview()">Save what I entered</button></div>`);
 }
 const gv=id=>{ const el=document.getElementById(id); if(!el) return null; const v=el.value; return v===''?null:(+v); };
+function saveReportedFromReview(){
+  const from=(document.getElementById('rFrom').value||'').trim();
+  const to=(document.getElementById('rTo').value||'').trim();
+  const v=gv('rPct');
+  if(v==null){ alert('Enter the return %.'); return; }
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(from)||!/^\d{4}-\d{2}-\d{2}$/.test(to)||from>=to){ alert('Enter a valid period — from must be before to, both YYYY-MM-DD.'); return; }
+  state.reported=state.reported||[];
+  state.reported.push({ id:'rep-'+state.reported.length, portfolioId:document.getElementById('rPid').value,
+    metric:document.getElementById('rMetric').value, pct:v, from, to,
+    capturedOn:new Date().toISOString().slice(0,10),
+    source:(window.__rec?.sourceName||'manual')+(window.__rec?.viaOcr?' (OCR, reviewed)':' (reviewed)') });
+  saveAll(); closeModal(); go('dash');
+}
 function savePortfolioSummary(){
   const sel=document.getElementById('rPid').value;
   const pid = sel==='__new' ? (document.getElementById('rPidNew').value||'').trim() : sel;
