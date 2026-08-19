@@ -119,7 +119,7 @@ table.hist th:first-child,table.hist td:first-child{text-align:left}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:AUG:19-04:35';
+const VERSION = 'v2026:AUG:19-05:15';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -194,9 +194,11 @@ const MRTL_SEED = { '2026-08-19': {
    Derived = borrowing potential ÷ total assets, both read off the SAME screen at the SAME time. */
 const LV_SEED = {
   'S-607522-0': { asOf:'2026-08-19', borrowingPotential:1240212.07, totalAssets:2789261.47,
-                  basis:'derived', source:'DBS iBanking Portfolio Summary 19-Aug-2026 12:05' },
+                  basis:'derived', pledged:true, hasFacility:true,
+                  source:'DBS iBanking Portfolio Summary 19-Aug-2026 12:05 — shows the MRTL facility and "Contact RM to draw down"' },
   'S-607522-1': { asOf:'2026-08-19', borrowingPotential:22970.17,   totalAssets:41085.73,
-                  basis:'derived', source:'DBS iBanking Portfolio Summary 19-Aug-2026 12:05 ("Your borrowing potential (indicative)")' }
+                  basis:'derived', pledged:false, hasFacility:false,
+                  source:'DBS iBanking Portfolio Summary 19-Aug-2026 12:05 — "Your borrowing potential (indicative)" with "Apply with RM"; no MRTL facility on this account' }
 };
 
 /* ================= state ================= */
@@ -262,10 +264,18 @@ function impliedMortgageInterest(month){
 }
 
 /* ================= derived metrics ================= */
+/* Is this portfolio's collateral actually securing the margin loan?
+   Explicit setting wins; otherwise: it carries loans, or it has an MRTL facility on record. */
+function isPledged(pid, p){
+  const e=(state.lv||{})[pid];
+  if(e && typeof e.pledged==='boolean') return e.pledged;
+  if(p && Math.abs(p.totalLoans||0)>0) return true;
+  return Object.values(state.mrtl||{}).some(m=>m.portfolioId===pid && (m.amountDrawn!=null||m.creditLimit!=null));
+}
 function agg(snap){
   const a = { assets:0, cash:0, equity:0, net:0, debt:0, plMtd:0, plYtd:0,
     divMtd:0, divYtd:0, intRecMtd:0, intRecYtd:0, intPaidMtd:0, intPaidYtd:0, feesYtd:0,
-    loans:[], forwards:[], ccy:{} };
+    loans:[], forwards:[], ccy:{}, pledgedAssets:0, unpledgedAssets:0, unpledgedIds:[] };
   for(const p of snap.portfolios){
     a.assets += p.totalAssets||0; a.cash += p.totalCash||0; a.equity += p.totalEquity||0;
     a.net += p.netAssets||0; a.debt += Math.abs(p.totalLoans||0);
@@ -280,8 +290,14 @@ function agg(snap){
     a.loans.push(...p.loans.map(l=>({...l, pf:p.id})));
     a.forwards.push(...p.fxForwards.map(f=>({...f, pf:p.id})));
     for(const [c,v] of Object.entries(p.ccyAlloc||{})) a.ccy[c]=(a.ccy[c]||0)+v;
+    // Only collateral that actually secures the margin loan belongs in the LTV denominator.
+    // DBS assesses each portfolio standalone: the -0 screen's asset total excludes -1,
+    // and -1 offers "Apply with RM" (no facility) rather than "Contact RM to draw down".
+    if(isPledged(p.id, p)) a.pledgedAssets += p.totalAssets||0;
+    else { a.unpledgedAssets += p.totalAssets||0; a.unpledgedIds.push(p.id); }
   }
-  a.ltv = a.assets>0 ? a.debt/a.assets*100 : null;
+  a.ltv = a.pledgedAssets>0 ? a.debt/a.pledgedAssets*100 : null;
+  a.ltvAllAssets = a.assets>0 ? a.debt/a.assets*100 : null;
   a.estMonthlyInterest = a.loans.reduce((s,l)=> s + Math.abs(l.principal||0)*(l.ratePct||0)/100/12, 0);
   a.carryYtd = a.divYtd + a.intRecYtd - a.intPaidYtd - a.feesYtd;
   a.gainsVsInterest = a.intPaidYtd>0 ? a.plYtd/a.intPaidYtd : null;
@@ -454,9 +470,9 @@ function viewDash(){
     const allInMo = a.estMonthlyInterest + (impInt ?? (mm?.mortgageRatePct!=null && mtg!=null ? mtg*mm.mortgageRatePct/100/12 : 0));
     return `
   <div class="tiles">
-    <div class="tile"><div class="v">${money(a.assets)}</div><div class="l">Investment assets (DBS)</div></div>
+    <div class="tile"><div class="v">${money(a.assets)}</div><div class="l">Investment assets (DBS)</div><div class="d">${a.unpledgedAssets>0?money(a.pledgedAssets,0)+' pledged · '+money(a.unpledgedAssets,0)+' free':'all pledged'}</div></div>
     <div class="tile"><div class="v">${money(totDebt)}</div><div class="l">Total debt</div><div class="d">DBS ${money(a.debt)} + UOB ${money(mtg)}</div></div>
-    <div class="tile"><div class="v">${pct(a.ltv,1)}</div><div class="l">Margin loan-to-assets (LTV)</div></div>
+    <div class="tile"><div class="v">${pct(a.ltv,1)}</div><div class="l">Margin LTV — pledged collateral only</div><div class="d">${a.unpledgedAssets>0?pct(a.ltvAllAssets,1)+' if free assets were counted':'all DBS assets secure the loan'}</div></div>
     <div class="tile"><div class="v">${fmt(snap.portfolios.find(p=>Math.abs(p.totalLoans||0)>0)?.leverageFactor ?? snap.portfolios[0].leverageFactor,1)} / ${fmt(snap.portfolios[0].leverageThreshold,0)}</div><div class="l">DBS leverage factor / limit</div></div>
     <div class="tile"><div class="v ${a.plYtd>=0?'pos':'neg'}">${money(a.plYtd)}</div><div class="l">YTD portfolio P&L</div></div>
     <div class="tile"><div class="v ${a.plMtd>=0?'pos':'neg'}">${money(a.plMtd)}</div><div class="l">This month P&L</div></div>
@@ -493,16 +509,24 @@ function viewDash(){
       const p=(latest().portfolios||[]).find(x=>x.id===pid);
       const loan=p? Math.abs(p.totalLoans||0) : 0;
       const trigger = L.pct>0 ? (loan>0 ? 100 - loan/(L.borrowingPotential ?? (L.pct/100*(L.totalAssets||0))) *100 : null) : null;
-      return `<div class="kv"><span class="k"><b>${esc(pid)}</b><br><span style="font-size:11px">${L.basis==='derived'
+      const pledged=isPledged(pid,p);
+      return `<div class="kv"><span class="k"><b>${esc(pid)}</b> <span class="pill">${pledged?'pledged':'not pledged'}</span><br><span style="font-size:11px">${L.basis==='derived'
           ? money(L.borrowingPotential,0)+' ÷ '+money(L.totalAssets,0)+' assets · same screen, same time'
           : 'entered manually'} · ${esc(L.asOf||'')}</span></span>
-        <span class="v">${pct(L.pct,2)}<br><span style="font-size:11px;font-weight:400">${loan>0?'call after −'+pct(trigger,1):'no loan drawn'}</span></span></div>`;
+        <span class="v">${pct(L.pct,2)}<br><span style="font-size:11px;font-weight:400">${loan>0?'call after −'+pct(trigger,1):(pledged?'no loan drawn':'no facility')}</span></span></div>`;
     }).join('');
+    const free=ids.filter(pid=>!isPledged(pid,(latest().portfolios||[]).find(x=>x.id===pid)));
+    const freeBp=free.reduce((s,pid)=>s+((state.lv[pid]||{}).borrowingPotential||0),0);
+    const freeAssets=free.reduce((s,pid)=>s+((state.lv[pid]||{}).totalAssets||0),0);
     return `
   <div class="card">
     <h2>Lending value by portfolio<span class="pill">derived from DBS figures</span></h2>
     ${rows}
-    <p class="note">The advance ratio DBS effectively applies to each portfolio's collateral: its stated borrowing potential divided by that portfolio's total assets, both read off the same screen at the same moment — so no date mismatch. These are DBS's own indicative numbers, not published per-security ratios; the mix of holdings will move them month to month. Override either one in Settings if your RM gives you a firm figure.</p>
+    <p class="note">Each portfolio is assessed <b>standalone</b>. The advance ratio is that portfolio's stated borrowing potential divided by its own total assets, both read off the same screen at the same moment — so no date mismatch. Override either one in Settings if your RM gives you a firm figure.</p>
+    ${free.length?`<div class="warnbox" style="background:color-mix(in srgb,var(--good) 10%,var(--surface));border-color:color-mix(in srgb,var(--good) 35%,transparent)">
+      <b>${free.map(esc).join(', ')} is not part of the facility.</b>
+      Its ${money(freeAssets,0)} of assets do <em>not</em> secure the margin loan, so Fortress leaves them out of the LTV denominator — the DBS screen for the borrowing account shows its own assets only, and this account offers “Apply with RM” rather than “Contact RM to draw down”.
+      Two consequences: pledging it would add roughly ${money(freeBp,0)} of capacity (${pct(freeBp/(mrtlCapacity(latestMrtl())?.capacity||1)*100,1)} more — probably not worth the paperwork), and as it stands it is <b>unencumbered</b>: assets you could sell to meet a call without touching the pledged portfolio.</div>`:''}
   </div>`; })()}
   ${(()=>{ const inc=(state.income||[]).filter(i=>i.endMonth==null); if(!inc.length) return '';
     const mm=latestMrtl?latestManual():null;
@@ -698,6 +722,7 @@ function viewSet(){
     ${Object.keys(state.lv||{}).map(pid=>{ const L=lvFor(pid); return `
       <div class="kv"><span class="k"><b>${esc(pid)}</b><br><span style="font-size:11px">${L?(L.basis==='derived'?'derived from DBS borrowing potential':'entered by you')+' · '+esc(L.asOf||''):'incomplete'}</span></span>
         <span class="v">${L?pct(L.pct,2):'—'}</span></div>
+      <label class="fld"><input type="checkbox" id="lvp_${esc(pid).replace(/[^A-Za-z0-9]/g,'_')}" ${isPledged(pid,(latest().portfolios||[]).find(x=>x.id===pid))?'checked':''} style="width:auto;margin-right:6px">This portfolio's assets secure the margin loan (pledged)</label>
       <label class="fld">Override ${esc(pid)} lending value (%) — leave blank to keep the derived figure</label>
       <input type="number" id="lvo_${esc(pid).replace(/[^A-Za-z0-9]/g,'_')}" min="1" max="95" step="0.01" inputmode="decimal" value="${(state.lv[pid].ratioPct??'')}" placeholder="derived: ${L?fmt(L.pct,2):'—'}">`;
     }).join('')}
@@ -804,6 +829,8 @@ function saveLvOverrides(){
     if(!el) return;
     if(el.value===''){ delete state.lv[pid].ratioPct; state.lv[pid].basis='derived'; }
     else { state.lv[pid].ratioPct=Math.min(95,Math.max(1,+el.value)); state.lv[pid].basis='entered'; }
+    const pl=document.getElementById('lvp_'+pid.replace(/[^A-Za-z0-9]/g,'_'));
+    if(pl) state.lv[pid].pledged=pl.checked;
   });
   saveAll(); go('dash');
 }
