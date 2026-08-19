@@ -149,17 +149,51 @@
     if (bp !== null && drawn !== null && avail !== null) {
       const implied = bp - drawn;
       if (Math.abs(implied - avail) > 1) {
-        warnings.push('DBS’s own figures don’t reconcile: borrowing potential − amount drawn = ' +
-          implied.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
-          ', but "available for drawdown" says ' +
-          avail.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
-          '. Ask your RM which one governs a margin call. Fortress uses the conservative one.');
+        warnings.push('Borrowing potential and available-for-drawdown measure different things — ' +
+          'the first is asset-based and subject to credit approval, the second is what is drawable ' +
+          'inside the already-approved facility. Fortress uses whichever implies the smaller capacity.');
       }
     }
     return {
       kind: 'dbsMrtl',
       fields: { borrowingPotential: bp, creditLimit: limit, amountDrawn: drawn, availableForDrawdown: avail },
       warnings, confidence: (bp !== null ? 0.5 : 0) + (drawn !== null ? 0.3 : 0) + (limit !== null ? 0.2 : 0)
+    };
+  }
+
+  /* ---------- 3b. DBS Portfolio Summary screen (supersedes the bare MRTL panel) ---------- */
+  function dbsPortfolioSummary(text) {
+    const warnings = [];
+    const bp = after(text, 'borrowing potential', 90);   // label may be "…(indicative)"
+    const limit = after(text, 'Approved MRTL credit limit', 60);
+    const drawn = after(text, 'Amount drawn', 60);
+    const avail = after(text, 'Available for drawdown', 60);
+    const assets = after(text, 'Total assets', 60);
+    const loansRaw = after(text, 'Total loans', 60);
+    const derivs = after(text, 'Total derivatives', 60);
+    const netAssets = after(text, 'Total net assets', 60);
+    const pr = after(text, 'Portfolio Risk Rating', 40);
+    const prT = after(text, 'Threshold', 30);
+    const lf = after(text, 'Leverage Factor', 40);
+    const loans = loansRaw === null ? null : Math.abs(loansRaw);
+
+    if (assets === null) warnings.push('Total assets not found — the lending value cannot be derived without it.');
+    if (bp === null) warnings.push('Borrowing potential not found.');
+    if (bp !== null && assets !== null && assets > 0) {
+      const lv = bp / assets * 100;
+      if (lv > 100) warnings.push('Derived lending value is above 100% (' + lv.toFixed(1) + '%) — check the OCR.');
+    }
+    return {
+      kind: 'dbsPortfolioSummary',
+      fields: {
+        totalAssets: assets, totalLoans: loans, totalDerivatives: derivs, netAssets: netAssets,
+        borrowingPotential: bp, creditLimit: limit, amountDrawn: drawn, availableForDrawdown: avail,
+        riskRating: pr, riskThreshold: prT, leverageFactor: lf,
+        lendingValuePct: (bp !== null && assets) ? bp / assets * 100 : null,
+        hasFacility: drawn !== null || limit !== null
+      },
+      warnings,
+      confidence: (assets !== null ? 0.4 : 0) + (bp !== null ? 0.4 : 0) + (lf !== null ? 0.2 : 0)
     };
   }
 
@@ -177,6 +211,7 @@
   function detect(rawText) {
     const text = norm(rawText);
     const scored = [];
+    if (has(text, 'borrowing potential') && (has(text, 'Total assets') || has(text, 'Leverage Factor'))) scored.push(dbsPortfolioSummary(text));
     if (has(text, 'MRTL') && (has(text, 'borrowing potential') || has(text, 'Amount drawn'))) scored.push(dbsMrtl(text));
     if (/OUTSTANDING BALANCE/i.test(text) && /(MONTHLY REPAYMENT|LOAN TERM|Housing Loan)/i.test(text)) scored.push(uobLoanScreen(text));
     if (has(text, 'Portfolio Overview') || has(text, 'Total Outstanding Balance') ||
@@ -188,5 +223,5 @@
     return best;
   }
 
-  return { detect, uobStatement, uobLoanScreen, dbsMrtl, generic, toNum, norm, after, dmy };
+  return { detect, uobStatement, uobLoanScreen, dbsMrtl, dbsPortfolioSummary, generic, toNum, norm, after, dmy };
 }));

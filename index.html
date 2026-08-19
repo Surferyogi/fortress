@@ -119,7 +119,7 @@ table.hist th:first-child,table.hist td:first-child{text-align:left}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:AUG:19-03:05';
+const VERSION = 'v2026:AUG:19-04:35';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -143,7 +143,7 @@ const store = {
 /* migrate data saved under the app's former name — runs once, keeps your history */
 (function migrate(){
   try{
-    ['snapshots','manual','income','mrtl','settings'].forEach(key=>{
+    ['snapshots','manual','income','mrtl','lv','settings'].forEach(key=>{
       const oldK='dw.'+key, newK='fortress.'+key;
       if(localStorage.getItem(oldK) && !localStorage.getItem(newK)){
         localStorage.setItem(newK, localStorage.getItem(oldK));
@@ -173,12 +173,31 @@ const INCOME_SEED = [{
   source:'Inward CR - GIRO, observed on the May and Jun 2026 UOB statements'
 }];
 
-/* DBS MRTL facility — seeded from the iBanking draw-down screen */
+/* DBS's own wording for its two capacity figures — verbatim from the app's (i) tooltips.
+   They are NOT the same quantity, which is why they don't reconcile. */
+const CAPACITY_DEFS = {
+  borrowingPotential:'This is the indicative amount you can borrow based on your current assets, subject to credit approval. It’s not an offer or a commitment to provide you credit facilities. To assess your actual credit limit, we’ll consider your account diversification needs, concentration limits, availability of qualifying collateral, and more.',
+  availableForDrawdown:'This is the maximum you can draw down on your MRTL (Multi-Currency Revolving Term Loan). It’s an indicative amount based on your existing portfolio.'
+};
+
+/* DBS MRTL facility + live portfolio position — from the iBanking Portfolio Summary screen */
 const MRTL_SEED = { '2026-08-19': {
-  asOf:'2026-08-19', borrowingPotential:1240212.07, creditLimit:3000000.00,
+  asOf:'2026-08-19', portfolioId:'S-607522-0',
+  borrowingPotential:1240212.07, creditLimit:3000000.00,
   amountDrawn:567326.23, availableForDrawdown:1120577.90,
-  source:'DBS iBanking — "Your MRTL loan draw down" screen'
+  totalAssets:2789261.47, totalLoans:568140.72, totalDerivatives:0,
+  riskRating:4.2, riskThreshold:5.0, leverageFactor:1.2, leverageThreshold:6.0,
+  source:'DBS iBanking — Portfolio Summary, 19-Aug-2026 12:05'
 }};
+
+/* Lending value (advance ratio) per portfolio.
+   Derived = borrowing potential ÷ total assets, both read off the SAME screen at the SAME time. */
+const LV_SEED = {
+  'S-607522-0': { asOf:'2026-08-19', borrowingPotential:1240212.07, totalAssets:2789261.47,
+                  basis:'derived', source:'DBS iBanking Portfolio Summary 19-Aug-2026 12:05' },
+  'S-607522-1': { asOf:'2026-08-19', borrowingPotential:22970.17,   totalAssets:41085.73,
+                  basis:'derived', source:'DBS iBanking Portfolio Summary 19-Aug-2026 12:05 ("Your borrowing potential (indicative)")' }
+};
 
 /* ================= state ================= */
 let state = {
@@ -186,14 +205,28 @@ let state = {
   manual: store.get('fortress.manual', null),
   income: store.get('fortress.income', null),
   mrtl: store.get('fortress.mrtl', null),
+  lv: store.get('fortress.lv', null),
   settings: store.get('fortress.settings', { lendingValue:null, ltvAlert:35, homeValue:null, tab:'dash' })
 };
 if(!state.snapshots){ state.snapshots = { [SEED.statementDate]: SEED }; store.set('fortress.snapshots', state.snapshots); }
 if(!state.manual){ state.manual = MANUAL_SEED; store.set('fortress.manual', state.manual); }
 if(!state.income){ state.income = INCOME_SEED; store.set('fortress.income', state.income); }
 if(!state.mrtl){ state.mrtl = MRTL_SEED; store.set('fortress.mrtl', state.mrtl); }
+if(!state.lv){ state.lv = LV_SEED; store.set('fortress.lv', state.lv); }
 function saveAll(){ store.set('fortress.snapshots', state.snapshots); store.set('fortress.manual', state.manual);
-  store.set('fortress.income', state.income); store.set('fortress.mrtl', state.mrtl); store.set('fortress.settings', state.settings); }
+  store.set('fortress.income', state.income); store.set('fortress.mrtl', state.mrtl);
+  store.set('fortress.lv', state.lv); store.set('fortress.settings', state.settings); }
+
+/* lending value per portfolio: an entered ratio wins; otherwise derive it from
+   borrowing potential ÷ total assets read off the same screen at the same time. */
+function lvFor(pid){
+  const e=(state.lv||{})[pid]; if(!e) return null;
+  if(e.ratioPct!=null) return {pct:e.ratioPct, basis:'entered', asOf:e.asOf, source:e.source};
+  if(e.borrowingPotential!=null && e.totalAssets>0)
+    return {pct:e.borrowingPotential/e.totalAssets*100, basis:'derived', asOf:e.asOf, source:e.source,
+            borrowingPotential:e.borrowingPotential, totalAssets:e.totalAssets};
+  return null;
+}
 
 /* ---- income + MRTL helpers ---- */
 const monthlyIncome = ()=> (state.income||[]).filter(i=>i.endMonth==null)
@@ -205,10 +238,15 @@ const latestMrtl = ()=>{ const d=mrtlDates(); return d.length? state.mrtl[d[d.le
 // DBS gives two candidate capacity figures that don't agree — always use the smaller.
 function mrtlCapacity(m){
   if(!m) return null;
-  const cands=[m.borrowingPotential, m.availableForDrawdown!=null&&m.amountDrawn!=null? m.availableForDrawdown+m.amountDrawn : null]
-    .filter(v=>v!=null&&v>0);
+  // Two different quantities, per DBS's own tooltips:
+  //  A) borrowing potential — asset-based, "subject to credit approval"; ignores the approved facility
+  //  B) available for drawdown + already drawn — total drawable on the EXISTING approved MRTL
+  const A=m.borrowingPotential;
+  const B=(m.availableForDrawdown!=null&&m.amountDrawn!=null)? m.availableForDrawdown+m.amountDrawn : null;
+  const cands=[A,B].filter(v=>v!=null&&v>0);
   if(!cands.length) return null;
-  return { capacity:Math.min(...cands), optimistic:Math.max(...cands), disputed:Math.max(...cands)-Math.min(...cands)>1 };
+  return { capacity:Math.min(...cands), optimistic:Math.max(...cands),
+           assetBased:A, facilityBased:B, differ:cands.length>1 && Math.abs(A-B)>1 };
 }
 const dates = ()=> Object.keys(state.snapshots).sort();
 const latest = ()=> state.snapshots[dates()[dates().length-1]];
@@ -437,12 +475,34 @@ function viewDash(){
       <b>Facility ${pct(util,1)} used</b>
       Your collateral's lending value can fall ${pct(fall,1)} before the drawn amount exceeds it.</div></div>
     <div class="kv"><span class="k">Amount drawn</span><span class="v">${money(m.amountDrawn,2)}</span></div>
-    <div class="kv"><span class="k">Borrowing potential (collateral capacity)</span><span class="v">${money(m.borrowingPotential,2)}</span></div>
-    <div class="kv"><span class="k">Available for drawdown (as DBS states it)</span><span class="v">${money(m.availableForDrawdown,2)}</span></div>
-    <div class="kv"><span class="k">Approved credit limit</span><span class="v">${money(m.creditLimit,2)}</span></div>
-    <div class="kv"><span class="k">Headroom used by Fortress (conservative)</span><span class="v">${money(headroom,2)}</span></div>
-    ${c.disputed?`<div class="warnbox"><b>These two DBS numbers disagree.</b> Borrowing potential − amount drawn = ${money(m.borrowingPotential-m.amountDrawn,2)}, but DBS shows ${money(m.availableForDrawdown,2)} available — a ${money(c.disputed?c.optimistic-c.capacity:0,2)} gap. Fortress uses the smaller capacity (${money(c.capacity,2)}). Ask Mark Chen which figure governs a margin call.</div>`:''}
-    <p class="note">This is the real margin metric — it uses DBS's own assessment of what your collateral supports, not an assumed advance ratio. Update it by importing a screenshot of the MRTL draw-down screen.</p>
+    <div class="kv"><span class="k">Approved MRTL credit limit</span><span class="v">${money(m.creditLimit,2)}</span></div>
+    ${m.totalAssets!=null?`<div class="kv"><span class="k">Portfolio assets on that screen</span><span class="v">${money(m.totalAssets,2)}</span></div>`:''}
+    ${m.leverageFactor!=null?`<div class="kv"><span class="k">Leverage factor / risk rating (as DBS shows)</span><span class="v">${fmt(m.leverageFactor,1)} of ${fmt(m.leverageThreshold,1)} · PR ${fmt(m.riskRating,1)} of ${fmt(m.riskThreshold,1)}</span></div>`:''}
+    <h2 style="margin-top:14px">The two capacity figures</h2>
+    <div class="kv"><span class="k"><b>A · Borrowing potential</b><br><span style="font-size:11px">asset-based, subject to credit approval</span></span><span class="v">${money(c.assetBased,2)}</span></div>
+    <div class="kv"><span class="k"><b>B · Drawable on the existing facility</b><br><span style="font-size:11px">available ${money(m.availableForDrawdown,0)} + already drawn ${money(m.amountDrawn,0)}</span></span><span class="v">${money(c.facilityBased,2)}</span></div>
+    ${c.differ?`<div class="warnbox"><b>These measure different things — that's why they don't add up.</b>
+      DBS defines <b>borrowing potential</b> as “the indicative amount you can borrow based on your current assets, <em>subject to credit approval</em>… not an offer or a commitment”, with the actual limit depending on diversification, concentration limits and qualifying collateral.
+      <b>Available for drawdown</b> is “the maximum you can draw down on your MRTL… based on your existing portfolio” — i.e. inside the facility already approved.
+      A is ${money(Math.abs(c.optimistic-c.capacity),0)} ${c.assetBased<c.facilityBased?'lower':'higher'} than B. Fortress uses the smaller (${money(c.capacity,2)}) for the margin metric, so the buffer is never overstated.</div>`:''}
+    <p class="note">This is the real margin metric — it uses DBS's own assessment of what your collateral supports, not an assumed advance ratio. On B's more generous basis the buffer would be ${pct(100-m.amountDrawn/c.optimistic*100,1)} rather than ${pct(fall,1)}. Update by importing the Portfolio Summary screen.</p>
+  </div>`; })()}
+  ${(()=>{ const ids=Object.keys(state.lv||{}); if(!ids.length) return '';
+    const rows=ids.map(pid=>{
+      const L=lvFor(pid); if(!L) return '';
+      const p=(latest().portfolios||[]).find(x=>x.id===pid);
+      const loan=p? Math.abs(p.totalLoans||0) : 0;
+      const trigger = L.pct>0 ? (loan>0 ? 100 - loan/(L.borrowingPotential ?? (L.pct/100*(L.totalAssets||0))) *100 : null) : null;
+      return `<div class="kv"><span class="k"><b>${esc(pid)}</b><br><span style="font-size:11px">${L.basis==='derived'
+          ? money(L.borrowingPotential,0)+' ÷ '+money(L.totalAssets,0)+' assets · same screen, same time'
+          : 'entered manually'} · ${esc(L.asOf||'')}</span></span>
+        <span class="v">${pct(L.pct,2)}<br><span style="font-size:11px;font-weight:400">${loan>0?'call after −'+pct(trigger,1):'no loan drawn'}</span></span></div>`;
+    }).join('');
+    return `
+  <div class="card">
+    <h2>Lending value by portfolio<span class="pill">derived from DBS figures</span></h2>
+    ${rows}
+    <p class="note">The advance ratio DBS effectively applies to each portfolio's collateral: its stated borrowing potential divided by that portfolio's total assets, both read off the same screen at the same moment — so no date mismatch. These are DBS's own indicative numbers, not published per-security ratios; the mix of holdings will move them month to month. Override either one in Settings if your RM gives you a firm figure.</p>
   </div>`; })()}
   ${(()=>{ const inc=(state.income||[]).filter(i=>i.endMonth==null); if(!inc.length) return '';
     const mm=latestMrtl?latestManual():null;
@@ -472,10 +532,13 @@ function viewDash(){
     </div>
     ${(()=>{ const m=latestMrtl(), c=mrtlCapacity(m);
       if(m && c && m.amountDrawn!=null){
-        const impliedLV = a.assets>0 ? c.capacity/a.assets*100 : null;
+        // prefer the same-screen ratio (no date mismatch); fall back to statement assets
+        const pidL = lvFor(m.portfolioId||'') || null;
+        const impliedLV = pidL ? pidL.pct : (a.assets>0 ? c.capacity/a.assets*100 : null);
+        const lvSameScreen = !!pidL;
         const gap = (lv!=null && impliedLV!=null) ? Math.abs(impliedLV-lv) : null;
         return `<div class="kv"><span class="k">Fall in collateral value before a call <b>(DBS figures)</b></span><span class="v">${pct(100-m.amountDrawn/c.capacity*100,1)}</span></div>
-        ${impliedLV!=null?`<div class="kv"><span class="k">Implied average advance ratio</span><span class="v">${pct(impliedLV,1)}</span></div>`:''}
+        ${impliedLV!=null?`<div class="kv"><span class="k">Implied average advance ratio${lvSameScreen?'':' <em>(dates differ)</em>'}</span><span class="v">${pct(impliedLV,2)}</span></div>`:''}
         ${lv!=null?`<div class="kv"><span class="k">Your entered lending value (cross-check)</span><span class="v">${pct(lv,1)} → call after −${pct(drawdownToTrigger(a.debt,a.assets,lv),1)}</span></div>`:''}
         ${gap!=null && gap>5?`<div class="warnbox">Your entered lending value (${pct(lv,1)}) and the ratio implied by DBS's borrowing potential (${pct(impliedLV,1)}) differ by ${fmt(gap,1)} points. Fortress leads with DBS's own figure — worth reconciling with your RM.</div>`:''}`;
       }
@@ -484,7 +547,8 @@ function viewDash(){
         : ILLUSTRATIVE_LV.map(v=>`<div class="kv"><span class="k">If lending value were ${v}% <em>(illustrative)</em></span><span class="v">call after −${pct(drawdownToTrigger(a.debt,a.assets,v),1)}</span></div>`).join('');
     })()}
     <p class="note">A margin call occurs when the loan exceeds the portfolio's lending value (advance ratio × market value). ${(()=>{ const m=latestMrtl(), c=mrtlCapacity(m);
-      if(m&&c) return `The headline figure above now comes from DBS's own borrowing-potential number (${esc(m.asOf)}), not an assumption. The implied advance ratio divides that capacity by the ${esc(latestDate())} portfolio value — the two dates differ, so treat the ratio as approximate.`;
+      if(m&&c){ const same=!!lvFor(m.portfolioId||'');
+        return `The headline figure above comes from DBS's own borrowing-potential number (${esc(m.asOf)}), not an assumption. ${same?'The advance ratio uses the assets shown on that same screen, so there is no date mismatch.':'The implied ratio divides that capacity by the '+esc(latestDate())+' portfolio value — the dates differ, so treat it as approximate.'}`; }
       return `The DBS statement does not publish these ratios${lv?'; the '+lv+'% figure is the one you entered in Settings':' — get them from your RM, or import the MRTL draw-down screen, which states your capacity directly'}.`;
     })()}</p>
   </div>
@@ -630,8 +694,18 @@ function viewHist(){
 function viewSet(){
   const s=state.settings;
   return `
+  <div class="card"><h2>Lending value per portfolio</h2>
+    ${Object.keys(state.lv||{}).map(pid=>{ const L=lvFor(pid); return `
+      <div class="kv"><span class="k"><b>${esc(pid)}</b><br><span style="font-size:11px">${L?(L.basis==='derived'?'derived from DBS borrowing potential':'entered by you')+' · '+esc(L.asOf||''):'incomplete'}</span></span>
+        <span class="v">${L?pct(L.pct,2):'—'}</span></div>
+      <label class="fld">Override ${esc(pid)} lending value (%) — leave blank to keep the derived figure</label>
+      <input type="number" id="lvo_${esc(pid).replace(/[^A-Za-z0-9]/g,'_')}" min="1" max="95" step="0.01" inputmode="decimal" value="${(state.lv[pid].ratioPct??'')}" placeholder="derived: ${L?fmt(L.pct,2):'—'}">`;
+    }).join('')}
+    <button class="btn" style="margin-top:12px" onclick="saveLvOverrides()">Save lending values</button>
+    <p class="note">Derived = the portfolio's borrowing potential ÷ its total assets, both read off the same DBS screen at the same time. Import an updated Portfolio Summary screenshot to refresh them. An override here wins, for when your RM gives you a firm contractual ratio.</p>
+  </div>
   <div class="card"><h2>Margin-call model</h2>
-    <label class="fld">Portfolio lending value (%) — the advance ratio DBS applies to your collateral. Ask your RM (statement doesn't publish it). Leave blank to keep illustrative 50/60/70% lines.</label>
+    <label class="fld">Fallback lending value (%) — used only if no portfolio figure is available at all.</label>
     <input type="number" id="setLV" min="1" max="95" step="1" inputmode="decimal" value="${s.lendingValue??''}" placeholder="e.g. 60">
     <label class="fld">LTV alert level (%)</label>
     <input type="number" id="setAlert" min="5" max="95" step="1" inputmode="decimal" value="${s.ltvAlert}">
@@ -673,7 +747,7 @@ function viewSet(){
   </div>
   <div class="card"><h2>Data</h2>
     <p class="note">Everything is stored only in this browser (localStorage). Use Export in History for a backup before clearing browser data.</p>
-    <button class="btn ghost" style="margin-top:8px" onclick="if(confirm('Delete all snapshots, home-loan entries and settings?')){['fortress.snapshots','fortress.manual','fortress.income','fortress.mrtl','fortress.settings'].forEach(k=>localStorage.removeItem(k));location.reload();}">Clear all data</button>
+    <button class="btn ghost" style="margin-top:8px" onclick="if(confirm('Delete all snapshots, home-loan entries and settings?')){['fortress.snapshots','fortress.manual','fortress.income','fortress.mrtl','fortress.lv','fortress.settings'].forEach(k=>localStorage.removeItem(k));location.reload();}">Clear all data</button>
   </div>
   <div class="card"><h2>About</h2>
     <div class="kv"><span class="k">Version</span><span class="v">${VERSION}</span></div>
@@ -724,6 +798,15 @@ function addIncome(){
     payer:(document.getElementById('incPayer').value||'').trim()||null, endMonth:null, source:'manual entry' });
   saveAll(); render();
 }
+function saveLvOverrides(){
+  Object.keys(state.lv||{}).forEach(pid=>{
+    const el=document.getElementById('lvo_'+pid.replace(/[^A-Za-z0-9]/g,'_'));
+    if(!el) return;
+    if(el.value===''){ delete state.lv[pid].ratioPct; state.lv[pid].basis='derived'; }
+    else { state.lv[pid].ratioPct=Math.min(95,Math.max(1,+el.value)); state.lv[pid].basis='entered'; }
+  });
+  saveAll(); go('dash');
+}
 function delIncome(ix){ if(confirm('Remove this income entry?')){ state.income.splice(ix,1); saveAll(); render(); } }
 function delMrtl(d){ if(confirm('Delete MRTL entry '+d+'?')){ delete state.mrtl[d]; saveAll(); render(); } }
 function delSnap(d){
@@ -731,7 +814,7 @@ function delSnap(d){
   if(confirm('Delete snapshot '+d+'?')){ delete state.snapshots[d]; saveAll(); render(); }
 }
 function exportData(){
-  const blob=new Blob([JSON.stringify({app:'Fortress',snapshots:state.snapshots,manual:state.manual,income:state.income,mrtl:state.mrtl,settings:state.settings},null,1)],{type:'application/json'});
+  const blob=new Blob([JSON.stringify({app:'Fortress',snapshots:state.snapshots,manual:state.manual,income:state.income,mrtl:state.mrtl,lv:state.lv,settings:state.settings},null,1)],{type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download='fortress-backup-'+new Date().toISOString().slice(0,10)+'.json'; a.click();
 }
@@ -739,7 +822,7 @@ function importData(inp){
   const f=inp.files[0]; if(!f) return;
   f.text().then(t=>{ const d=JSON.parse(t);
     if(!d.snapshots) throw new Error('not a Fortress backup');
-    state.snapshots=d.snapshots; if(d.manual) state.manual=d.manual; if(d.income) state.income=d.income; if(d.mrtl) state.mrtl=d.mrtl; if(d.settings) state.settings={...state.settings,...d.settings};
+    state.snapshots=d.snapshots; if(d.manual) state.manual=d.manual; if(d.income) state.income=d.income; if(d.mrtl) state.mrtl=d.mrtl; if(d.lv) state.lv=d.lv; if(d.settings) state.settings={...state.settings,...d.settings};
     saveAll(); render(); alert('Backup restored: '+Object.keys(d.snapshots).length+' snapshot(s).');
   }).catch(e=>alert('Could not restore: '+e.message));
   inp.value='';
@@ -842,7 +925,7 @@ function routeText(text, sourceName, viaOcr){
   reviewRecognized(r);
 }
 
-const KINDLABEL={ dbsMrtl:'DBS MRTL draw-down screen', uobLoanScreen:'UOB home-loan screen', uobStatement:'UOB Statement of Account', generic:'Unrecognised document' };
+const KINDLABEL={ dbsMrtl:'DBS MRTL draw-down screen', dbsPortfolioSummary:'DBS Portfolio Summary screen', uobLoanScreen:'UOB home-loan screen', uobStatement:'UOB Statement of Account', generic:'Unrecognised document' };
 const fld=(id,label,val,step)=>`<label class="fld">${label}</label><input type="${typeof val==='string'&&!/^-?[\d.]*$/.test(val||'')?'text':'number'}" id="${id}" step="${step||'0.01'}" inputmode="decimal" value="${val==null?'':esc(String(val))}">`;
 
 function reviewRecognized(r){
@@ -853,6 +936,31 @@ function reviewRecognized(r){
   ${r.viaOcr?`<div class="warnbox"><b>OCR can misread digits.</b> Compare each number with the screenshot before you save.</div>`:''}
   ${r.warnings.length?`<div class="warnbox"><b>Check these:</b><br>${r.warnings.map(esc).join('<br>')}</div>`:''}`;
 
+  if(r.kind==='dbsPortfolioSummary'){
+    const known=Object.keys(state.lv||{});
+    const lvNow=f.lendingValuePct;
+    showModal(head+`
+    <label class="fld">Which portfolio is this screen for?</label>
+    <select id="rPid" style="width:100%;background:var(--page);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:10px;font:inherit;font-size:14px">
+      ${known.map(k=>`<option value="${esc(k)}"${f.hasFacility && k.endsWith('-0')?' selected':''}${!f.hasFacility && k.endsWith('-1')?' selected':''}>${esc(k)}</option>`).join('')}
+      <option value="__new">Another portfolio…</option>
+    </select>
+    <input type="text" id="rPidNew" placeholder="Portfolio id, e.g. S-607522-2" style="margin-top:8px">
+    ${fld('rAssets','Total assets (SGD)',f.totalAssets)}
+    ${fld('rLoans','Total loans (SGD, positive number)',f.totalLoans)}
+    ${fld('rBP','Borrowing potential (SGD)',f.borrowingPotential)}
+    ${f.hasFacility?`${fld('rDrawn','Amount drawn (SGD)',f.amountDrawn)}
+    ${fld('rAvail','Available for drawdown (SGD)',f.availableForDrawdown)}
+    ${fld('rLimit','Approved MRTL credit limit (SGD)',f.creditLimit)}`:''}
+    ${fld('rLF','Leverage factor (as shown)',f.leverageFactor,'0.1')}
+    ${fld('rPR','Portfolio risk rating (as shown)',f.riskRating,'0.1')}
+    <label class="fld">As-of date</label><input type="text" id="rAsOf" value="${new Date().toISOString().slice(0,10)}" placeholder="YYYY-MM-DD">
+    ${lvNow!=null?`<div class="card" style="margin:12px 0"><div class="kv"><span class="k">Lending value this implies</span><span class="v">${pct(lvNow,2)}</span></div>
+      <p class="note" style="margin:6px 0 0">Borrowing potential ÷ total assets, both from this one screen — no date mismatch.</p></div>`:''}
+    <div class="row2" style="margin-top:12px"><button class="btn ghost" onclick="closeModal()">Cancel</button>
+    <button class="btn" onclick="savePortfolioSummary()">Save</button></div>`);
+    return;
+  }
   if(r.kind==='dbsMrtl'){
     showModal(head+`
     ${fld('rBP','Borrowing potential (SGD)',f.borrowingPotential)}
@@ -894,6 +1002,25 @@ function reviewRecognized(r){
   <button class="btn" onclick="saveLoanFromReview()">Save what I entered</button></div>`);
 }
 const gv=id=>{ const el=document.getElementById(id); if(!el) return null; const v=el.value; return v===''?null:(+v); };
+function savePortfolioSummary(){
+  const sel=document.getElementById('rPid').value;
+  const pid = sel==='__new' ? (document.getElementById('rPidNew').value||'').trim() : sel;
+  if(!pid){ alert('Enter a portfolio id.'); return; }
+  const asOf=(document.getElementById('rAsOf').value||'').trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(asOf)){ alert('As-of date must be YYYY-MM-DD.'); return; }
+  const assets=gv('rAssets'), bp=gv('rBP'), drawn=gv('rDrawn');
+  if(assets==null || bp==null){ alert('Total assets and borrowing potential are both needed to derive the lending value.'); return; }
+  const src=(window.__rec?.sourceName||'manual')+(window.__rec?.viaOcr?' (OCR, reviewed)':' (reviewed)');
+  state.lv=state.lv||{};
+  state.lv[pid]={ asOf, borrowingPotential:bp, totalAssets:assets, basis:'derived', source:src };
+  if(drawn!=null){
+    state.mrtl[asOf]={ asOf, portfolioId:pid, borrowingPotential:bp, amountDrawn:drawn,
+      availableForDrawdown:gv('rAvail'), creditLimit:gv('rLimit'),
+      totalAssets:assets, totalLoans:gv('rLoans'),
+      leverageFactor:gv('rLF'), riskRating:gv('rPR'), leverageThreshold:6, riskThreshold:5, source:src };
+  }
+  saveAll(); closeModal(); go('dash');
+}
 function saveMrtlFromReview(){
   const asOf=(document.getElementById('rAsOf').value||'').trim();
   if(!/^\d{4}-\d{2}-\d{2}$/.test(asOf)){ alert('As-of date must be YYYY-MM-DD.'); return; }
