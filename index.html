@@ -119,7 +119,7 @@ table.hist th:first-child,table.hist td:first-child{text-align:left}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:AUG:19-06:00';
+const VERSION = 'v2026:AUG:19-07:10';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -252,6 +252,18 @@ function groupCapacity(){
   return { total, assets, pledged, pledgedAssets, parts,
            groupLvPct: assets>0? total/assets*100 : null,
            unpledged: total-pledged };
+}
+/* Net assets across both banks. DBS net assets (from the statement) + UOB cash − UOB home loan.
+   Property is excluded unless you enter a value — it is never estimated. */
+function netWorth(a){
+  const ms=manualMonths();
+  const balMonth=ms.slice().reverse().find(m=>state.manual[m].mortgageBalance!=null)||null;
+  const mortgage=balMonth? state.manual[balMonth].mortgageBalance : 0;
+  const cashMonth=ms.slice().reverse().find(m=>state.manual[m].deposits!=null)||null;
+  const uobCash=cashMonth? state.manual[cashMonth].deposits : 0;
+  const fwdMtm=(a.forwards||[]).reduce((s,f)=>s+(f.mtmSGD||0),0);
+  return { dbs:a.net, uobCash, cashMonth, mortgage, balMonth, fwdMtm,
+           dbsUob:a.net + uobCash - mortgage, hasUob: !!balMonth || !!cashMonth };
 }
 const mrtlDates = ()=> Object.keys(state.mrtl||{}).sort();
 const latestMrtl = ()=>{ const d=mrtlDates(); return d.length? state.mrtl[d[d.length-1]] : null; };
@@ -476,7 +488,19 @@ function viewDash(){
   <div class="banner ${st.cls}"><span class="ic">${st.ic}</span><div><b>${st.title}</b>${st.body}</div></div>
   <div class="card">
     <div class="hero">${money(a.net)}</div>
-    <div class="hero-sub">Combined net assets · statement ${snap.statementDate}${upd<-40?' · <span style="color:var(--serious)">statement is '+Math.abs(upd)+' days old — import the new one</span>':''}</div>
+    <div class="hero-sub">DBS net assets · ${snap.portfolios.map(p=>esc(p.id)).join(' + ')} · statement ${snap.statementDate}${upd<-40?' · <span style="color:var(--serious)">statement is '+Math.abs(upd)+' days old — import the new one</span>':''}</div>
+    ${(()=>{ const w=netWorth(a); if(!w.hasUob) return '';
+      return `<div style="border-top:1px solid var(--grid);margin-top:12px;padding-top:12px">
+      <div class="hero" style="font-size:26px">${money(w.dbsUob)}</div>
+      <div class="hero-sub">DBS + UOB net assets · after the ${money(w.mortgage,0)} home loan${w.uobCash?', incl. '+money(w.uobCash,0)+' UOB cash ('+esc(w.cashMonth)+')':''}</div>
+      <div class="kv" style="margin-top:10px"><span class="k">DBS net assets</span><span class="v">${money(a.net,2)}</span></div>
+      ${w.uobCash?`<div class="kv"><span class="k">UOB cash</span><span class="v">+${money(w.uobCash,2)}</span></div>`:''}
+      <div class="kv"><span class="k">UOB home loan</span><span class="v neg">-${money(w.mortgage,2)}</span></div>
+      <div class="kv"><span class="k"><b>DBS + UOB net assets</b></span><span class="v"><b>${money(w.dbsUob,2)}</b></span></div>
+      ${state.settings.homeValue?`<div class="kv"><span class="k">Property (your estimate)</span><span class="v">+${money(state.settings.homeValue,2)}</span></div>
+      <div class="kv"><span class="k"><b>Incl. property</b></span><span class="v"><b>${money(w.dbsUob+state.settings.homeValue,2)}</b></span></div>`:''}
+      <p class="note">${state.settings.homeValue?'':'The property the mortgage funds is <b>not</b> counted — enter its value in Settings and a third total appears. '}Excludes the CHF forward's ${money(w.fwdMtm,0)} mark-to-market, which DBS holds outside net assets until it settles.</p>
+      </div>`; })()}
   </div>
   ${(()=>{ const mm=latestManual();
     const mtg = mm?.mortgageBalance ?? null;
@@ -496,7 +520,7 @@ function viewDash(){
     <div class="tile"><div class="v ${a.plYtd>=0?'pos':'neg'}">${money(a.plYtd)}</div><div class="l">YTD portfolio P&L</div></div>
     <div class="tile"><div class="v ${a.plMtd>=0?'pos':'neg'}">${money(a.plMtd)}</div><div class="l">This month P&L</div></div>
     <div class="tile"><div class="v">${money(allInMo)}</div><div class="l">All-in interest / month</div><div class="d">DBS ≈ ${money(a.estMonthlyInterest)} + mortgage ${impInt!==null?money(impInt):(mm?.mortgageRatePct!=null?'≈ '+money(mtg*mm.mortgageRatePct/100/12):'—')}</div></div>
-    <div class="tile"><div class="v ${(liquid-totDebt)>=0?'pos':'neg'}">${money(liquid-totDebt)}</div><div class="l">Liquid assets − all debt</div><div class="d">${state.settings.homeValue?'Incl. property: '+money(liquid-totDebt+state.settings.homeValue):'Excl. property (value not entered)'}${depVal!=null?'<br>Incl. bank cash '+money(depVal,0)+' ('+depMonth+')':'<br>Bank cash not entered'}</div></div>
+    <div class="tile"><div class="v">${liquid>0?pct(totDebt/liquid*100,1):'—'}</div><div class="l">Total debt ÷ liquid assets</div><div class="d">${money(totDebt,0)} of debt against ${money(liquid,0)}${state.settings.homeValue?'<br>'+pct(totDebt/(liquid+state.settings.homeValue)*100,1)+' incl. property':'<br>property not counted'}</div></div>
   </div>`; })()}
   ${(()=>{ const m=latestMrtl(); const c=mrtlCapacity(m); if(!m||!c||m.amountDrawn==null) return '';
     const util=m.amountDrawn/c.capacity*100;
