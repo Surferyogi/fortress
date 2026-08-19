@@ -119,7 +119,7 @@ table.hist th:first-child,table.hist td:first-child{text-align:left}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:AUG:19-07:10';
+const VERSION = 'v2026:AUG:19-08:05';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -264,6 +264,19 @@ function netWorth(a){
   const fwdMtm=(a.forwards||[]).reduce((s,f)=>s+(f.mtmSGD||0),0);
   return { dbs:a.net, uobCash, cashMonth, mortgage, balMonth, fwdMtm,
            dbsUob:a.net + uobCash - mortgage, hasUob: !!balMonth || !!cashMonth };
+}
+/* DBS states a money-weighted return per portfolio. MWRR is not additive, so for a
+   combined headline each portfolio's own stated % is weighted by its starting value.
+   With a single portfolio the stated figure is passed through untouched. */
+function blendedReturn(snap, period){
+  const key = period==='mtd' ? 'pctMtd' : 'pctYtd';
+  const startKey = period==='mtd' ? 'startMtd' : 'startYtd';
+  const rows=(snap.portfolios||[]).filter(p=>p.perf && p.perf[key]!=null && p.perf[startKey]>0);
+  if(!rows.length) return null;
+  const parts=rows.map(p=>({id:p.id, pct:p.perf[key], start:p.perf[startKey]}));
+  if(rows.length===1) return { pct:parts[0].pct, blended:false, parts };
+  const w=parts.reduce((s,p)=>s+p.start,0);
+  return { pct:parts.reduce((s,p)=>s+p.pct*p.start,0)/w, blended:true, parts };
 }
 const mrtlDates = ()=> Object.keys(state.mrtl||{}).sort();
 const latestMrtl = ()=>{ const d=mrtlDates(); return d.length? state.mrtl[d[d.length-1]] : null; };
@@ -517,8 +530,15 @@ function viewDash(){
     <div class="tile"><div class="v">${money(totDebt)}</div><div class="l">Total debt</div><div class="d">DBS ${money(a.debt)} + UOB ${money(mtg)}</div></div>
     <div class="tile"><div class="v">${pct(a.ltv,1)}</div><div class="l">Margin LTV — pledged collateral only</div><div class="d">${a.unpledgedAssets>0?pct(a.ltvAllAssets,1)+' if free assets were counted':'all DBS assets secure the loan'}</div></div>
     <div class="tile"><div class="v">${fmt(snap.portfolios.find(p=>Math.abs(p.totalLoans||0)>0)?.leverageFactor ?? snap.portfolios[0].leverageFactor,1)} / ${fmt(snap.portfolios[0].leverageThreshold,0)}</div><div class="l">DBS leverage factor / limit</div></div>
-    <div class="tile"><div class="v ${a.plYtd>=0?'pos':'neg'}">${money(a.plYtd)}</div><div class="l">YTD portfolio P&L</div></div>
-    <div class="tile"><div class="v ${a.plMtd>=0?'pos':'neg'}">${money(a.plMtd)}</div><div class="l">This month P&L</div></div>
+    ${(()=>{ const ry=blendedReturn(snap,'ytd'), rm=blendedReturn(snap,'mtd');
+      const sub=r=> r? (r.blended? r.parts.map(p=>esc(p.id.slice(-2))+' '+pct(p.pct,2)).join(' · ') : 'DBS money-weighted return') : '';
+      return `
+    <div class="tile"><div class="v ${a.plYtd>=0?'pos':'neg'}">${money(a.plYtd)}</div>
+      <div class="l">YTD portfolio P&L${ry?' · <b>'+(ry.pct>=0?'+':'')+pct(ry.pct,1)+'</b>':''}</div>
+      <div class="d">${sub(ry)}</div></div>
+    <div class="tile"><div class="v ${a.plMtd>=0?'pos':'neg'}">${money(a.plMtd)}</div>
+      <div class="l">This month P&L${rm?' · <b>'+(rm.pct>=0?'+':'')+pct(rm.pct,1)+'</b>':''}</div>
+      <div class="d">${sub(rm)}</div></div>`; })()}
     <div class="tile"><div class="v">${money(allInMo)}</div><div class="l">All-in interest / month</div><div class="d">DBS ≈ ${money(a.estMonthlyInterest)} + mortgage ${impInt!==null?money(impInt):(mm?.mortgageRatePct!=null?'≈ '+money(mtg*mm.mortgageRatePct/100/12):'—')}</div></div>
     <div class="tile"><div class="v">${liquid>0?pct(totDebt/liquid*100,1):'—'}</div><div class="l">Total debt ÷ liquid assets</div><div class="d">${money(totDebt,0)} of debt against ${money(liquid,0)}${state.settings.homeValue?'<br>'+pct(totDebt/(liquid+state.settings.homeValue)*100,1)+' incl. property':'<br>property not counted'}</div></div>
   </div>`; })()}
@@ -628,6 +648,9 @@ function viewDash(){
   <div class="card">
     <h2>Interest vs portfolio gains (YTD)</h2>
     <div class="kv"><span class="k">Portfolio P&L</span><span class="v ${a.plYtd>=0?'pos':'neg'}">${money(a.plYtd)}</span></div>
+    ${(()=>{ const r=blendedReturn(snap,'ytd'); if(!r) return '';
+      return `<div class="kv"><span class="k">Return YTD${r.blended?' <em>(weighted)</em>':''}</span><span class="v ${r.pct>=0?'pos':'neg'}">${r.pct>=0?'+':''}${pct(r.pct,2)}</span></div>
+      ${r.blended?r.parts.map(p=>`<div class="kv"><span class="k" style="padding-left:12px;font-size:12px">${esc(p.id)}</span><span class="v" style="font-weight:400">${p.pct>=0?'+':''}${pct(p.pct,2)}</span></div>`).join(''):''}`; })()}
     <div class="kv"><span class="k">Dividends + interest received</span><span class="v">${money(a.divYtd+a.intRecYtd,0)}</span></div>
     <div class="kv"><span class="k">Margin loan interest paid</span><span class="v">${money(-a.intPaidYtd,0)}</span></div>
     <div class="kv"><span class="k">DBS custody fees</span><span class="v">${money(-a.custodyYtd,0)}</span></div>
@@ -638,6 +661,8 @@ function viewDash(){
       const impInt = impliedMortgageInterest(mm.month);
       const annAllIn = (a.estMonthlyInterest + (impInt ?? (mm.mortgageRatePct!=null&&mm.mortgageBalance!=null? mm.mortgageBalance*mm.mortgageRatePct/100/12 : 0)))*12;
       return `<div class="kv"><span class="k">Gains ÷ all-in interest (incl. mortgage, annualised)</span><span class="v">${annAllIn>0?fmt(a.plYtd/annAllIn,1)+'×':'—'}</span></div>`; })()}
+    ${(()=>{ const r=blendedReturn(snap,'ytd'); if(!r) return '';
+      return `<p class="note">The % is DBS's own <b>money-weighted rate of return</b> from the statement's Performance Summary${r.blended?", weighted across your portfolios by their starting values — MWRR isn't additive, so this blend is close but not a figure DBS itself publishes":''}. It is measured on <b>net</b> assets, so leverage is already inside it: the gain is struck against your own capital, not against the gross portfolio.</p>`; })()}
   </div>
   ${(()=>{ const mm=latestManual(); if(!mm) return '';
     const impInt = impliedMortgageInterest(mm.month);
