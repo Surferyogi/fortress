@@ -120,7 +120,7 @@ table.hist th:first-child,table.hist td:first-child{text-align:left}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:AUG:20-09:15';
+const VERSION = 'v2026:AUG:20-11:05';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -203,8 +203,8 @@ const LV_SEED = {
 };
 
 /* Returns exactly as DBS reports them, each stamped with its metric AND its period.
-   TWRR and MWRR over different windows are not comparable — the card exists so the
-   two never look like they contradict each other. */
+   The same portfolio reads very differently over different windows, so a return is
+   never stored without the dates that give it meaning. */
 const REPORTED_SEED = [
   { id:'rep-0-1y-0818', portfolioId:'S-607522-0', metric:'TWRR', pct:34.93,
     from:'2025-08-18', to:'2026-08-18', capturedOn:'2026-08-19',
@@ -223,8 +223,7 @@ const REPORTED_SEED = [
     source:'DBS app → Portfolio details → Performance, Year to date (YTD), TWRR' }
 ];
 const METRIC_NOTE = {
-  TWRR:'Time-weighted: strips your deposits and withdrawals out, so it measures how the holdings performed.',
-  MWRR:'Money-weighted: keeps your cash flows in, so it measures what your own capital actually earned.'
+  TWRR:'Time-weighted: strips your deposits and withdrawals out, so it measures how the holdings performed.'
 };
 
 /* ================= state ================= */
@@ -294,19 +293,6 @@ function netWorth(a){
   const fwdMtm=(a.forwards||[]).reduce((s,f)=>s+(f.mtmSGD||0),0);
   return { dbs:a.net, uobCash, cashMonth, mortgage, balMonth, fwdMtm,
            dbsUob:a.net + uobCash - mortgage, hasUob: !!balMonth || !!cashMonth };
-}
-/* DBS states a money-weighted return per portfolio. MWRR is not additive, so for a
-   combined headline each portfolio's own stated % is weighted by its starting value.
-   With a single portfolio the stated figure is passed through untouched. */
-function blendedReturn(snap, period){
-  const key = period==='mtd' ? 'pctMtd' : 'pctYtd';
-  const startKey = period==='mtd' ? 'startMtd' : 'startYtd';
-  const rows=(snap.portfolios||[]).filter(p=>p.perf && p.perf[key]!=null && p.perf[startKey]>0);
-  if(!rows.length) return null;
-  const parts=rows.map(p=>({id:p.id, pct:p.perf[key], start:p.perf[startKey]}));
-  if(rows.length===1) return { pct:parts[0].pct, blended:false, parts };
-  const w=parts.reduce((s,p)=>s+p.start,0);
-  return { pct:parts.reduce((s,p)=>s+p.pct*p.start,0)/w, blended:true, parts };
 }
 /* "1 Jan – 31 Jul 2026" style labels, so every % on screen names its own window */
 const dayMon = iso=>{ const d=new Date(iso+'T00:00:00'); return d.getDate()+' '+d.toLocaleString('en',{month:'short'}); };
@@ -816,16 +802,14 @@ function viewDash(){
     <div class="tile"><div class="v">${money(totDebt)}</div><div class="l">Total debt</div><div class="d">DBS ${money(a.debt)} + UOB ${money(mtg)}</div></div>
     <div class="tile"><div class="v">${pct(a.ltv,1)}</div><div class="l">Margin LTV — pledged collateral only</div><div class="d">${a.unpledgedAssets>0?pct(a.ltvAllAssets,1)+' if free assets were counted':'all DBS assets secure the loan'}</div></div>
     <div class="tile"><div class="v">${fmt(snap.portfolios.find(p=>Math.abs(p.totalLoans||0)>0)?.leverageFactor ?? snap.portfolios[0].leverageFactor,1)} / ${fmt(snap.portfolios[0].leverageThreshold,0)}</div><div class="l">DBS leverage factor / limit</div></div>
-    ${(()=>{ const ry=blendedReturn(snap,'ytd'), rm=blendedReturn(snap,'mtd');
-      const py=periodOf(snap.statementDate,'ytd'), pm=periodOf(snap.statementDate,'mtd');
-      const sub=(r,p)=> (p?rangeLabel(p.from,p.to)+' · ':'')+'MWRR'+(r&&r.blended?' · '+r.parts.map(x=>esc(x.id.slice(-2))+' '+pct(x.pct,2)).join(' · '):'');
+    ${(()=>{ const py=periodOf(snap.statementDate,'ytd'), pm=periodOf(snap.statementDate,'mtd');
       return `
     <div class="tile"><div class="v ${a.plYtd>=0?'pos':'neg'}">${money(a.plYtd)}</div>
-      <div class="l">YTD portfolio P&L${ry?' · <b>'+(ry.pct>=0?'+':'')+pct(ry.pct,1)+'</b>':''}</div>
-      <div class="d">${sub(ry,py)}</div></div>
+      <div class="l">Portfolio P&L, year to date</div>
+      <div class="d">${py?esc(rangeLabel(py.from,py.to)):''} · see Returns for the % </div></div>
     <div class="tile"><div class="v ${a.plMtd>=0?'pos':'neg'}">${money(a.plMtd)}</div>
-      <div class="l">This month P&L${rm?' · <b>'+(rm.pct>=0?'+':'')+pct(rm.pct,1)+'</b>':''}</div>
-      <div class="d">${sub(rm,pm)}</div></div>`; })()}
+      <div class="l">Portfolio P&L, this month</div>
+      <div class="d">${pm?esc(rangeLabel(pm.from,pm.to)):''}</div></div>`; })()}
     <div class="tile"><div class="v">${money(allInMo)}</div><div class="l">All-in interest / month</div><div class="d">DBS ≈ ${money(a.estMonthlyInterest)} + mortgage ${impInt!==null?money(impInt):(mm?.mortgageRatePct!=null?'≈ '+money(mtg*mm.mortgageRatePct/100/12):'—')}</div></div>
     <div class="tile"><div class="v">${liquid>0?pct(totDebt/liquid*100,1):'—'}</div><div class="l">Total debt ÷ liquid assets</div><div class="d">${money(totDebt,0)} of debt against ${money(liquid,0)}${state.settings.homeValue?'<br>'+pct(totDebt/(liquid+state.settings.homeValue)*100,1)+' incl. property':'<br>property not counted'}</div></div>
   </div>`; })()}
@@ -954,13 +938,38 @@ function viewDash(){
   </div>`; })()}
   <div class="card">
     <h2>Margin headroom${latestMrtl()?'<span class="pill">from DBS MRTL figures</span>':(lv?'':'<span class="pill">illustrative — LV not set</span>')}</h2>
+    ${(()=>{ const m=latestMrtl(), c=mrtlCapacity(m);
+      if(m && c && m.amountDrawn!=null){
+        const util=m.amountDrawn/c.capacity*100;
+        const col=util>=90?'var(--critical)':util>=75?'var(--serious)':util>=50?'var(--warn)':'var(--good)';
+        return `
+    <p class="note" style="margin:0 0 18px">The bar is <b>how much of your borrowing capacity is used</b> — the drawn ${money(m.amountDrawn,0)} as a share of DBS's assessed capacity of ${money(c.capacity,0)}. A margin call happens at the far right, where the bar would be full.</p>
+    <div class="gauge" style="margin-top:24px">
+      <div class="track" style="height:26px">
+        <div class="fill" style="width:${fmt(Math.min(100,util),1)}%;background:${col}"></div>
+        <div class="mark" style="left:50%"></div><div class="mlab" style="left:50%">50%</div>
+        <div class="mark" style="left:75%"></div><div class="mlab" style="left:75%">75%</div>
+        <div class="mark actual" style="left:100%"></div><div class="mlab" style="left:100%;transform:translateX(-100%)">CALL</div>
+      </div>
+      <div class="axis"><span>0% — no debt</span><span style="color:${col};font-weight:600">${pct(util,1)} used</span><span>100% — call</span></div>
+    </div>
+    <div class="legend" style="margin-top:10px">
+      <span><span class="sw" style="background:var(--good)"></span>under 50% conservative</span>
+      <span><span class="sw" style="background:var(--warn)"></span>50–75% watch</span>
+      <span><span class="sw" style="background:var(--serious)"></span>75–90% tight</span>
+      <span><span class="sw" style="background:var(--critical)"></span>90%+ danger</span>
+    </div>`;
+      }
+      return `
     <div class="gauge" style="margin-top:26px">
       <div class="track">
         <div class="fill" style="width:${Math.min(100,a.ltv/gaugeMax*100)}%"></div>
-        ${marks.map(m=>`<div class="mark ${m.actual?'actual':''}" style="left:${m.v/gaugeMax*100}%"></div><div class="mlab" style="left:${m.v/gaugeMax*100}%">${m.label}</div>`).join('')}
+        ${marks.map(mk=>`<div class="mark ${mk.actual?'actual':''}" style="left:${mk.v/gaugeMax*100}%"></div><div class="mlab" style="left:${mk.v/gaugeMax*100}%">${mk.label}</div>`).join('')}
       </div>
       <div class="axis"><span>0%</span><span>LTV ${pct(a.ltv,1)}</span><span>${gaugeMax}%</span></div>
     </div>
+    <p class="note">Bar shows your loan-to-assets against illustrative lending values. Import the DBS Portfolio Summary screen to replace these with real figures.</p>`;
+    })()}
     ${(()=>{ const m=latestMrtl(), c=mrtlCapacity(m);
       if(m && c && m.amountDrawn!=null){
         // prefer the same-screen ratio (no date mismatch); fall back to statement assets
@@ -983,30 +992,22 @@ function viewDash(){
       return `The DBS statement does not publish these ratios${lv?'; the '+lv+'% figure is the one you entered in Settings':' — get them from your RM, or import the MRTL draw-down screen, which states your capacity directly'}.`;
     })()}</p>
   </div>
-  ${(()=>{ const reps=(state.reported||[]).slice();
-    const py=periodOf(snap.statementDate,'ytd');
-    const ry=blendedReturn(snap,'ytd');
-    if(!reps.length && !ry) return '';
-    // group every reading by its window so like is compared with like
+  ${(()=>{ const reps=(state.reported||[]).filter(r=>r.metric==='TWRR');
+    if(!reps.length) return '';
     const wins={};
     reps.forEach(r=>{ const k=r.from+'|'+r.to; (wins[k]=wins[k]||{from:r.from,to:r.to,rows:[]}).rows.push(r); });
-    if(ry&&py){ const k=py.from+'|'+py.to;
-      (wins[k]=wins[k]||{from:py.from,to:py.to,rows:[]}).rows.push(
-        {portfolioId:'both (weighted)',metric:'MWRR',pct:ry.pct,from:py.from,to:py.to,source:'eStatement'}); }
     const order=Object.values(wins).sort((x,y)=> (y.to+y.from).localeCompare(x.to+x.from));
-    const ytdTwrr=reps.filter(r=>r.metric==='TWRR' && r.from===(py&&py.from));
     return `
   <div class="card">
-    <h2>Returns as DBS reports them<span class="pill">by window</span></h2>
+    <h2>Returns as DBS reports them<span class="pill">TWRR · by window</span></h2>
     ${order.map(w=>{
       const bm=BENCH.sp500.find(x=>x.from===w.from && x.to===w.to);
-      const mos=fmt(monthsBetween(w.from,w.to),0);
       return `
       <div style="margin:12px 0 0">
-        <div style="font-size:12px;color:var(--ink2);font-weight:600">${esc(rangeLabel(w.from,w.to))} · ${mos} months</div>
+        <div style="font-size:12px;color:var(--ink2);font-weight:600">${esc(rangeLabel(w.from,w.to))} · ${fmt(monthsBetween(w.from,w.to),0)} months</div>
         ${w.rows.sort((x,y)=>String(x.portfolioId).localeCompare(String(y.portfolioId))).map(r=>{
           const gap = bm? r.pct-bm.sgdTotalRet : null;
-          return `<div class="kv"><span class="k">${esc(r.metric)} · ${esc(r.portfolioId)}</span>
+          return `<div class="kv"><span class="k">${esc(r.portfolioId)}</span>
             <span class="v ${r.pct>=0?'pos':'neg'}">${r.pct>=0?'+':''}${pct(r.pct,2)}${gap!=null?`<br><span style="font-size:11px;font-weight:400;color:var(--ink2)">${gap>=0?'ahead of':'behind'} S&P by ${fmt(Math.abs(gap),2)} pts</span>`:''}</span></div>`;
         }).join('')}
         ${bm?`<div class="kv"><span class="k" style="color:var(--muted)">S&P 500 · total return in SGD<br><span style="font-size:11px">price ${bm.priceRet>=0?'+':''}${fmt(bm.priceRet,2)}% · USD total return ${bm.totalRet>=0?'+':''}${fmt(bm.totalRet,2)}%</span></span>
@@ -1014,17 +1015,13 @@ function viewDash(){
           :`<p class="note" style="margin:2px 0 0">No S&P figure fetched for this exact window.</p>`}
       </div>`;
     }).join('')}
-    <p class="note" style="margin-top:14px"><b>TWRR</b> — ${esc(METRIC_NOTE.TWRR)}<br><b>MWRR</b> — ${esc(METRIC_NOTE.MWRR)}</p>
-    ${py&&!ytdTwrr.length?'':`<p class="note">Note the window mismatch on the statement line: the eStatement closes 31 Jul while the app's YTD runs to 19 Aug, so the MWRR and the YTD TWRR are not directly comparable even though both say "year to date".</p>`}
-    <p class="note">Readings are grouped by window because that is the only way they mean anything — a 1Y TWRR and a year-to-date MWRR measure different things over different lengths of time. The S&P line is dividend-reinvested total return converted to SGD at spot, which is what a Singapore investor actually banks.</p>
+    <p class="note" style="margin-top:14px"><b>TWRR</b> — ${esc(METRIC_NOTE.TWRR)} It is the fair way to judge the holdings, and the only basis Fortress reports.</p>
+    <p class="note">Readings are grouped by window because that is the only way they mean anything — the same portfolio reads 32.91% over one year and 20.69% year-to-date, and a single day's shift in the endpoints moved the 1Y figure by two points. The S&P line is dividend-reinvested total return converted to SGD at spot, which is what a Singapore investor actually banks.</p>
     <p class="note"><b>Two caveats before you feel too good.</b> Your returns are struck on <em>net</em> assets and are therefore levered; the index is not. And a portfolio that is ${pct((a.pledgedCcy.USD||0)/a.pledgedAssets*100,0)} USD will track US equities closely by construction — beating the index by a few points is a stock-selection result, not proof of diversification.</p>
   </div>`; })()}
   <div class="card">
     <h2>Interest vs portfolio gains${(()=>{const p=periodOf(snap.statementDate,'ytd');return p?' · '+esc(rangeLabel(p.from,p.to)):' (YTD)';})()}</h2>
     <div class="kv"><span class="k">Portfolio P&L</span><span class="v ${a.plYtd>=0?'pos':'neg'}">${money(a.plYtd)}</span></div>
-    ${(()=>{ const r=blendedReturn(snap,'ytd'); if(!r) return '';
-      return `<div class="kv"><span class="k">Return YTD${r.blended?' <em>(weighted)</em>':''}</span><span class="v ${r.pct>=0?'pos':'neg'}">${r.pct>=0?'+':''}${pct(r.pct,2)}</span></div>
-      ${r.blended?r.parts.map(p=>`<div class="kv"><span class="k" style="padding-left:12px;font-size:12px">${esc(p.id)}</span><span class="v" style="font-weight:400">${p.pct>=0?'+':''}${pct(p.pct,2)}</span></div>`).join(''):''}`; })()}
     <div class="kv"><span class="k">Dividends + interest received</span><span class="v">${money(a.divYtd+a.intRecYtd,0)}</span></div>
     <div class="kv"><span class="k">Margin loan interest paid</span><span class="v">${money(-a.intPaidYtd,0)}</span></div>
     <div class="kv"><span class="k">DBS custody fees</span><span class="v">${money(-a.custodyYtd,0)}</span></div>
@@ -1035,13 +1032,12 @@ function viewDash(){
       const impInt = impliedMortgageInterest(mm.month);
       const annAllIn = (a.estMonthlyInterest + (impInt ?? (mm.mortgageRatePct!=null&&mm.mortgageBalance!=null? mm.mortgageBalance*mm.mortgageRatePct/100/12 : 0)))*12;
       return `<div class="kv"><span class="k">Gains ÷ all-in interest (incl. mortgage, annualised)</span><span class="v">${annAllIn>0?fmt(a.plYtd/annAllIn,1)+'×':'—'}</span></div>`; })()}
-    ${(()=>{ const r=blendedReturn(snap,'ytd'); if(!r) return '';
-      const g=(()=>{ const gv=a.intPaidYtd>0?a.plYtd/a.intPaidYtd:null, dc=a.intPaidYtd>0?a.divYtd/a.intPaidYtd:null;
-        if(gv==null) return '';
-        return `<p class="note"><b>Are these coverage ratios good?</b> There is no household benchmark for them — the concept comes from corporate credit, where an <em>interest cover</em> of 3× or more is usually considered comfortable and under 1.5× is a warning. Yours are far above that, but read them for what they are.
+    ${(()=>{ const gv=a.intPaidYtd>0?a.plYtd/a.intPaidYtd:null, dc=a.intPaidYtd>0?a.divYtd/a.intPaidYtd:null;
+      if(gv==null) return '';
+      return `<p class="note"><b>Are these coverage ratios good?</b> There is no household benchmark for them — the concept comes from corporate credit, where an <em>interest cover</em> of 3× or more is usually considered comfortable and under 1.5× is a warning. Yours are far above that, but read them for what they are.
         <b>Dividend cover of ${fmt(dc,1)}×</b> is the durable one: it says your cash income alone pays the margin interest ${fmt(dc,1)} times over without selling anything or relying on prices. That is the ratio that keeps you solvent in a bad year, and above 1× is the line that matters.
-        <b>Gains ÷ interest of ${fmt(gv,1)}×</b> is flattering and fragile: it divides a volatile mark-to-market gain by a near-fixed cost, so it soars in a good year and goes <em>negative</em> in a bad one. July alone was ${money(a.plMtd,0)} — on a full month like that the ratio is meaningless. Treat ${fmt(gv,1)}× as evidence the strategy is working this year, not as a safety margin.</p>`; })();
-      return g+`<p class="note">The % is DBS's own <b>money-weighted rate of return</b> from the statement's Performance Summary${r.blended?", weighted across your portfolios by their starting values — MWRR isn't additive, so this blend is close but not a figure DBS itself publishes":''}. It is measured on <b>net</b> assets, so leverage is already inside it: the gain is struck against your own capital, not against the gross portfolio.</p>`; })()}
+        <b>Gains ÷ interest of ${fmt(gv,1)}×</b> is flattering and fragile: it divides a volatile mark-to-market gain by a near-fixed cost, so it soars in a good year and goes <em>negative</em> in a bad one. July alone was ${money(a.plMtd,0)} — on a full month like that the ratio is meaningless. Treat ${fmt(gv,1)}× as evidence the strategy is working this year, not as a safety margin.</p>
+      <p class="note">These are struck on the statement's own P&L for the window in the heading. For percentage returns see the Returns card, which uses DBS's time-weighted figures.</p>`; })()}
   </div>
   ${(()=>{ const mm=latestManual(); if(!mm) return '';
     const impInt = impliedMortgageInterest(mm.month);
@@ -1274,16 +1270,12 @@ function viewSet(){
     <select id="repPid" style="width:100%;background:var(--page);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:10px;font:inherit;font-size:14px">
       ${Object.keys(state.lv||{}).map(k=>`<option value="${esc(k)}">${esc(k)}</option>`).join('')}
     </select>
-    <label class="fld">Metric</label>
-    <select id="repMetric" style="width:100%;background:var(--page);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:10px;font:inherit;font-size:14px">
-      <option value="TWRR">TWRR — time-weighted</option>
-      <option value="MWRR">MWRR — money-weighted</option>
-    </select>
+    <input type="hidden" id="repMetric" value="TWRR">
     <label class="fld">Return (%)</label><input type="number" id="repPct" step="0.01" inputmode="decimal" placeholder="e.g. 34.93">
     <label class="fld">Period from (YYYY-MM-DD)</label><input type="text" id="repFrom" placeholder="2025-08-18">
     <label class="fld">Period to (YYYY-MM-DD)</label><input type="text" id="repTo" placeholder="2026-08-18">
     <button class="btn" style="margin-top:12px" onclick="addReported()">Add reading</button>
-    <p class="note">The app's Performance tab reports a % that depends on both the metric toggle and the range picker. Recording the period with the number is the whole point — a TWRR over 1Y and an MWRR year-to-date are not comparable.</p>
+    <p class="note">Fortress records <b>TWRR</b> only. The app's Performance tab reports a % that depends on the range picker, so the period is recorded with every number — a 1Y reading and a year-to-date reading are not comparable.</p>
   </div>
   <div class="card"><h2>MRTL facility (DBS)</h2>
     ${mrtlDates().length?mrtlDates().slice().reverse().map(d=>`<div class="kv"><span class="k">${esc(d)}</span><span class="v">drawn ${money(state.mrtl[d].amountDrawn,0)} / cap ${money(mrtlCapacity(state.mrtl[d])?.capacity,0)}
@@ -1527,11 +1519,8 @@ function reviewRecognized(r){
     <select id="rPid" style="width:100%;background:var(--page);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:10px;font:inherit;font-size:14px">
       ${known.map(k=>`<option value="${esc(k)}"${f.portfolioId===k?' selected':''}>${esc(k)}</option>`).join('')}
     </select>
-    <label class="fld">Metric — which toggle was selected on screen?</label>
-    <select id="rMetric" style="width:100%;background:var(--page);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:10px;font:inherit;font-size:14px">
-      <option value="TWRR"${f.metric==='TWRR'?' selected':''}>TWRR — time-weighted</option>
-      <option value="MWRR"${f.metric==='MWRR'?' selected':''}>MWRR — money-weighted</option>
-    </select>
+    <input type="hidden" id="rMetric" value="TWRR">
+    <p class="note" style="margin:8px 0 0">Recorded as <b>TWRR</b> — make sure that toggle was the one selected on screen.</p>
     ${fld('rPct','Return (%)',f.pct)}
     <label class="fld">Period from</label><input type="text" id="rFrom" value="${esc(f.from||'')}" placeholder="YYYY-MM-DD">
     <label class="fld">Period to</label><input type="text" id="rTo" value="${esc(f.to||'')}" placeholder="YYYY-MM-DD">

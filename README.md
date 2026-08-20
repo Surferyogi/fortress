@@ -29,7 +29,7 @@ home loan.
 | UOB Statement of Account | home-loan balance, deposits, rent credits |
 | UOB home-loan screen (screenshot/paste) | balance, rate, instalment, next due date |
 | DBS iBanking "Your MRTL loan draw down" | borrowing potential, credit limit, drawn, available |
-| DBS app → Portfolio details → Performance | TWRR / MWRR **with its date range** |
+| DBS app → Portfolio details → Performance | TWRR **with its date range** |
 | anything else | manual-mapping screen — values are never guessed |
 
 Screenshots go through in-browser OCR (tesseract.js, fetched once from a CDN and then
@@ -62,14 +62,13 @@ typed into Settings is kept as a cross-check, not as the headline.
 
 ## Returns
 
-The DBS app reports a % that depends on two things at once: the **TWRR/MWRR toggle** and the
-**range picker**. A 1Y TWRR and a year-to-date MWRR are different measures over different
-windows and must never be read against each other. Fortress therefore refuses to store a
-return without its period, and the dashboard prints the window beside every percentage.
+The DBS app's % depends on the **range picker**: the same portfolio reads 32.91% over one
+year and 20.69% year-to-date, and shifting the endpoints by a single day moved the 1Y figure
+by two points. Fortress therefore refuses to store a return without its period, and groups
+every reading by window.
 
-- **TWRR** strips your deposits and withdrawals out — it judges the holdings.
-- **MWRR** keeps them in — it measures what your own capital earned, and is the right one
-  for asking whether your wealth is outgrowing the debt.
+Fortress records **TWRR** only — time-weighted, which strips deposits and withdrawals out
+and judges the holdings. Set that toggle in the app before taking a reading.
 
 ## Income
 

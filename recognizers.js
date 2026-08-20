@@ -203,7 +203,7 @@
     // which toggle is active can't be read from text alone; take whichever label the % follows
     const pctM = text.match(/(-?\d+(?:\.\d+)?)\s*%/);
     const pctVal = pctM ? parseFloat(pctM[1]) : null;
-    const hasT = /\bTWRR\b/i.test(text), hasM = /\bMWRR\b/i.test(text);
+    const hasT = /\bTWRR\b/i.test(text), hasM = /\bMWRR\b/i.test(text);   // both labels sit on screen; the toggle decides
     // "18 Aug 2025-18 Aug 2026" / "18 Aug 2025 - 18 Aug 2026"
     const rangeM = text.match(/(\d{1,2}\s+[A-Za-z]{3}[a-z]*\s+\d{4})\s*[-–]\s*(\d{1,2}\s+[A-Za-z]{3}[a-z]*\s+\d{4})/);
     const from = rangeM ? dmy(rangeM[1]) : null;
@@ -212,12 +212,12 @@
 
     if (pctVal === null) warnings.push('No percentage found.');
     if (!from || !to) warnings.push('No date range found — enter the period by hand; a return without its window is not usable.');
-    if (hasT && hasM) warnings.push('Both TWRR and MWRR appear on screen. Confirm below which one the % belongs to — it is the selected toggle.');
+    if (hasT && hasM) warnings.push('Both toggles are visible on that screen. Fortress records TWRR — confirm that was the one selected when you took the reading.');
 
     return {
       kind: 'dbsPerformance',
       fields: {
-        metric: hasT && !hasM ? 'TWRR' : (hasM && !hasT ? 'MWRR' : 'TWRR'),
+        metric: 'TWRR',
         metricAmbiguous: hasT && hasM,
         pct: pctVal, from, to, portfolioId: pidM ? pidM[1] : null
       },
