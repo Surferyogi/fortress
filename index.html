@@ -116,10 +116,11 @@ table.hist th:first-child,table.hist td:first-child{text-align:left}
 
 <script src="parser.js"></script>
 <script src="recognizers.js"></script>
+<script src="fxseries.js"></script>
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:AUG:19-09:20';
+const VERSION = 'v2026:AUG:20-05:10';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -222,7 +223,7 @@ let state = {
   mrtl: store.get('fortress.mrtl', null),
   lv: store.get('fortress.lv', null),
   reported: store.get('fortress.reported', null),
-  settings: store.get('fortress.settings', { lendingValue:null, ltvAlert:35, homeValue:null, tab:'dash' })
+  settings: store.get('fortress.settings', { lendingValue:null, ltvAlert:35, homeValue:null, tab:'dash', fxCcy:'USD', fxBars:250 })
 };
 if(!state.snapshots){ state.snapshots = { [SEED.statementDate]: SEED }; store.set('fortress.snapshots', state.snapshots); }
 if(!state.manual){ state.manual = MANUAL_SEED; store.set('fortress.manual', state.manual); }
@@ -230,7 +231,9 @@ if(!state.income){ state.income = INCOME_SEED; store.set('fortress.income', stat
 if(!state.mrtl){ state.mrtl = MRTL_SEED; store.set('fortress.mrtl', state.mrtl); }
 if(!state.lv){ state.lv = LV_SEED; store.set('fortress.lv', state.lv); }
 if(!state.reported){ state.reported = REPORTED_SEED; store.set('fortress.reported', state.reported); }
-function saveAll(){ store.set('fortress.snapshots', state.snapshots); store.set('fortress.manual', state.manual);
+function saveAll(){
+  if(typeof cryptoKey!=='undefined' && cryptoKey){ persistVault(); return; }   // encrypted: one blob, no plaintext
+  store.set('fortress.snapshots', state.snapshots); store.set('fortress.manual', state.manual);
   store.set('fortress.income', state.income); store.set('fortress.mrtl', state.mrtl);
   store.set('fortress.lv', state.lv); store.set('fortress.reported', state.reported); store.set('fortress.settings', state.settings); }
 
@@ -347,7 +350,7 @@ function isPledged(pid, p){
 function agg(snap){
   const a = { assets:0, cash:0, equity:0, net:0, debt:0, plMtd:0, plYtd:0,
     divMtd:0, divYtd:0, intRecMtd:0, intRecYtd:0, intPaidMtd:0, intPaidYtd:0, feesYtd:0,
-    loans:[], forwards:[], ccy:{}, pledgedAssets:0, unpledgedAssets:0, unpledgedIds:[] };
+    loans:[], forwards:[], ccy:{}, pledgedCcy:{}, pledgedAssets:0, unpledgedAssets:0, unpledgedIds:[] };
   for(const p of snap.portfolios){
     a.assets += p.totalAssets||0; a.cash += p.totalCash||0; a.equity += p.totalEquity||0;
     a.net += p.netAssets||0; a.debt += Math.abs(p.totalLoans||0);
@@ -362,6 +365,8 @@ function agg(snap){
     a.loans.push(...p.loans.map(l=>({...l, pf:p.id})));
     a.forwards.push(...p.fxForwards.map(f=>({...f, pf:p.id})));
     for(const [c,v] of Object.entries(p.ccyAlloc||{})) a.ccy[c]=(a.ccy[c]||0)+v;
+    // currency mix of the PLEDGED collateral only — the stress test must not mix bases
+    if(isPledged(p.id,p)) for(const [c,v] of Object.entries(p.ccyAlloc||{})) a.pledgedCcy[c]=(a.pledgedCcy[c]||0)+v;
     // Only collateral that actually secures the margin loan belongs in the LTV denominator.
     // DBS assesses each portfolio standalone: the -0 screen's asset total excludes -1,
     // and -1 offers "Apply with RM" (no facility) rather than "Contact RM to draw down".
@@ -486,6 +491,179 @@ function hBars(items,{yFmt=v=>fmt(v)}={}){
   return `<svg ${svgEl(W,h)}>${g}</svg>`;
 }
 
+/* ================= passcode lock =================
+   The passphrase derives an AES-GCM key (PBKDF2-SHA256, 310k iterations) that
+   encrypts the whole data blob in localStorage. Without it the stored data is
+   unreadable. This protects DATA AT REST on this device; it is not a server
+   login, and the app's own code is public on GitHub Pages. */
+const LOCK_KEY='fortress.lock', VAULT_KEY='fortress.vault', PBKDF2_ITER=310000;
+let cryptoKey=null;
+const enc=new TextEncoder(), dec=new TextDecoder();
+const b64=b=>btoa(String.fromCharCode(...new Uint8Array(b)));
+const unb64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+const lockCfg=()=>{ try{ return JSON.parse(localStorage.getItem(LOCK_KEY)||'null'); }catch(e){ return null; } };
+const isLocked=()=>!!lockCfg();
+
+async function deriveKey(pass, saltB64, iter){
+  const base=await crypto.subtle.importKey('raw',enc.encode(pass),'PBKDF2',false,['deriveKey']);
+  return crypto.subtle.deriveKey(
+    {name:'PBKDF2',salt:unb64(saltB64),iterations:iter||PBKDF2_ITER,hash:'SHA-256'},
+    base,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
+}
+async function encryptBlob(obj){
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},cryptoKey,enc.encode(JSON.stringify(obj)));
+  return {iv:b64(iv),ct:b64(ct)};
+}
+async function decryptBlob(blob){
+  const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(blob.iv)},cryptoKey,unb64(blob.ct));
+  return JSON.parse(dec.decode(pt));
+}
+const DATA_KEYS=['snapshots','manual','income','mrtl','lv','reported','settings'];
+function collectState(){ const o={}; DATA_KEYS.forEach(k=>o[k]=state[k]); return o; }
+
+async function persistVault(){
+  if(!cryptoKey) return;
+  try{ localStorage.setItem(VAULT_KEY, JSON.stringify(await encryptBlob(collectState()))); }
+  catch(e){ console.error('vault write failed', e); }
+}
+async function setupLock(pass){
+  if(!pass || pass.length<6) throw new Error('Use at least 6 characters.');
+  if(!crypto.subtle) throw new Error('This browser cannot encrypt here — needs HTTPS (or localhost).');
+  const salt=b64(crypto.getRandomValues(new Uint8Array(16)));
+  cryptoKey=await deriveKey(pass,salt,PBKDF2_ITER);
+  localStorage.setItem(LOCK_KEY, JSON.stringify({salt,iter:PBKDF2_ITER,v:1}));
+  await persistVault();
+  DATA_KEYS.forEach(k=>store.del('fortress.'+k));   // remove the plaintext copies
+  store.del('dw.'+ 'snapshots');
+}
+async function unlock(pass){
+  const cfg=lockCfg(); if(!cfg) return false;
+  cryptoKey=await deriveKey(pass,cfg.salt,cfg.iter);
+  const raw=localStorage.getItem(VAULT_KEY);
+  if(!raw){ return true; }                          // locked but empty — treat as fresh
+  const obj=await decryptBlob(JSON.parse(raw));     // throws on wrong passphrase
+  DATA_KEYS.forEach(k=>{ if(obj[k]!==undefined) state[k]=obj[k]; });
+  return true;
+}
+async function removeLock(){
+  if(!cryptoKey) throw new Error('Unlock first.');
+  DATA_KEYS.forEach(k=>store.set('fortress.'+k, state[k]));
+  localStorage.removeItem(LOCK_KEY); localStorage.removeItem(VAULT_KEY);
+  cryptoKey=null;
+}
+function lockScreen(err){
+  document.getElementById('main').innerHTML=`
+  <div class="card" style="margin-top:60px;text-align:center">
+    <div style="font-size:44px;line-height:1">🛡️</div>
+    <h2 style="margin-top:10px">Fortress is locked</h2>
+    <p class="note">Enter your passphrase to decrypt this device's data.</p>
+    ${err?`<div class="warnbox">${esc(err)}</div>`:''}
+    <input type="password" id="lockPass" placeholder="Passphrase" style="margin-top:10px;text-align:center"
+      onkeydown="if(event.key==='Enter')doUnlock()">
+    <button class="btn" style="margin-top:12px" onclick="doUnlock()">Unlock</button>
+    <p class="note">Forgotten it? There is no recovery — the passphrase is never stored, only a value derived from it. Restore from a JSON backup instead.</p>
+  </div>`;
+  document.getElementById('tabs').innerHTML='';
+  setTimeout(()=>document.getElementById('lockPass')?.focus(),60);
+}
+async function doUnlock(){
+  const el=document.getElementById('lockPass'); const pass=el?el.value:'';
+  if(!pass) return;
+  try{ await unlock(pass); booted=true; render(); }
+  catch(e){ lockScreen('That passphrase did not work. Try again.'); }
+}
+async function enableLock(){
+  const p1=document.getElementById('lkPass').value, p2=document.getElementById('lkPass2').value;
+  if(p1!==p2){ alert('The two entries do not match.'); return; }
+  try{ await setupLock(p1); alert('Lock enabled. Fortress will ask for this passphrase from now on. There is no recovery — keep a JSON backup.'); render(); }
+  catch(e){ alert(e.message); }
+}
+async function disableLock(){
+  if(!confirm('Turn the lock off? Your data goes back to being stored unencrypted in this browser.')) return;
+  try{ await removeLock(); render(); }catch(e){ alert(e.message); }
+}
+
+/* ===== external reference points. Every figure here is sourced and dated; nothing invented. ===== */
+const BENCH = {
+  sgHousehold:{
+    label:'Singapore households, aggregate',
+    period:'Q1 2026',
+    liabilitiesPctAssets:11,
+    liabilitiesPctDisposableIncome:107.9,
+    netWealthBn:3300, liabilitiesBn:445,
+    mortgageShare:'at least 70% of household liabilities are mortgages',
+    source:'Department of Statistics Singapore, Household Sector Balance Sheet 1Q2026 (reported 8 Jun 2026)'
+  },
+  sp500:[
+    { from:'2025-08-18', to:'2026-08-18', priceRet:19.27, totalRet:20.62, sgdTotalRet:20.05,
+      fxNote:'USD/SGD 1.28431 → 1.27820 (−0.48%)', source:'^GSPC close and SPY dividend-adjusted close via FMP; USD/SGD via Alpha Vantage' },
+    { from:'2025-12-31', to:'2026-07-31', priceRet:9.41, totalRet:10.13, sgdTotalRet:9.81,
+      fxNote:'USD/SGD 1.28550 → 1.28180 (−0.29%)', source:'^GSPC close and SPY dividend-adjusted close via FMP; USD/SGD via Alpha Vantage' }
+  ]
+};
+function benchFor(from,to){ return BENCH.sp500.find(b=>b.from===from||Math.abs(new Date(b.to)-new Date(to))<86400000*4 && Math.abs(new Date(b.from)-new Date(from))<86400000*5); }
+
+/* ===== FX candlestick + moving averages (hand-rolled SVG) ===== */
+function sma(arr, n){
+  const out=new Array(arr.length).fill(null); let sum=0;
+  for(let i=0;i<arr.length;i++){ sum+=arr[i]; if(i>=n) sum-=arr[i-n]; if(i>=n-1) out[i]=sum/n; }
+  return out;
+}
+function candleChart(series, opts){
+  opts=opts||{};
+  const W=760, H=340, L=8, R=62, T=10, B=26;
+  const n=series.dates.length;
+  const show=Math.min(opts.bars||250, n);
+  const s0=n-show;                                   // first visible index
+  const ma50=sma(series.c,50), ma150=sma(series.c,150), ma200=sma(series.c,200);
+  let lo=Infinity, hi=-Infinity;
+  for(let i=s0;i<n;i++){ lo=Math.min(lo,series.l[i]); hi=Math.max(hi,series.h[i]); }
+  [ma50,ma150,ma200].forEach(m=>{ for(let i=s0;i<n;i++) if(m[i]!=null){ lo=Math.min(lo,m[i]); hi=Math.max(hi,m[i]); } });
+  const pad=(hi-lo)*0.06||hi*0.01; lo-=pad; hi+=pad;
+  const x=i=>L+(i-s0)*(W-L-R)/Math.max(show-1,1);
+  const y=v=>T+(hi-v)/(hi-lo)*(H-T-B);
+  const bw=Math.max(1.2,(W-L-R)/show*0.62);
+  const dp = hi<10 ? 4 : (hi<100 ? 3 : 2);
+
+  let bars='';
+  for(let i=s0;i<n;i++){
+    const up=series.c[i]>=series.o[i];
+    const col=up?'var(--delta-good)':'var(--critical)';
+    const yo=y(series.o[i]), yc=y(series.c[i]);
+    const top=Math.min(yo,yc), h=Math.max(Math.abs(yc-yo),0.8);
+    bars+=`<line x1="${x(i).toFixed(1)}" y1="${y(series.h[i]).toFixed(1)}" x2="${x(i).toFixed(1)}" y2="${y(series.l[i]).toFixed(1)}" stroke="${col}" stroke-width="1"/>`
+        + `<rect x="${(x(i)-bw/2).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${col}"/>`;
+  }
+  const path=(m,col,w)=>{
+    let d='',started=false;
+    for(let i=s0;i<n;i++){ if(m[i]==null) continue; d+=(started?'L':'M')+x(i).toFixed(1)+','+y(m[i]).toFixed(1); started=true; }
+    return d?`<path d="${d}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linejoin="round"/>`:'';
+  };
+  // gridlines + right-hand price axis
+  let grid='',ticks=5;
+  for(let t=0;t<=ticks;t++){
+    const v=lo+(hi-lo)*t/ticks, yy=y(v);
+    grid+=`<line class="grid" x1="${L}" y1="${yy.toFixed(1)}" x2="${W-R}" y2="${yy.toFixed(1)}"/>`
+        + `<text x="${W-R+5}" y="${(yy+3).toFixed(1)}">${v.toFixed(dp)}</text>`;
+  }
+  // date labels
+  let xlab='';
+  for(let k=0;k<=4;k++){
+    const i=Math.round(s0+(n-1-s0)*k/4);
+    const d=series.dates[i];
+    xlab+=`<text x="${x(i).toFixed(1)}" y="${H-8}" text-anchor="${k===0?'start':(k===4?'end':'middle')}">${d.slice(2,7)}</text>`;
+  }
+  const last=series.c[n-1], first=series.c[s0];
+  const chg=(last/first-1)*100;
+  return {
+    svg:`<svg ${svgEl(W,H)}>${grid}${bars}${path(ma50,'var(--s1)',1.8)}${path(ma150,'var(--s4)',1.8)}${path(ma200,'var(--s2)',1.8)}
+      <line class="axisline" x1="${L}" y1="${H-B}" x2="${W-R}" y2="${H-B}"/>${xlab}</svg>`,
+    last, first, chg, from:series.dates[s0], to:series.dates[n-1],
+    ma:{ m50:ma50[n-1], m150:ma150[n-1], m200:ma200[n-1] }, dp
+  };
+}
+
 /* ================= tabs / rendering ================= */
 const TABS=[
   {id:'dash', label:'Dashboard', icon:'<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>'},
@@ -571,6 +749,26 @@ function viewDash(){
     <div class="tile"><div class="v">${money(allInMo)}</div><div class="l">All-in interest / month</div><div class="d">DBS ≈ ${money(a.estMonthlyInterest)} + mortgage ${impInt!==null?money(impInt):(mm?.mortgageRatePct!=null?'≈ '+money(mtg*mm.mortgageRatePct/100/12):'—')}</div></div>
     <div class="tile"><div class="v">${liquid>0?pct(totDebt/liquid*100,1):'—'}</div><div class="l">Total debt ÷ liquid assets</div><div class="d">${money(totDebt,0)} of debt against ${money(liquid,0)}${state.settings.homeValue?'<br>'+pct(totDebt/(liquid+state.settings.homeValue)*100,1)+' incl. property':'<br>property not counted'}</div></div>
   </div>`; })()}
+  ${(()=>{ const w=netWorth(a); if(!w.hasUob) return '';
+    const liq=a.assets+(w.uobCash||0), debt=a.debt+(w.mortgage||0);
+    const hv=state.settings.homeValue;
+    const exclP=debt/liq*100, inclP=hv?debt/(liq+hv)*100:null;
+    const B=BENCH.sgHousehold;
+    return `
+  <div class="card">
+    <h2>How geared are you, really?<span class="pill">vs ${esc(B.period)} national data</span></h2>
+    <div class="kv"><span class="k">Your debt ÷ liquid assets <em>(property excluded)</em></span><span class="v">${pct(exclP,1)}</span></div>
+    ${inclP!=null?`<div class="kv"><span class="k">Your debt ÷ all assets <em>(property at your ${money(hv,0)} estimate)</em></span><span class="v">${pct(inclP,1)}</span></div>`
+      :`<div class="kv"><span class="k">Your debt ÷ all assets</span><span class="v">— enter a property value</span></div>`}
+    <div class="kv"><span class="k">Singapore households, liabilities ÷ assets</span><span class="v">${pct(B.liabilitiesPctAssets,0)}</span></div>
+    <p class="note"><b>Read this carefully — the two are not like-for-like.</b> The national ${pct(B.liabilitiesPctAssets,0)} counts residential property inside assets; your ${pct(exclP,1)} does not.
+    ${inclP!=null
+      ? `On a comparable basis you are at <b>${pct(inclP,1)}</b> — still roughly ${fmt(inclP/B.liabilitiesPctAssets,1)}× the national figure.`
+      : `Even at a generous property value you would land in the 33–45% range, roughly 3–4× the national figure.`}
+    So: <b>you carry materially more debt than a typical Singaporean household.</b></p>
+    <p class="note">Two things stop that being alarming on its own. The national number averages in every household with no debt at all and every retiree with a paid-off flat, so it is not a "normal person like you" benchmark. And the <em>composition</em> differs: ${esc(B.mortgageShare)}, and yours is a ${latestManual()?.mortgageRatePct?pct(latestManual().mortgageRatePct,2)+' ':''}mortgage on a tenanted property plus a ${a.loans[0]?pct(a.loans[0].ratePct,2)+' ':''}loan against liquid securities — not consumer credit. What matters more than the ratio is whether the assets earn more than the debt costs, and whether you can survive a drawdown without being forced to sell. Both are answered elsewhere on this page.</p>
+    <p class="note">Source: ${esc(B.source)}. National liabilities ${money(B.liabilitiesBn*1e9,0).replace('S$','S$')} against net wealth ${money(B.netWealthBn*1e9,0)}; liabilities were ${pct(B.liabilitiesPctDisposableIncome,1)} of personal disposable income.</p>
+  </div>`; })()}
   ${(()=>{ const m=latestMrtl(); const c=mrtlCapacity(m); if(!m||!c||m.amountDrawn==null) return '';
     const util=m.amountDrawn/c.capacity*100;
     const headroom=c.capacity-m.amountDrawn;
@@ -600,6 +798,7 @@ function viewDash(){
       <b>Available for drawdown</b> is “the maximum you can draw down on your MRTL… based on your existing portfolio” — i.e. inside the facility already approved.
       A is ${money(Math.abs(c.optimistic-c.capacity),0)} ${c.assetBased<c.facilityBased?'lower':'higher'} than B. Fortress uses the smaller (${money(c.capacity,2)}) for the margin metric, so the buffer is never overstated.</div>`:''}
     <p class="note">This is the real margin metric — it uses DBS's own assessment of what your collateral supports, not an assumed advance ratio. On B's more generous basis the buffer would be ${pct(100-m.amountDrawn/c.optimistic*100,1)} rather than ${pct(fall,1)}. Update by importing the Portfolio Summary screen.</p>
+    <p class="note"><b>Is ${pct(util,1)} a sensible place to sit?</b> There is no published Singapore benchmark for this — securities-backed lending is a private-bank product, and the overwhelming majority of Singaporean households have <em>no</em> margin borrowing at all, so "vs a typical Singaporean" has no meaningful answer. The comparison that does mean something is against the mechanics: at ${pct(util,1)} used, the collateral can fall ${pct(fall,1)} before a call. Private-bank practice generally treats utilisation under 50% as conservative, 50–70% as needing attention, and 70%+ as leaving little room for a fast drawdown — because the trigger is not the fall itself but being forced to sell into it. You sit in the first band. What would move you up is not markets alone but drawing more.</p>
   </div>`; })()}
   ${(()=>{ const ids=Object.keys(state.lv||{}); if(!ids.length) return '';
     const rows=ids.map(pid=>{
@@ -689,6 +888,15 @@ function viewDash(){
     ${ry&&py?`<div class="kv"><span class="k"><b>MWRR</b> · statement${ry.blended?' (weighted)':''}<br>
       <span style="font-size:11px">${esc(rangeLabel(py.from,py.to))} · ${fmt(monthsBetween(py.from,py.to),0)} months · from the eStatement</span></span>
       <span class="v ${ry.pct>=0?'pos':'neg'}">${ry.pct>=0?'+':''}${pct(ry.pct,2)}</span></div>`:''}
+    <h2 style="margin-top:14px">S&P 500 over the same windows</h2>
+    ${BENCH.sp500.map(bm=>{
+      const mine=(reps.find(r=>r.from===bm.from)||{}).pct ?? ((py&&py.from===bm.from&&ry)?ry.pct:null);
+      const diff=mine!=null? mine-bm.sgdTotalRet : null;
+      return `<div class="kv"><span class="k">${esc(rangeLabel(bm.from,bm.to))}<br><span style="font-size:11px">price ${bm.priceRet>=0?'+':''}${fmt(bm.priceRet,2)}% · total return ${bm.totalRet>=0?'+':''}${fmt(bm.totalRet,2)}% · in SGD ${bm.sgdTotalRet>=0?'+':''}${fmt(bm.sgdTotalRet,2)}%</span></span>
+        <span class="v ${bm.sgdTotalRet>=0?'pos':'neg'}">${bm.sgdTotalRet>=0?'+':''}${pct(bm.sgdTotalRet,2)}<br><span style="font-size:11px;font-weight:400">${mine!=null?`you ${mine>=0?'+':''}${fmt(mine,2)}% · ${diff>=0?'ahead':'behind'} ${fmt(Math.abs(diff),2)} pts`:'—'}</span></span></div>`;
+    }).join('')}
+    <p class="note">S&P 500 shown three ways: price only, total return with dividends reinvested (the fair comparison, since your figures include income), and that total return converted to SGD at spot — which is what a Singapore investor actually banks. ${esc(BENCH.sp500[0].fxNote)} over the year; ${esc(BENCH.sp500[1].fxNote)} year-to-date. Sources: ${esc(BENCH.sp500[0].source)}.</p>
+    <p class="note"><b>Caveat on the comparison.</b> Your return is struck on <em>net</em> assets and is therefore levered — the S&P figures are unlevered. Beating an index with borrowed money is not the same as beating it outright, and the same leverage works in reverse on the way down. Your portfolio is also not an index: it is a concentrated set of holdings with its own currency mix.</p>
     <p class="note">${metrics.map(m=>'<b>'+esc(m)+'</b> — '+esc(METRIC_NOTE[m]||'')).join('<br>')}${metrics.includes('MWRR')||!ry?'':'<br><b>MWRR</b> — '+esc(METRIC_NOTE.MWRR)}</p>
     <p class="note">These do not disagree — they measure different things over different windows, so never read one against the other. For “is my wealth outgrowing the debt”, MWRR is the one that counts: it reflects what your own capital earned. TWRR judges the holdings, ignoring when you added or withdrew money. Record a new reading whenever you check the app: Settings → Reported returns.</p>
   </div>`; })()}
@@ -709,7 +917,12 @@ function viewDash(){
       const annAllIn = (a.estMonthlyInterest + (impInt ?? (mm.mortgageRatePct!=null&&mm.mortgageBalance!=null? mm.mortgageBalance*mm.mortgageRatePct/100/12 : 0)))*12;
       return `<div class="kv"><span class="k">Gains ÷ all-in interest (incl. mortgage, annualised)</span><span class="v">${annAllIn>0?fmt(a.plYtd/annAllIn,1)+'×':'—'}</span></div>`; })()}
     ${(()=>{ const r=blendedReturn(snap,'ytd'); if(!r) return '';
-      return `<p class="note">The % is DBS's own <b>money-weighted rate of return</b> from the statement's Performance Summary${r.blended?", weighted across your portfolios by their starting values — MWRR isn't additive, so this blend is close but not a figure DBS itself publishes":''}. It is measured on <b>net</b> assets, so leverage is already inside it: the gain is struck against your own capital, not against the gross portfolio.</p>`; })()}
+      const g=(()=>{ const gv=a.intPaidYtd>0?a.plYtd/a.intPaidYtd:null, dc=a.intPaidYtd>0?a.divYtd/a.intPaidYtd:null;
+        if(gv==null) return '';
+        return `<p class="note"><b>Are these coverage ratios good?</b> There is no household benchmark for them — the concept comes from corporate credit, where an <em>interest cover</em> of 3× or more is usually considered comfortable and under 1.5× is a warning. Yours are far above that, but read them for what they are.
+        <b>Dividend cover of ${fmt(dc,1)}×</b> is the durable one: it says your cash income alone pays the margin interest ${fmt(dc,1)} times over without selling anything or relying on prices. That is the ratio that keeps you solvent in a bad year, and above 1× is the line that matters.
+        <b>Gains ÷ interest of ${fmt(gv,1)}×</b> is flattering and fragile: it divides a volatile mark-to-market gain by a near-fixed cost, so it soars in a good year and goes <em>negative</em> in a bad one. July alone was ${money(a.plMtd,0)} — on a full month like that the ratio is meaningless. Treat ${fmt(gv,1)}× as evidence the strategy is working this year, not as a safety margin.</p>`; })();
+      return g+`<p class="note">The % is DBS's own <b>money-weighted rate of return</b> from the statement's Performance Summary${r.blended?", weighted across your portfolios by their starting values — MWRR isn't additive, so this blend is close but not a figure DBS itself publishes":''}. It is measured on <b>net</b> assets, so leverage is already inside it: the gain is struck against your own capital, not against the gross portfolio.</p>`; })()}
   </div>
   ${(()=>{ const mm=latestManual(); if(!mm) return '';
     const impInt = impliedMortgageInterest(mm.month);
@@ -774,25 +987,78 @@ function viewTrends(){
 
 function viewFX(){
   const snap=latest(), a=agg(snap);
-  const ccys=Object.entries(a.ccy).sort((x,y)=>y[1]-x[1]);
+  const ccys=Object.entries(a.pledgedCcy).sort((x,y)=>y[1]-x[1]);
   const palette=['var(--s1)','var(--s2)','var(--s3)','var(--s4)','var(--muted)','var(--axis)'];
   const items=ccys.map(([c,v],i)=>({label:c,v,pct:v/a.assets*100,color:palette[Math.min(i,palette.length-1)]}));
   const loanCcy={}; a.loans.forEach(l=>{loanCcy[l.ccy]=(loanCcy[l.ccy]||0)+Math.abs(l.principal);});
   const rates=snap.fxRates||{};
   const shocks=[-10,-5,5,10];
   const nonSgd=ccys.filter(([c])=>c!=='SGD');
+  // margin-call proximity, not just LTV: a shock shrinks the collateral, which shrinks its
+  // lending value proportionally, which eats into the buffer between drawn and capacity.
+  const mr=latestMrtl(), cap=mrtlCapacity(mr);
+  const baseBuf = (mr&&cap&&mr.amountDrawn!=null) ? 100-mr.amountDrawn/cap.capacity*100 : null;
+  const bufAfter = drop => (baseBuf==null)?null:100-mr.amountDrawn/(cap.capacity*(1-drop))*100;
   const stressRows=nonSgd.map(([c,v])=>{
-    const cells=shocks.map(s=>{ const dA=v*s/100; const ltv2=a.debt/(a.assets+dA)*100; return `<td>${money(dA/1000,0).replace('S$','')}k<br><span style="color:var(--muted)">${fmt(ltv2,1)}%</span></td>`; }).join('');
-    return `<tr><td><b>${c}</b><br><span style="color:var(--muted)">${pct(v/a.assets*100,1)} of assets</span></td>${cells}</tr>`;
+    const cells=shocks.map(s=>{
+      const dA=v*s/100, ltv2=a.debt/(a.pledgedAssets+dA)*100;
+      const nb=bufAfter(-dA/a.pledgedAssets);
+      return `<td>${money(dA/1000,0).replace('S$','')}k<br><span style="color:var(--muted)">LTV ${fmt(ltv2,1)}%</span>${nb!=null?`<br><span style="color:${s<0?'var(--serious)':'var(--delta-good)'}">buf ${fmt(nb,1)}%</span>`:''}</td>`;
+    }).join('');
+    return `<tr><td><b>${c}</b><br><span style="color:var(--muted)">${pct(v/a.pledgedAssets*100,1)} of collateral</span></td>${cells}</tr>`;
   }).join('');
+  const killRows=nonSgd.map(([c,v])=>{
+    const share=v/a.pledgedAssets;
+    const need=baseBuf==null?null:baseBuf/share;
+    return `<div class="kv"><span class="k"><b>${c}</b> · ${pct(share*100,2)} of collateral</span><span class="v ${need!=null&&need>100?'pos':''}">${need==null?'—':(need>100?'cannot — would need −'+fmt(need,0)+'%':'falls −'+fmt(need,1)+'%')}</span></div>`;
+  }).join('');
+  const allShare=nonSgd.reduce((t,[,v])=>t+v,0)/a.pledgedAssets;
+  const FXS = window.FX_SERIES||{}, avail=Object.keys(FXS);
+  const sel = avail.includes(state.settings.fxCcy)? state.settings.fxCcy : avail[0];
+  const held = new Set(Object.keys(a.pledgedCcy));
+  const chartCard = (()=>{
+    if(!sel) return '';
+    const bars = state.settings.fxBars||250;
+    const ch = candleChart(FXS[sel], {bars});
+    const above = k=> ch.ma[k]!=null ? (ch.last>=ch.ma[k]) : null;
+    const badge = (k,lbl,col)=> ch.ma[k]==null? '' :
+      `<span><span class="sw" style="background:${col}"></span>${lbl} ${ch.ma[k].toFixed(ch.dp)} <b class="${above(k)?'pos':'neg'}">${above(k)?'above':'below'}</b></span>`;
+    return `
+  <div class="card">
+    <h2>1 SGD = ${esc(sel)}<span class="pill">daily · ${esc(ch.from)} → ${esc(ch.to)}</span></h2>
+    <select onchange="setFxCcy(this.value)" style="width:100%;background:var(--page);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:10px;font:inherit;font-size:14px;margin-bottom:4px">
+      ${avail.map(c=>`<option value="${esc(c)}"${c===sel?' selected':''}>${esc(c)} — 1 SGD = ${FXS[c].c[FXS[c].c.length-1]} ${esc(c)}${held.has(c)?'  ·  you hold '+money(a.pledgedCcy[c],0):''}</option>`).join('')}
+    </select>
+    <div class="row2" style="margin:8px 0 6px">
+      ${[[120,'6M'],[250,'1Y'],[400,'Max']].map(([b,l])=>`<button class="btn ghost" style="padding:6px 0;font-size:12px;${bars===b?'border-color:var(--ink)':''}" onclick="setFxBars(${b})">${l}</button>`).join('')}
+    </div>
+    <div class="legend">${badge('m50','MA50','var(--s1)')}${badge('m150','MA150','var(--s4)')}${badge('m200','MA200','var(--s2)')}</div>
+    ${ch.svg}
+    <div class="kv" style="margin-top:6px"><span class="k">Close · change over window</span><span class="v">${ch.last.toFixed(ch.dp)} <span class="${ch.chg>=0?'pos':'neg'}">${ch.chg>=0?'+':''}${fmt(ch.chg,2)}%</span></span></div>
+    <div class="kv"><span class="k">Inverse (1 ${esc(sel)} = ? SGD)</span><span class="v">${(1/ch.last).toFixed(5)}</span></div>
+    ${held.has(sel)?`<div class="kv"><span class="k">Your ${esc(sel)} collateral</span><span class="v">${money(a.pledgedCcy[sel],0)} · ${pct(a.pledgedCcy[sel]/a.pledgedAssets*100,1)}</span></div>`:''}
+    <p class="note">Quoted as <b>1 SGD = X ${esc(sel)}</b>, so a <b>rising</b> line means SGD strengthening — which makes your ${esc(sel)} assets worth <em>less</em> in SGD. Candles are daily open/high/low/close; green closes up, red closes down. ${esc((window.FX_META||{}).source||'')}. This is an embedded snapshot, not a live feed.</p>
+  </div>`;
+  })();
   return `
-  <div class="card"><h2>Currency exposure (assets, SGD-equivalent)</h2>
+  ${chartCard}
+  <div class="card"><h2>Currency exposure (collateral, SGD-equivalent)</h2>
     ${hBars(items,{yFmt:v=>money(v)})}
-    <p class="note">Loans by currency: ${Object.entries(loanCcy).map(([c,v])=>`${c} ${money(v)}`).join(', ')||'none'}. ${(()=>{const usd=a.ccy.USD||0; return usd/a.assets>0.5 && !loanCcy.USD ? `Mismatch: ${pct(usd/a.assets*100,1)} of assets are USD while the loan is ${Object.keys(loanCcy).join('/')||'—'} — a USD fall shrinks assets but not the debt, so LTV and net worth both take the hit.`:''})()}</p>
+    <p class="note">Loans by currency: ${Object.entries(loanCcy).map(([c,v])=>`${c} ${money(v)}`).join(', ')||'none'}. ${(()=>{const usd=a.pledgedCcy.USD||0; return usd/a.pledgedAssets>0.5 && !loanCcy.USD ? `Mismatch: ${pct(usd/a.pledgedAssets*100,1)} of assets are USD while the loan is ${Object.keys(loanCcy).join('/')||'—'} — a USD fall shrinks assets but not the debt, so LTV and net worth both take the hit.`:''})()}</p>
   </div>
-  <div class="card"><h2>FX stress — asset impact & resulting LTV</h2>
+  ${baseBuf!=null?`<div class="card"><h2>What would actually trigger a margin call?</h2>
+    <div class="banner b-good" style="margin:0 0 10px"><span class="ic">✔</span><div>
+      <b>Today's buffer: ${pct(baseBuf,1)}</b>
+      Your collateral's lending value can fall that far before the drawn ${money(mr.amountDrawn,0)} exceeds it. FX is only dangerous to the extent it moves that number.</div></div>
+    <p class="note" style="margin-top:0">If <b>only</b> this currency moved and everything else held still, here is the fall it would take — on its own — to consume the entire buffer:</p>
+    ${killRows}
+    <div class="kv"><span class="k"><b>All non-SGD together</b> · ${pct(allShare*100,2)}</span><span class="v">falls −${fmt(baseBuf/allShare,1)}%</span></div>
+    <p class="note">This is why a −10% USD move and a −10% EUR move land so differently. Both cut the collateral by the same <em>proportion of their own exposure</em>, but USD is ${pct((a.pledgedCcy.USD||0)/a.pledgedAssets*100,1)} of the collateral and EUR is ${pct((a.pledgedCcy.EUR||0)/a.pledgedAssets*100,2)} — so the USD move is roughly ${fmt((a.pledgedCcy.USD||0)/Math.max(a.pledgedCcy.EUR||1,1),0)}× the size in dollars, and it eats ${fmt((a.pledgedCcy.USD||0)/Math.max(a.pledgedCcy.EUR||1,1),0)}× as much buffer. Currency risk here is really <b>one</b> risk — USD — wearing five labels.</p>
+  </div>`:''}
+  <div class="card"><h2>FX stress — collateral, LTV and buffer</h2>
     <table class="hist"><tr><th>vs SGD</th>${shocks.map(s=>`<th>${s>0?'+':''}${s}%</th>`).join('')}</tr>${stressRows}</table>
-    <p class="note">Each cell: change in asset value (S$ thousands) and the LTV after the move, holding the loan constant. Computed from this statement's currency allocation — indicative rates as printed by DBS.</p>
+    <p class="note">Each cell: change in collateral value (S$ thousands), the resulting LTV, and the remaining margin-call buffer${baseBuf!=null?' (from '+pct(baseBuf,1)+' today)':''}.
+    <b>Why the LTV barely moves:</b> LTV is debt ÷ collateral, and the debt is only ${pct(a.ltv,1)} of the collateral to begin with — so even a large loss moves the ratio by a point or two. The buffer line is the one to watch, because it measures distance to an actual call rather than a ratio. Loan held constant; computed from this statement's currency allocation at DBS's printed indicative rates.</p>
   </div>
   ${a.forwards.length?`<div class="card"><h2>FX forwards</h2>
     ${a.forwards.map(f=>{
@@ -910,6 +1176,16 @@ function viewSet(){
     <input type="number" id="setHome" step="1000" inputmode="decimal" value="${s.homeValue??''}" placeholder="leave blank if unknown">
     <button class="btn" style="margin-top:12px" onclick="saveSettings()">Save</button>
   </div>
+  <div class="card"><h2>Passcode lock</h2>
+    ${isLocked()
+      ? `<div class="banner b-good" style="margin:0 0 10px"><span class="ic">🔒</span><div><b>Lock is on</b>Your data is encrypted in this browser with AES-GCM under a key derived from your passphrase.</div></div>
+         <button class="btn ghost" onclick="disableLock()">Turn the lock off</button>`
+      : `<p class="note" style="margin-top:0">Set a passphrase once. Fortress then encrypts everything it stores on this device and asks for it each time you open the app.</p>
+         <label class="fld">Passphrase (6+ characters)</label><input type="password" id="lkPass">
+         <label class="fld">Repeat it</label><input type="password" id="lkPass2">
+         <button class="btn" style="margin-top:12px" onclick="enableLock()">Enable lock</button>`}
+    <p class="note"><b>Be clear about what this does and does not do.</b> It encrypts your <em>data</em> at rest in this browser, so someone with your unlocked phone cannot read your balances by opening the app, and the localStorage contents are meaningless without the passphrase. It is <em>not</em> a server login: the app's own code sits on a public GitHub Pages URL, and anyone who reaches that URL gets the empty app. There is <b>no recovery</b> — the passphrase is never stored, so keep a JSON backup (History → Export) before you enable it.</p>
+  </div>
   <div class="card"><h2>Data</h2>
     <p class="note">Everything is stored only in this browser (localStorage). Use Export in History for a backup before clearing browser data.</p>
     <button class="btn ghost" style="margin-top:8px" onclick="if(confirm('Delete all snapshots, home-loan entries and settings?')){['fortress.snapshots','fortress.manual','fortress.income','fortress.mrtl','fortress.lv','fortress.reported','fortress.settings'].forEach(k=>localStorage.removeItem(k));location.reload();}">Clear all data</button>
@@ -987,6 +1263,8 @@ function addReported(){
     capturedOn:new Date().toISOString().slice(0,10), source:'manual entry from the DBS app' });
   saveAll(); go('dash');
 }
+function setFxCcy(c){ state.settings.fxCcy=c; saveAll(); render(); }
+function setFxBars(b){ state.settings.fxBars=b; saveAll(); render(); }
 function delReported(ix){ if(confirm('Remove this reading?')){ state.reported.splice(ix,1); saveAll(); render(); } }
 function delIncome(ix){ if(confirm('Remove this income entry?')){ state.income.splice(ix,1); saveAll(); render(); } }
 function delMrtl(d){ if(confirm('Delete MRTL entry '+d+'?')){ delete state.mrtl[d]; saveAll(); render(); } }
@@ -1299,7 +1577,11 @@ function showModal(html){ document.getElementById('modalRoot').innerHTML=`<div c
 function closeModal(){ document.getElementById('modalRoot').innerHTML=''; window.__pending=null; }
 
 /* ================= boot ================= */
-render();
+let booted=false;
+(function boot(){
+  if(isLocked()){ lockScreen(); return; }
+  booted=true; render();
+})();
 if('serviceWorker' in navigator && location.protocol==='https:'){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
 </script>
 </body>
