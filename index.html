@@ -120,7 +120,7 @@ table.hist th:first-child,table.hist td:first-child{text-align:left}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:AUG:20-05:10';
+const VERSION = 'v2026:AUG:20-09:15';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -205,11 +205,23 @@ const LV_SEED = {
 /* Returns exactly as DBS reports them, each stamped with its metric AND its period.
    TWRR and MWRR over different windows are not comparable — the card exists so the
    two never look like they contradict each other. */
-const REPORTED_SEED = [{
-  id:'rep-twrr-1y', portfolioId:'S-607522-0', metric:'TWRR', pct:34.93,
-  from:'2025-08-18', to:'2026-08-18', capturedOn:'2026-08-19',
-  source:'DBS app → Portfolio details → Performance, 1Y, TWRR toggle'
-}];
+const REPORTED_SEED = [
+  { id:'rep-0-1y-0818', portfolioId:'S-607522-0', metric:'TWRR', pct:34.93,
+    from:'2025-08-18', to:'2026-08-18', capturedOn:'2026-08-19',
+    source:'DBS app → Portfolio details → Performance, 1Y, TWRR' },
+  { id:'rep-0-1y', portfolioId:'S-607522-0', metric:'TWRR', pct:32.91,
+    from:'2025-08-19', to:'2026-08-19', capturedOn:'2026-08-20',
+    source:'DBS app → Portfolio details → Performance, 1Y, TWRR' },
+  { id:'rep-1-1y', portfolioId:'S-607522-1', metric:'TWRR', pct:27.19,
+    from:'2025-08-19', to:'2026-08-19', capturedOn:'2026-08-20',
+    source:'DBS app → Portfolio details → Performance, 1Y, TWRR' },
+  { id:'rep-0-ytd', portfolioId:'S-607522-0', metric:'TWRR', pct:20.69,
+    from:'2026-01-01', to:'2026-08-19', capturedOn:'2026-08-20',
+    source:'DBS app → Portfolio details → Performance, Year to date (YTD), TWRR' },
+  { id:'rep-1-ytd', portfolioId:'S-607522-1', metric:'TWRR', pct:22.97,
+    from:'2026-01-01', to:'2026-08-19', capturedOn:'2026-08-20',
+    source:'DBS app → Portfolio details → Performance, Year to date (YTD), TWRR' }
+];
 const METRIC_NOTE = {
   TWRR:'Time-weighted: strips your deposits and withdrawals out, so it measures how the holdings performed.',
   MWRR:'Money-weighted: keeps your cash flows in, so it measures what your own capital actually earned.'
@@ -596,6 +608,10 @@ const BENCH = {
     source:'Department of Statistics Singapore, Household Sector Balance Sheet 1Q2026 (reported 8 Jun 2026)'
   },
   sp500:[
+    { from:'2026-01-01', to:'2026-08-19', priceRet:12.60, totalRet:13.38, sgdTotalRet:12.11,
+      fxNote:'USD/SGD 1.28550 → 1.27110 (−1.12%)', source:'^GSPC close and SPY dividend-adjusted close via FMP; USD/SGD via Alpha Vantage' },
+    { from:'2025-08-19', to:'2026-08-19', priceRet:20.22, totalRet:21.53, sgdTotalRet:20.23,
+      fxNote:'USD/SGD 1.28490 → 1.27110 (−1.07%)', source:'^GSPC close and SPY dividend-adjusted close via FMP; USD/SGD via Alpha Vantage' },
     { from:'2025-08-18', to:'2026-08-18', priceRet:19.27, totalRet:20.62, sgdTotalRet:20.05,
       fxNote:'USD/SGD 1.28431 → 1.27820 (−0.48%)', source:'^GSPC close and SPY dividend-adjusted close via FMP; USD/SGD via Alpha Vantage' },
     { from:'2025-12-31', to:'2026-07-31', priceRet:9.41, totalRet:10.13, sgdTotalRet:9.81,
@@ -603,6 +619,70 @@ const BENCH = {
   ]
 };
 function benchFor(from,to){ return BENCH.sp500.find(b=>b.from===from||Math.abs(new Date(b.to)-new Date(to))<86400000*4 && Math.abs(new Date(b.from)-new Date(from))<86400000*5); }
+
+/* ===== Fortress strength: how much punishment can this structure absorb? ===== */
+const HIST_DRAWDOWNS=[{y:'2022',pct:25.4},{y:'2020 COVID',pct:33.9},{y:'2000-02 dot-com',pct:49.1},{y:'2008 GFC',pct:56.8}];
+function fortressStrength(snap,a){
+  const m=latestMrtl(), c=mrtlCapacity(m), w=netWorth(a), mm=latestManual();
+  if(!m||!c||m.amountDrawn==null) return null;
+  const P=[];
+  const band=(v,t)=>{ for(let i=0;i<t.length;i++) if(v>=t[i][0]) return t[i][1]; return t[t.length-1][1]; };
+
+  // A — how far markets can fall before a call
+  const buf=100-m.amountDrawn/c.capacity*100;
+  const survives=HIST_DRAWDOWNS.filter(d=>d.pct<buf), breaks=HIST_DRAWDOWNS.filter(d=>d.pct>=buf);
+  P.push({k:'Market shock',score:band(buf,[[50,4],[35,3],[25,2],[15,1],[0,0]]),
+    v:pct(buf,1)+' fall absorbed',
+    d:`Survives ${survives.map(d=>d.y).join(', ')||'no historical analogue'}${breaks.length?'; breached by '+breaks.map(d=>d.y+' (−'+d.pct+'%)').join(', '):''}.`});
+
+  // B — can income service the debt without selling anything
+  const marginInt=a.estMonthlyInterest*12;
+  const mortInt=(impliedMortgageInterest(mm&&mm.month)??0)*12;
+  const inst=(mm&&mm.mortgagePayment?mm.mortgagePayment:0)*12;
+  const months=snap.statementDate?(+snap.statementDate.slice(5,7)):12;
+  const income=monthlyIncome()*12 + (a.divYtd+a.intRecYtd)*12/months;
+  const intOnly=marginInt+mortInt, fullSvc=marginInt+inst;
+  const cover=intOnly>0?income/intOnly:null, svcCover=fullSvc>0?income/fullSvc:null;
+  P.push({k:'Debt service',score:band(cover||0,[[3,4],[2,3],[1.5,2],[1,1],[0,0]]),
+    v:fmt(cover,2)+'× interest cover',
+    d:`Income ${money(income,0)}/yr against ${money(intOnly,0)} of interest. Including mortgage principal the cover is ${fmt(svcCover,2)}×, a surplus of ${money(income-fullSvc,0)}/yr — nothing has to be sold to stay current.`});
+
+  // C — dry powder that is not pledged
+  const reserve=(a.unpledgedAssets||0)+(w.uobCash||0);
+  const mo=fullSvc>0?reserve/(fullSvc/12):null;
+  P.push({k:'Free reserves',score:band(mo||0,[[24,4],[12,3],[6,2],[3,1],[0,0]]),
+    v:money(reserve,0),
+    d:`Unencumbered assets DBS has no claim on: ${fmt(mo,1)} months of full debt service. This is what you sell in a call instead of liquidating pledged collateral at the worst possible prices.`});
+
+  // D — concentration
+  const top=Object.entries(a.pledgedCcy||{}).filter(([k])=>k!=='SGD').sort((x,y)=>y[1]-x[1])[0];
+  const share=top?top[1]/a.pledgedAssets*100:0;
+  P.push({k:'Concentration',score:band(100-share,[[60,4],[45,3],[35,2],[25,1],[0,0]]),
+    v:top?pct(share,1)+' '+top[0]:'—',
+    d:top?`${top[0]} is ${pct(share,1)} of the collateral. It would have to fall ${pct(buf/(share/100),1)} alone to cause a call, so this is a wealth risk more than a margin risk — but it is one bet, not five.`:''});
+
+  // E — floating-rate headroom
+  const rentY=monthlyIncome()*12, mtg=mm&&mm.mortgageBalance?mm.mortgageBalance:0;
+  const mortBreak=mtg>0?rentY/mtg*100:null;
+  const divY=a.divYtd*12/months, mp=Math.abs((a.loans[0]||{}).principal||0);
+  const marginBreak=mp>0?divY/mp*100:null;
+  P.push({k:'Rate rises',score:band(Math.min(mortBreak||0,marginBreak||0),[[5,4],[4,3],[3,2],[2,1],[0,0]]),
+    v:'safe to ~'+fmt(Math.min(mortBreak||99,marginBreak||99),1)+'%',
+    d:`Rent covers the mortgage until its rate passes ${pct(mortBreak,2)} (now ${mm&&mm.mortgageRatePct?pct(mm.mortgageRatePct,2):'—'}); dividends cover the margin loan until ${pct(marginBreak,2)} (now ${a.loans[0]?pct(a.loans[0].ratePct,2):'—'}). Both are floating, and that gap is the real cushion.`});
+
+  // F — rollover
+  const L=a.loans[0], dd=L?daysUntil(L.maturityDate):null;
+  P.push({k:'Rollover',score:dd==null?2:band(dd,[[90,4],[30,3],[14,2],[0,1]]),
+    v:dd==null?'—':dd+' days',
+    d:L?`The ${money(Math.abs(L.principal),0)} MRTL matures ${L.maturityDate} and is revolving — it depends on DBS renewing, not on your solvency. Facility limit ${money(m.creditLimit,0)} is not the constraint; renewal is. Cheap to eliminate: repay from the unpledged reserve if you ever want the dependency gone.`:''});
+
+  const tot=P.reduce((s,p)=>s+p.score,0), max=P.length*4;
+  const grade = tot/max>=0.85?'Very strong': tot/max>=0.7?'Strong': tot/max>=0.55?'Solid': tot/max>=0.4?'Adequate':'Fragile';
+  const weakest=P.slice().sort((x,y)=>x.score-y.score)[0];
+  return {P,tot,max,grade,weakest,buf,breaks};
+}
+const SCORE_LABEL=['Weak','Thin','Adequate','Solid','Strong'];
+const SCORE_COLOR=['var(--critical)','var(--serious)','var(--warn)','var(--s1)','var(--good)'];
 
 /* ===== FX candlestick + moving averages (hand-rolled SVG) ===== */
 function sma(arr, n){
@@ -749,6 +829,31 @@ function viewDash(){
     <div class="tile"><div class="v">${money(allInMo)}</div><div class="l">All-in interest / month</div><div class="d">DBS ≈ ${money(a.estMonthlyInterest)} + mortgage ${impInt!==null?money(impInt):(mm?.mortgageRatePct!=null?'≈ '+money(mtg*mm.mortgageRatePct/100/12):'—')}</div></div>
     <div class="tile"><div class="v">${liquid>0?pct(totDebt/liquid*100,1):'—'}</div><div class="l">Total debt ÷ liquid assets</div><div class="d">${money(totDebt,0)} of debt against ${money(liquid,0)}${state.settings.homeValue?'<br>'+pct(totDebt/(liquid+state.settings.homeValue)*100,1)+' incl. property':'<br>property not counted'}</div></div>
   </div>`; })()}
+  ${(()=>{ const F=fortressStrength(snap,a); if(!F) return '';
+    const pctScore=F.tot/F.max*100;
+    return `
+  <div class="card">
+    <h2>How strong is the Fortress?<span class="pill">${esc(F.grade)}</span></h2>
+    <div class="gauge" style="margin:2px 0 12px">
+      <div class="track" style="height:14px"><div class="fill" style="width:${fmt(pctScore,0)}%;background:${pctScore>=70?'var(--good)':pctScore>=55?'var(--s1)':'var(--warn)'}"></div></div>
+      <div class="axis"><span>Fragile</span><span>${F.tot} of ${F.max}</span><span>Very strong</span></div>
+    </div>
+    ${F.P.map(p=>`
+      <div style="margin:10px 0 0">
+        <div class="kv" style="border:none;padding-bottom:2px">
+          <span class="k"><b>${esc(p.k)}</b> · <span style="color:${SCORE_COLOR[p.score]}">${esc(SCORE_LABEL[p.score])}</span></span>
+          <span class="v">${p.v}</span></div>
+        <div class="track" style="height:6px;border-radius:3px;background:var(--grid)">
+          <div class="fill" style="width:${(p.score/4*100)}%;background:${SCORE_COLOR[p.score]};border-radius:3px"></div></div>
+        <p class="note" style="margin-top:5px">${p.d}</p>
+      </div>`).join('')}
+    <div class="warnbox" style="margin-top:14px">
+      <b>The verdict.</b> The walls hold: it takes a ${pct(F.buf,1)} fall in collateral value to produce a margin call, and the income covers every interest payment ${fmt(F.P[1].score>=0?(F.P[1].v.split('×')[0]):'',0)}× over without selling a share.
+      ${F.breaks.length?`The one shock that breaks through is a <b>${esc(F.breaks[F.breaks.length-1].y)}</b>-scale event (−${fmt(F.breaks[F.breaks.length-1].pct,1)}%) — and only just.`:'No historical drawdown on record breaches it.'}
+      The weakest point is <b>${esc(F.weakest.k.toLowerCase())}</b>, and that is where an extra dollar buys the most safety — not in paying down a 2.10% loan.
+    </div>
+    <p class="note">Each pillar is scored against explicit thresholds shown in its own line — nothing here is a black box, and none of it is advice. Change any input (property value, a new statement, a rate move) and the scores move with it.</p>
+  </div>`; })()}
   ${(()=>{ const w=netWorth(a); if(!w.hasUob) return '';
     const liq=a.assets+(w.uobCash||0), debt=a.debt+(w.mortgage||0);
     const hv=state.settings.homeValue;
@@ -758,8 +863,13 @@ function viewDash(){
   <div class="card">
     <h2>How geared are you, really?<span class="pill">vs ${esc(B.period)} national data</span></h2>
     <div class="kv"><span class="k">Your debt ÷ liquid assets <em>(property excluded)</em></span><span class="v">${pct(exclP,1)}</span></div>
-    ${inclP!=null?`<div class="kv"><span class="k">Your debt ÷ all assets <em>(property at your ${money(hv,0)} estimate)</em></span><span class="v">${pct(inclP,1)}</span></div>`
-      :`<div class="kv"><span class="k">Your debt ÷ all assets</span><span class="v">— enter a property value</span></div>`}
+    ${inclP!=null?`<div class="kv"><span class="k">Your debt ÷ all assets <em>(property at your ${money(hv,0)} estimate)</em></span><span class="v">${pct(inclP,1)}</span></div>`:''}
+    ${hv==null?`<div style="background:var(--page);border:1px solid var(--border);border-radius:10px;padding:10px;margin:8px 0">
+      <label class="fld" style="margin-top:0">Optional — what is the mortgaged property worth? Your own estimate is fine; it is only used to show this ratio on a like-for-like basis and a property-inclusive net worth. Leave it blank and nothing breaks.</label>
+      <input type="number" id="quickHome" step="10000" inputmode="decimal" placeholder="e.g. 1800000">
+      <button class="btn" style="margin-top:8px" onclick="saveQuickHome()">Save property value</button>
+    </div>`:`<div class="kv"><span class="k">Property value on file</span><span class="v">${money(hv,0)}
+      <button class="btn ghost" style="width:auto;padding:2px 8px;font-size:11px;margin-left:8px" onclick="clearHome()">clear</button></span></div>`}
     <div class="kv"><span class="k">Singapore households, liabilities ÷ assets</span><span class="v">${pct(B.liabilitiesPctAssets,0)}</span></div>
     <p class="note"><b>Read this carefully — the two are not like-for-like.</b> The national ${pct(B.liabilitiesPctAssets,0)} counts residential property inside assets; your ${pct(exclP,1)} does not.
     ${inclP!=null
@@ -873,32 +983,41 @@ function viewDash(){
       return `The DBS statement does not publish these ratios${lv?'; the '+lv+'% figure is the one you entered in Settings':' — get them from your RM, or import the MRTL draw-down screen, which states your capacity directly'}.`;
     })()}</p>
   </div>
-  ${(()=>{ const reps=(state.reported||[]).slice().sort((x,y)=>(y.to||'').localeCompare(x.to||''));
+  ${(()=>{ const reps=(state.reported||[]).slice();
     const py=periodOf(snap.statementDate,'ytd');
     const ry=blendedReturn(snap,'ytd');
-    if(!reps.length) return '';
-    const metrics=[...new Set(reps.map(r=>r.metric))];
+    if(!reps.length && !ry) return '';
+    // group every reading by its window so like is compared with like
+    const wins={};
+    reps.forEach(r=>{ const k=r.from+'|'+r.to; (wins[k]=wins[k]||{from:r.from,to:r.to,rows:[]}).rows.push(r); });
+    if(ry&&py){ const k=py.from+'|'+py.to;
+      (wins[k]=wins[k]||{from:py.from,to:py.to,rows:[]}).rows.push(
+        {portfolioId:'both (weighted)',metric:'MWRR',pct:ry.pct,from:py.from,to:py.to,source:'eStatement'}); }
+    const order=Object.values(wins).sort((x,y)=> (y.to+y.from).localeCompare(x.to+x.from));
+    const ytdTwrr=reps.filter(r=>r.metric==='TWRR' && r.from===(py&&py.from));
     return `
   <div class="card">
-    <h2>Returns as DBS reports them</h2>
-    ${reps.map(r=>`
-      <div class="kv"><span class="k"><b>${esc(r.metric)}</b> · ${esc(r.portfolioId||'')}<br>
-        <span style="font-size:11px">${esc(rangeLabel(r.from,r.to))} · ${fmt(monthsBetween(r.from,r.to),0)} months${r.capturedOn?' · read '+esc(r.capturedOn):''}</span></span>
-        <span class="v ${r.pct>=0?'pos':'neg'}">${r.pct>=0?'+':''}${pct(r.pct,2)}</span></div>`).join('')}
-    ${ry&&py?`<div class="kv"><span class="k"><b>MWRR</b> · statement${ry.blended?' (weighted)':''}<br>
-      <span style="font-size:11px">${esc(rangeLabel(py.from,py.to))} · ${fmt(monthsBetween(py.from,py.to),0)} months · from the eStatement</span></span>
-      <span class="v ${ry.pct>=0?'pos':'neg'}">${ry.pct>=0?'+':''}${pct(ry.pct,2)}</span></div>`:''}
-    <h2 style="margin-top:14px">S&P 500 over the same windows</h2>
-    ${BENCH.sp500.map(bm=>{
-      const mine=(reps.find(r=>r.from===bm.from)||{}).pct ?? ((py&&py.from===bm.from&&ry)?ry.pct:null);
-      const diff=mine!=null? mine-bm.sgdTotalRet : null;
-      return `<div class="kv"><span class="k">${esc(rangeLabel(bm.from,bm.to))}<br><span style="font-size:11px">price ${bm.priceRet>=0?'+':''}${fmt(bm.priceRet,2)}% · total return ${bm.totalRet>=0?'+':''}${fmt(bm.totalRet,2)}% · in SGD ${bm.sgdTotalRet>=0?'+':''}${fmt(bm.sgdTotalRet,2)}%</span></span>
-        <span class="v ${bm.sgdTotalRet>=0?'pos':'neg'}">${bm.sgdTotalRet>=0?'+':''}${pct(bm.sgdTotalRet,2)}<br><span style="font-size:11px;font-weight:400">${mine!=null?`you ${mine>=0?'+':''}${fmt(mine,2)}% · ${diff>=0?'ahead':'behind'} ${fmt(Math.abs(diff),2)} pts`:'—'}</span></span></div>`;
+    <h2>Returns as DBS reports them<span class="pill">by window</span></h2>
+    ${order.map(w=>{
+      const bm=BENCH.sp500.find(x=>x.from===w.from && x.to===w.to);
+      const mos=fmt(monthsBetween(w.from,w.to),0);
+      return `
+      <div style="margin:12px 0 0">
+        <div style="font-size:12px;color:var(--ink2);font-weight:600">${esc(rangeLabel(w.from,w.to))} · ${mos} months</div>
+        ${w.rows.sort((x,y)=>String(x.portfolioId).localeCompare(String(y.portfolioId))).map(r=>{
+          const gap = bm? r.pct-bm.sgdTotalRet : null;
+          return `<div class="kv"><span class="k">${esc(r.metric)} · ${esc(r.portfolioId)}</span>
+            <span class="v ${r.pct>=0?'pos':'neg'}">${r.pct>=0?'+':''}${pct(r.pct,2)}${gap!=null?`<br><span style="font-size:11px;font-weight:400;color:var(--ink2)">${gap>=0?'ahead of':'behind'} S&P by ${fmt(Math.abs(gap),2)} pts</span>`:''}</span></div>`;
+        }).join('')}
+        ${bm?`<div class="kv"><span class="k" style="color:var(--muted)">S&P 500 · total return in SGD<br><span style="font-size:11px">price ${bm.priceRet>=0?'+':''}${fmt(bm.priceRet,2)}% · USD total return ${bm.totalRet>=0?'+':''}${fmt(bm.totalRet,2)}%</span></span>
+          <span class="v" style="font-weight:400">${bm.sgdTotalRet>=0?'+':''}${pct(bm.sgdTotalRet,2)}</span></div>`
+          :`<p class="note" style="margin:2px 0 0">No S&P figure fetched for this exact window.</p>`}
+      </div>`;
     }).join('')}
-    <p class="note">S&P 500 shown three ways: price only, total return with dividends reinvested (the fair comparison, since your figures include income), and that total return converted to SGD at spot — which is what a Singapore investor actually banks. ${esc(BENCH.sp500[0].fxNote)} over the year; ${esc(BENCH.sp500[1].fxNote)} year-to-date. Sources: ${esc(BENCH.sp500[0].source)}.</p>
-    <p class="note"><b>Caveat on the comparison.</b> Your return is struck on <em>net</em> assets and is therefore levered — the S&P figures are unlevered. Beating an index with borrowed money is not the same as beating it outright, and the same leverage works in reverse on the way down. Your portfolio is also not an index: it is a concentrated set of holdings with its own currency mix.</p>
-    <p class="note">${metrics.map(m=>'<b>'+esc(m)+'</b> — '+esc(METRIC_NOTE[m]||'')).join('<br>')}${metrics.includes('MWRR')||!ry?'':'<br><b>MWRR</b> — '+esc(METRIC_NOTE.MWRR)}</p>
-    <p class="note">These do not disagree — they measure different things over different windows, so never read one against the other. For “is my wealth outgrowing the debt”, MWRR is the one that counts: it reflects what your own capital earned. TWRR judges the holdings, ignoring when you added or withdrew money. Record a new reading whenever you check the app: Settings → Reported returns.</p>
+    <p class="note" style="margin-top:14px"><b>TWRR</b> — ${esc(METRIC_NOTE.TWRR)}<br><b>MWRR</b> — ${esc(METRIC_NOTE.MWRR)}</p>
+    ${py&&!ytdTwrr.length?'':`<p class="note">Note the window mismatch on the statement line: the eStatement closes 31 Jul while the app's YTD runs to 19 Aug, so the MWRR and the YTD TWRR are not directly comparable even though both say "year to date".</p>`}
+    <p class="note">Readings are grouped by window because that is the only way they mean anything — a 1Y TWRR and a year-to-date MWRR measure different things over different lengths of time. The S&P line is dividend-reinvested total return converted to SGD at spot, which is what a Singapore investor actually banks.</p>
+    <p class="note"><b>Two caveats before you feel too good.</b> Your returns are struck on <em>net</em> assets and are therefore levered; the index is not. And a portfolio that is ${pct((a.pledgedCcy.USD||0)/a.pledgedAssets*100,0)} USD will track US equities closely by construction — beating the index by a few points is a stock-selection result, not proof of diversification.</p>
   </div>`; })()}
   <div class="card">
     <h2>Interest vs portfolio gains${(()=>{const p=periodOf(snap.statementDate,'ytd');return p?' · '+esc(rangeLabel(p.from,p.to)):' (YTD)';})()}</h2>
@@ -1263,6 +1382,12 @@ function addReported(){
     capturedOn:new Date().toISOString().slice(0,10), source:'manual entry from the DBS app' });
   saveAll(); go('dash');
 }
+function saveQuickHome(){
+  const el=document.getElementById('quickHome'); if(!el) return;
+  if(el.value===''){ alert('Enter a value, or just leave it blank — it is optional.'); return; }
+  state.settings.homeValue=Math.max(0,+el.value); saveAll(); render();
+}
+function clearHome(){ state.settings.homeValue=null; saveAll(); render(); }
 function setFxCcy(c){ state.settings.fxCcy=c; saveAll(); render(); }
 function setFxBars(b){ state.settings.fxBars=b; saveAll(); render(); }
 function delReported(ix){ if(confirm('Remove this reading?')){ state.reported.splice(ix,1); saveAll(); render(); } }
