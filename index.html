@@ -120,7 +120,7 @@ table.hist th:first-child,table.hist td:first-child{text-align:left}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:AUG:20-12:30';
+const VERSION = 'v2026:AUG:20-14:10';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -242,6 +242,46 @@ if(!state.income){ state.income = INCOME_SEED; store.set('fortress.income', stat
 if(!state.mrtl){ state.mrtl = MRTL_SEED; store.set('fortress.mrtl', state.mrtl); }
 if(!state.lv){ state.lv = LV_SEED; store.set('fortress.lv', state.lv); }
 if(!state.reported){ state.reported = REPORTED_SEED; store.set('fortress.reported', state.reported); }
+
+/* ---- seed migrations ----------------------------------------------------
+   A first install copies the seeds above. But an app that keeps gaining seeded
+   readings needs those to reach devices that already installed an older build,
+   WITHOUT touching anything the user entered. Each migration is additive and
+   idempotent: it fills gaps and repairs missing fields, and never deletes.  */
+const SEED_VERSION = 3;
+function runSeedMigrations(){
+  const from = store.get('fortress.seedVersion', 0);
+  if(from >= SEED_VERSION) return 0;
+  let changed = 0;
+
+  // v2 — readings seeded after the first build (all four TWRR windows)
+  state.reported = state.reported || [];
+  REPORTED_SEED.forEach(seed=>{
+    const dup = state.reported.some(r =>
+      r.id===seed.id || (r.portfolioId===seed.portfolioId && r.metric===seed.metric && r.from===seed.from && r.to===seed.to));
+    if(!dup){ state.reported.push({...seed, seeded:true}); changed++; }
+  });
+
+  // v3 — older MRTL entries predate portfolioId, which the advance-ratio lookup needs
+  Object.values(state.mrtl||{}).forEach(m=>{
+    if(!m.portfolioId){
+      const withFacility = Object.keys(state.lv||{}).find(pid=>(state.lv[pid]||{}).hasFacility);
+      m.portfolioId = withFacility || MRTL_SEED[Object.keys(MRTL_SEED)[0]].portfolioId;
+      changed++;
+    }
+  });
+  // v3 — older LV entries predate the pledged / hasFacility flags
+  Object.keys(LV_SEED).forEach(pid=>{
+    const cur=(state.lv||{})[pid], seed=LV_SEED[pid];
+    if(!cur) return;
+    if(cur.pledged===undefined){ cur.pledged = seed.pledged; changed++; }
+    if(cur.hasFacility===undefined){ cur.hasFacility = seed.hasFacility; changed++; }
+  });
+
+  store.set('fortress.seedVersion', SEED_VERSION);
+  if(changed) saveAll();
+  return changed;
+}
 function saveAll(){
   if(typeof cryptoKey!=='undefined' && cryptoKey){ persistVault(); return; }   // encrypted: one blob, no plaintext
   store.set('fortress.snapshots', state.snapshots); store.set('fortress.manual', state.manual);
@@ -495,7 +535,7 @@ function hBars(items,{yFmt=v=>fmt(v)}={}){
    unreadable. This protects DATA AT REST on this device; it is not a server
    login, and the app's own code is public on GitHub Pages. */
 const LOCK_KEY='fortress.lock', VAULT_KEY='fortress.vault', PBKDF2_ITER=310000;
-let cryptoKey=null;
+var cryptoKey=null;   // var, not let: saveAll() may run before this line executes
 const enc=new TextEncoder(), dec=new TextDecoder();
 const b64=b=>btoa(String.fromCharCode(...new Uint8Array(b)));
 const unb64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
@@ -568,7 +608,9 @@ function lockScreen(err){
 async function doUnlock(){
   const el=document.getElementById('lockPass'); const pass=el?el.value:'';
   if(!pass) return;
-  try{ await unlock(pass); booted=true; render(); }
+  try{ await unlock(pass);
+    try{ window.__seedFixes = runSeedMigrations(); }catch(e){ console.error('seed migration failed', e); }
+    booted=true; render(); }
   catch(e){ lockScreen('That passphrase did not work. Try again.'); }
 }
 async function enableLock(){
@@ -813,6 +855,7 @@ function viewDash(){
     <div class="tile"><div class="v">${money(allInMo)}</div><div class="l">All-in interest / month</div><div class="d">DBS ≈ ${money(a.estMonthlyInterest)} + mortgage ${impInt!==null?money(impInt):(mm?.mortgageRatePct!=null?'≈ '+money(mtg*mm.mortgageRatePct/100/12):'—')}</div></div>
     <div class="tile"><div class="v">${liquid>0?pct(totDebt/liquid*100,1):'—'}</div><div class="l">Total debt ÷ liquid assets</div><div class="d">${money(totDebt,0)} of debt against ${money(liquid,0)}${state.settings.homeValue?'<br>'+pct(totDebt/(liquid+state.settings.homeValue)*100,1)+' incl. property':'<br>property not counted'}</div></div>
   </div>`; })()}
+  ${window.__seedFixes>0?`<div class="banner b-good"><span class="ic">↻</span><div><b>${window.__seedFixes} update${window.__seedFixes>1?'s':''} applied</b>Readings and settings added in newer versions of Fortress have been merged into this device. Nothing you entered was changed.</div></div>`:''}
   ${(()=>{ const F=fortressStrength(snap,a); if(!F) return '';
     const pctScore=F.tot/F.max*100;
     return `
@@ -1308,6 +1351,11 @@ function viewSet(){
          <button class="btn" style="margin-top:12px" onclick="enableLock()">Enable lock</button>`}
     <p class="note"><b>Be clear about what this does and does not do.</b> It encrypts your <em>data</em> at rest in this browser, so someone with your unlocked phone cannot read your balances by opening the app, and the localStorage contents are meaningless without the passphrase. It is <em>not</em> a server login: the app's own code sits on a public GitHub Pages URL, and anyone who reaches that URL gets the empty app. There is <b>no recovery</b> — the passphrase is never stored, so keep a JSON backup (History → Export) before you enable it.</p>
   </div>
+  <div class="card"><h2>Seeded data</h2>
+    <p class="note" style="margin-top:0">Fortress ships with readings taken from your own statements and screenshots. If a newer version adds some and they do not appear, re-run the merge — it only adds what is missing and never overwrites anything you entered.</p>
+    <div class="kv"><span class="k">Seed version on this device</span><span class="v">${store.get('fortress.seedVersion',0)} of ${SEED_VERSION}</span></div>
+    <button class="btn ghost" style="margin-top:10px" onclick="store.set('fortress.seedVersion',0);const n=runSeedMigrations();alert(n?n+' item(s) merged.':'Already up to date — nothing was missing.');render();">Re-run seed merge</button>
+  </div>
   <div class="card"><h2>Data</h2>
     <p class="note">Everything is stored only in this browser (localStorage). Use Export in History for a backup before clearing browser data.</p>
     <button class="btn ghost" style="margin-top:8px" onclick="if(confirm('Delete all snapshots, home-loan entries and settings?')){['fortress.snapshots','fortress.manual','fortress.income','fortress.mrtl','fortress.lv','fortress.reported','fortress.settings'].forEach(k=>localStorage.removeItem(k));location.reload();}">Clear all data</button>
@@ -1704,6 +1752,7 @@ function closeModal(){ document.getElementById('modalRoot').innerHTML=''; window
 /* ================= boot ================= */
 let booted=false;
 (function boot(){
+  try{ window.__seedFixes = runSeedMigrations(); }catch(e){ console.error('seed migration failed', e); }
   if(isLocked()){ lockScreen(); return; }
   booted=true; render();
 })();
