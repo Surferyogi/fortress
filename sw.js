@@ -1,5 +1,5 @@
 /* Fortress service worker — offline app shell + cached PDF engine */
-const CACHE = 'fortress-v2026-08-20d';
+const CACHE = 'fortress-v2026-08-20e';
 const SHELL = ['./', './index.html', './parser.js', './recognizers.js', './fxseries.js', './pdf.min.js', './pdf.worker.min.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon.svg'];
 
 self.addEventListener('install', e => {

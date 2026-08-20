@@ -120,7 +120,7 @@ table.hist th:first-child,table.hist td:first-child{text-align:left}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:AUG:20-11:05';
+const VERSION = 'v2026:AUG:20-12:30';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -997,6 +997,8 @@ function viewDash(){
     const wins={};
     reps.forEach(r=>{ const k=r.from+'|'+r.to; (wins[k]=wins[k]||{from:r.from,to:r.to,rows:[]}).rows.push(r); });
     const order=Object.values(wins).sort((x,y)=> (y.to+y.from).localeCompare(x.to+x.from));
+    const allPids=Object.keys(state.lv||{}).sort();
+    const missing=order.reduce((n,w)=>n+allPids.filter(pid=>!w.rows.some(r=>r.portfolioId===pid)).length,0);
     return `
   <div class="card">
     <h2>Returns as DBS reports them<span class="pill">TWRR · by window</span></h2>
@@ -1005,7 +1007,15 @@ function viewDash(){
       return `
       <div style="margin:12px 0 0">
         <div style="font-size:12px;color:var(--ink2);font-weight:600">${esc(rangeLabel(w.from,w.to))} · ${fmt(monthsBetween(w.from,w.to),0)} months</div>
-        ${w.rows.sort((x,y)=>String(x.portfolioId).localeCompare(String(y.portfolioId))).map(r=>{
+        ${allPids.map(pid=>{
+          const r=w.rows.find(x=>x.portfolioId===pid);
+          if(!r) return `<div class="kv"><span class="k" style="opacity:.65">${esc(pid)}</span>
+            <span class="v" style="font-weight:400;font-size:12px;color:var(--serious)">not captured for this window</span></div>`;
+          const gap = bm? r.pct-bm.sgdTotalRet : null;
+          return `<div class="kv"><span class="k">${esc(pid)}</span>
+            <span class="v ${r.pct>=0?'pos':'neg'}">${r.pct>=0?'+':''}${pct(r.pct,2)}${gap!=null?`<br><span style="font-size:11px;font-weight:400;color:var(--ink2)">${gap>=0?'ahead of':'behind'} S&P by ${fmt(Math.abs(gap),2)} pts</span>`:''}</span></div>`;
+        }).join('')}
+        ${w.rows.filter(r=>!allPids.includes(r.portfolioId)).map(r=>{
           const gap = bm? r.pct-bm.sgdTotalRet : null;
           return `<div class="kv"><span class="k">${esc(r.portfolioId)}</span>
             <span class="v ${r.pct>=0?'pos':'neg'}">${r.pct>=0?'+':''}${pct(r.pct,2)}${gap!=null?`<br><span style="font-size:11px;font-weight:400;color:var(--ink2)">${gap>=0?'ahead of':'behind'} S&P by ${fmt(Math.abs(gap),2)} pts</span>`:''}</span></div>`;
@@ -1015,6 +1025,7 @@ function viewDash(){
           :`<p class="note" style="margin:2px 0 0">No S&P figure fetched for this exact window.</p>`}
       </div>`;
     }).join('')}
+    ${missing?`<p class="note" style="margin-top:10px"><b>${missing} reading${missing>1?'s are':' is'} missing above.</b> Fortress will not fill a gap with an estimate. To close one: DBS app → switch to that portfolio → Performance → set the same range → TWRR → then Add data → Paste text.</p>`:''}
     <p class="note" style="margin-top:14px"><b>TWRR</b> — ${esc(METRIC_NOTE.TWRR)} It is the fair way to judge the holdings, and the only basis Fortress reports.</p>
     <p class="note">Readings are grouped by window because that is the only way they mean anything — the same portfolio reads 32.91% over one year and 20.69% year-to-date, and a single day's shift in the endpoints moved the 1Y figure by two points. The S&P line is dividend-reinvested total return converted to SGD at spot, which is what a Singapore investor actually banks.</p>
     <p class="note"><b>Two caveats before you feel too good.</b> Your returns are struck on <em>net</em> assets and are therefore levered; the index is not. And a portfolio that is ${pct((a.pledgedCcy.USD||0)/a.pledgedAssets*100,0)} USD will track US equities closely by construction — beating the index by a few points is a stock-selection result, not proof of diversification.</p>
