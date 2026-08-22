@@ -17,7 +17,9 @@
       .replace(/ /g, ' ')
       .replace(/[‘’]/g, "'")
       .replace(/[–—]/g, '-')
-      .replace(/\r/g, '');
+      .replace(/\r/g, '')
+      // OCR often splits thousands groups: "5, 546.93" is one number, not two
+      .replace(/(\d),[ \t]+(?=\d{3}(?:\D|$))/g, '$1,');
   }
   // "1,334,490.74" | "1,334,490.<sup>74</sup>" (OCR of UOB's small-cents style) | "1.130200000"
   function toNum(s) {
@@ -54,6 +56,30 @@
     return m[3] + '-' + String(mo).padStart(2, '0') + '-' + String(+m[1]).padStart(2, '0');
   }
   const ym = iso => (iso ? iso.slice(0, 7) : null);
+  // "04/08/2026" or "4-8-2026" -> ISO. Singapore convention is day-first.
+  function numericDate(text, label, span) {
+    span = span || 90;
+    let win = text;
+    if (label) {
+      const i = text.toLowerCase().indexOf(String(label).toLowerCase());
+      if (i < 0) return null;
+      win = text.slice(i + String(label).length, i + String(label).length + span);
+    }
+    const m = win.match(/(\d{1,2})\s*[\/.\-]\s*(\d{1,2})\s*[\/.\-]\s*(\d{4})/);
+    if (!m) return null;
+    const d = +m[1], mo = +m[2];
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+    return m[3] + '-' + String(mo).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+  }
+  // a percentage that follows a label, e.g. "Revised interest rate : 1.13020%"
+  function pctAfter(text, label, span) {
+    span = span || 80;
+    const i = text.toLowerCase().indexOf(String(label).toLowerCase());
+    if (i < 0) return null;
+    const win = text.slice(i + String(label).length, i + String(label).length + span);
+    const m = win.match(/(\d{1,2}(?:\.\d+)?)\s*%/);
+    return m ? parseFloat(m[1]) : null;
+  }
 
   /* ---------- 1. UOB Statement of Account (PDF text) ---------- */
   function uobStatement(text) {
@@ -226,6 +252,44 @@
     };
   }
 
+  /* ---------- 3d. UOB "Update to your loan" — floating-rate revision letter ---------- */
+  function uobRateChange(text) {
+    const warnings = [];
+    // "revised from 1.02980% to 1.13020% per annum ... with effect from 04/08/2026"
+    const pair = text.match(/revised\s+from\s+(\d{1,2}(?:\.\d+)?)\s*%\s*to\s+(\d{1,2}(?:\.\d+)?)\s*%/i);
+    const effM = text.match(/with\s+effect\s+from\s+(\d{1,2}\s*[\/.\-]\s*\d{1,2}\s*[\/.\-]\s*\d{4})/i);
+    // labelled fields first; the prose sentence is the fallback when OCR loses the table
+    const newRate = pctAfter(text, 'Revised interest rate', 90) ?? (pair ? parseFloat(pair[2]) : null);
+    const rateFrom = numericDate(text, 'Effective date of revised interest rate', 90) ||
+                     (effM ? numericDate(effM[1], null) : null);
+    const instal = after(text, 'Revised instalment amount', 70);
+    const instalFrom = numericDate(text, 'Effective date of revised instalment', 90);
+    const prevRate = pair ? parseFloat(pair[1]) : null;
+    const acctM = text.match(/LN\s*Account\s*:?\s*([\d\-]{6,})/i);
+    const letterDate = numericDate(text, 'Date', 60);
+
+    if (newRate === null) warnings.push('Revised interest rate not found.');
+    if (instal === null) warnings.push('Revised instalment amount not found.');
+    if (newRate !== null && newRate > 20) warnings.push('Rate of ' + newRate + '% looks wrong — check the OCR.');
+    if (instal !== null && instal < 100) warnings.push('Instalment of ' + instal + ' looks wrong — check the OCR.');
+    if (prevRate !== null && newRate !== null) {
+      const d = newRate - prevRate;
+      warnings.push('Rate ' + (d >= 0 ? 'rises' : 'falls') + ' ' + Math.abs(d).toFixed(5) +
+        ' points, from ' + prevRate + '% to ' + newRate + '%.');
+    }
+    return {
+      kind: 'uobRateChange',
+      fields: {
+        mortgageRatePct: newRate, previousRatePct: prevRate, rateEffective: rateFrom,
+        mortgagePayment: instal, instalmentEffective: instalFrom,
+        account: acctM ? acctM[1] : null, letterDate,
+        month: ym(instalFrom) || ym(rateFrom) || null
+      },
+      warnings,
+      confidence: (newRate !== null ? 0.4 : 0) + (instal !== null ? 0.4 : 0) + (instalFrom ? 0.2 : 0)
+    };
+  }
+
   /* ---------- 4. generic: any text with money in it ---------- */
   function generic(text) {
     const hits = [];
@@ -240,6 +304,10 @@
   function detect(rawText) {
     const text = norm(rawText);
     const scored = [];
+    if (has(text, 'Update to your loan') || has(text, 'Revised interest rate') ||
+        (has(text, 'Revised instalment') && has(text, 'benchmark')) ||
+        /revised\s+from\s+[\d.]+\s*%\s*to\s+[\d.]+\s*%/i.test(text) ||
+        (has(text, 'benchmark cost of funds') && has(text, 'interest rate'))) scored.push(uobRateChange(text));
     if ((has(text,'TWRR')||has(text,'MWRR')) && has(text,'Performance')) scored.push(dbsPerformance(text));
     if (has(text, 'borrowing potential') && (has(text, 'Total assets') || has(text, 'Leverage Factor'))) scored.push(dbsPortfolioSummary(text));
     if (has(text, 'MRTL') && (has(text, 'borrowing potential') || has(text, 'Amount drawn'))) scored.push(dbsMrtl(text));
@@ -253,5 +321,5 @@
     return best;
   }
 
-  return { detect, uobStatement, uobLoanScreen, dbsMrtl, dbsPortfolioSummary, dbsPerformance, generic, toNum, norm, after, dmy };
+  return { detect, uobStatement, uobLoanScreen, uobRateChange, dbsMrtl, dbsPortfolioSummary, dbsPerformance, generic, toNum, norm, after, dmy };
 }));

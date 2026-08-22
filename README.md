@@ -30,11 +30,16 @@ home loan.
 | UOB home-loan screen (screenshot/paste) | balance, rate, instalment, next due date |
 | DBS iBanking "Your MRTL loan draw down" | borrowing potential, credit limit, drawn, available |
 | DBS app → Portfolio details → Performance | TWRR **with its date range** |
+| UOB "Update to your loan" rate-revision letter | new rate + its date, new instalment + its date, previous rate |
 | anything else | manual-mapping screen — values are never guessed |
 
 Screenshots go through in-browser OCR (tesseract.js, fetched once from a CDN and then
-cached for offline use). **OCR can misread digits** — the review screen makes you check
-them. On iPhone the accurate route is Photos → long-press the text → Copy → **Paste text**.
+cached for offline use). A photo of a *letter* is often sideways: Fortress reads it as-is
+first, and only if no recogniser can place the text does it retry the image rotated 90°,
+270° and 180°, keeping whichever pass the recognisers scored highest. **OCR can misread
+digits** — the review screen makes you check them, and the unrecognised screen now shows
+the raw text it actually read so you can see whether OCR or the format was the problem.
+On iPhone the accurate route is Photos → long-press the text → Copy → **Paste text**.
 
 Nothing auto-saves. Every route ends at an editable review screen.
 
@@ -70,6 +75,17 @@ every reading by window.
 Fortress records **TWRR** only — time-weighted, which strips deposits and withdrawals out
 and judges the holdings. Set that toggle in the app before taking a reading.
 
+## Floating-rate revisions
+
+A UOB rate letter carries two different dates: the new **rate** bites immediately, while the
+new **instalment** starts months later. Fortress stores both legs with their own dates and
+labels the card *rate upcoming* / *instalment upcoming* / *in force* accordingly — it never
+averages them or assumes they move together. Between the two dates the extra interest comes
+out of the principal portion, so the balance falls more slowly than the instalment suggests.
+
+If the letter's "previous rate" disagrees with the rate Fortress already holds for the month
+before, it says so and offers a one-tap correction rather than silently picking a winner.
+
 ## Income
 
 Settings → **Recurring income** tracks rent and similar. Rent is compared directly against
@@ -92,4 +108,7 @@ and mortgage LTV / total net worth simply stay hidden rather than being guessed.
   MRTL loans, FX forwards, indicative FX rates). If DBS changes the layout, the
   review screen will show warnings — don't save a bad parse.
 - Data saved by the app's earlier name is migrated automatically on first load.
+- Seeded reference data (reported returns, lending values, rate letters) carries a
+  `seedVersion`. New seeds reach devices that already installed an older build through
+  additive, idempotent migrations that never overwrite anything you entered.
 - Monitoring aid only; not financial advice. Verify against official DBS statements.

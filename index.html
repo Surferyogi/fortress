@@ -120,7 +120,7 @@ table.hist th:first-child,table.hist td:first-child{text-align:left}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:AUG:20-14:10';
+const VERSION = 'v2026:AUG:22-17:16';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -133,6 +133,7 @@ const pct = (n,dp=2)=> n===null||n===undefined||isNaN(n) ? '—' : fmt(n,dp)+'%'
 const esc = s=> String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const monthLabel = iso=>{ const [y,m]=iso.split('-'); return new Date(+y,+m-1,1).toLocaleString('en',{month:'short'})+'-'+y.slice(2); };
 const daysUntil = iso=>{ if(!iso) return null; return Math.ceil((new Date(iso+'T00:00:00')-new Date())/86400000); };
+const dayLabel = iso=>{ if(!iso) return '—'; const [y,m,d]=iso.split('-'); return (+d)+' '+new Date(+y,+m-1,1).toLocaleString('en',{month:'short'})+' '+y; };
 
 /* ================= storage (guarded — works without localStorage) ================= */
 const memStore = {};
@@ -144,7 +145,7 @@ const store = {
 /* migrate data saved under the app's former name — runs once, keeps your history */
 (function migrate(){
   try{
-    ['snapshots','manual','income','mrtl','lv','reported','settings'].forEach(key=>{
+    ['snapshots','manual','income','mrtl','lv','reported','rateChanges','settings'].forEach(key=>{
       const oldK='dw.'+key, newK='fortress.'+key;
       if(localStorage.getItem(oldK) && !localStorage.getItem(newK)){
         localStorage.setItem(newK, localStorage.getItem(oldK));
@@ -202,6 +203,13 @@ const LV_SEED = {
                   source:'DBS iBanking Portfolio Summary 19-Aug-2026 12:05 — "Your borrowing potential (indicative)" with "Apply with RM"; no MRTL facility on this account' }
 };
 
+/* Floating-rate revisions, from UOB's "Update to your loan" letters */
+const RATE_CHANGE_SEED = [{
+  id:'rc-2026-08', lender:'UOB', ratePct:1.13020, previousRatePct:1.02980,
+  rateEffective:'2026-08-04', instalment:5546.93, instalmentEffective:'2026-10-01',
+  recordedOn:'2026-08-20', source:'UOB letter "Update to your loan", dated 04/08/2026'
+}];
+
 /* Returns exactly as DBS reports them, each stamped with its metric AND its period.
    The same portfolio reads very differently over different windows, so a return is
    never stored without the dates that give it meaning. */
@@ -234,6 +242,7 @@ let state = {
   mrtl: store.get('fortress.mrtl', null),
   lv: store.get('fortress.lv', null),
   reported: store.get('fortress.reported', null),
+  rateChanges: store.get('fortress.rateChanges', null),
   settings: store.get('fortress.settings', { lendingValue:null, ltvAlert:35, homeValue:null, tab:'dash', fxCcy:'USD', fxBars:250 })
 };
 if(!state.snapshots){ state.snapshots = { [SEED.statementDate]: SEED }; store.set('fortress.snapshots', state.snapshots); }
@@ -242,13 +251,14 @@ if(!state.income){ state.income = INCOME_SEED; store.set('fortress.income', stat
 if(!state.mrtl){ state.mrtl = MRTL_SEED; store.set('fortress.mrtl', state.mrtl); }
 if(!state.lv){ state.lv = LV_SEED; store.set('fortress.lv', state.lv); }
 if(!state.reported){ state.reported = REPORTED_SEED; store.set('fortress.reported', state.reported); }
+if(!state.rateChanges){ state.rateChanges = RATE_CHANGE_SEED; store.set('fortress.rateChanges', state.rateChanges); }
 
 /* ---- seed migrations ----------------------------------------------------
    A first install copies the seeds above. But an app that keeps gaining seeded
    readings needs those to reach devices that already installed an older build,
    WITHOUT touching anything the user entered. Each migration is additive and
    idempotent: it fills gaps and repairs missing fields, and never deletes.  */
-const SEED_VERSION = 3;
+const SEED_VERSION = 4;
 function runSeedMigrations(){
   const from = store.get('fortress.seedVersion', 0);
   if(from >= SEED_VERSION) return 0;
@@ -278,6 +288,15 @@ function runSeedMigrations(){
     if(cur.hasFacility===undefined){ cur.hasFacility = seed.hasFacility; changed++; }
   });
 
+  // v4 — rate-revision letters seeded after the first build
+  state.rateChanges = state.rateChanges || [];
+  RATE_CHANGE_SEED.forEach(seed=>{
+    const dup = state.rateChanges.some(r =>
+      r.id===seed.id ||
+      (r.lender===seed.lender && r.rateEffective===seed.rateEffective && r.instalmentEffective===seed.instalmentEffective));
+    if(!dup){ state.rateChanges.push({...seed, seeded:true}); changed++; }
+  });
+
   store.set('fortress.seedVersion', SEED_VERSION);
   if(changed) saveAll();
   return changed;
@@ -286,7 +305,8 @@ function saveAll(){
   if(typeof cryptoKey!=='undefined' && cryptoKey){ persistVault(); return; }   // encrypted: one blob, no plaintext
   store.set('fortress.snapshots', state.snapshots); store.set('fortress.manual', state.manual);
   store.set('fortress.income', state.income); store.set('fortress.mrtl', state.mrtl);
-  store.set('fortress.lv', state.lv); store.set('fortress.reported', state.reported); store.set('fortress.settings', state.settings); }
+  store.set('fortress.lv', state.lv); store.set('fortress.reported', state.reported);
+  store.set('fortress.rateChanges', state.rateChanges); store.set('fortress.settings', state.settings); }
 
 /* lending value per portfolio: an entered ratio wins; otherwise derive it from
    borrowing potential ÷ total assets read off the same screen at the same time. */
@@ -374,6 +394,67 @@ function impliedMortgageInterest(month){
   const cur=state.manual[ms[i]], prev=state.manual[ms[i-1]];
   if(cur.mortgagePayment==null || cur.mortgageBalance==null || prev.mortgageBalance==null) return null;
   return cur.mortgagePayment - (prev.mortgageBalance - cur.mortgageBalance);
+}
+
+/* Floating-rate revisions. A letter can announce a rate that bites today and an
+   instalment that only starts months later, so each leg carries its own date and
+   is either "in force" or "upcoming" — never averaged, never assumed. */
+function rateChangesSorted(){
+  return (state.rateChanges||[]).slice().sort((x,y)=>
+    String(x.rateEffective||x.instalmentEffective||'').localeCompare(String(y.rateEffective||y.instalmentEffective||'')));
+}
+function effectiveLoanTerms(onDate){
+  const d = onDate || new Date().toISOString().slice(0,10);
+  const out = { ratePct:null, rateFrom:null, instalment:null, instalmentFrom:null };
+  rateChangesSorted().forEach(rc=>{
+    if(rc.ratePct!=null && rc.rateEffective && rc.rateEffective<=d){ out.ratePct=rc.ratePct; out.rateFrom=rc.rateEffective; }
+    if(rc.instalment!=null && rc.instalmentEffective && rc.instalmentEffective<=d){ out.instalment=rc.instalment; out.instalmentFrom=rc.instalmentEffective; }
+  });
+  return out;
+}
+function pendingRateChanges(){
+  const d = new Date().toISOString().slice(0,10);
+  return rateChangesSorted().filter(rc=>
+    (rc.ratePct!=null && rc.rateEffective && rc.rateEffective>d) ||
+    (rc.instalment!=null && rc.instalmentEffective && rc.instalmentEffective>d));
+}
+
+function rateChangeBlock(mm, instNow){
+  const list = state.rateChanges||[];
+  if(!list.length) return '';
+  const today = new Date().toISOString().slice(0,10);
+  const rentM = monthlyIncome();
+  const rows = list.map((rc,ix)=>({rc,ix}))
+    .sort((a,b)=>String(b.rc.rateEffective||b.rc.instalmentEffective||'').localeCompare(String(a.rc.rateEffective||a.rc.instalmentEffective||'')))
+    .map(({rc,ix})=>{
+      const instPending = rc.instalment!=null && rc.instalmentEffective && rc.instalmentEffective>today;
+      const ratePending = rc.ratePct!=null && rc.rateEffective && rc.rateEffective>today;
+      const pending = instPending || ratePending;
+      // the instalment in force the day before this one starts
+      const prevInst = rc.instalmentEffective
+        ? (effectiveLoanTerms(new Date(new Date(rc.instalmentEffective+'T00:00:00')-86400000).toISOString().slice(0,10)).instalment ?? instNow ?? mm.mortgagePayment)
+        : (instNow ?? mm.mortgagePayment);
+      const d = (rc.instalment!=null && prevInst!=null) ? rc.instalment-prevInst : null;
+      const days = rc.instalmentEffective? daysUntil(rc.instalmentEffective) : null;
+      // the letter's "previous rate" is a fact worth checking against what Fortress already held
+      const heldBefore = rc.rateEffective ? (()=>{ const ms=manualMonths().filter(m=>m<rc.rateEffective.slice(0,7));
+        for(let i=ms.length-1;i>=0;i--){ if(state.manual[ms[i]].mortgageRatePct!=null) return {m:ms[i], v:state.manual[ms[i]].mortgageRatePct}; } return null; })() : null;
+      const conflict = heldBefore && rc.previousRatePct!=null && Math.abs(heldBefore.v-rc.previousRatePct)>0.005;
+      return `
+      <div style="border-top:1px solid var(--border);padding-top:8px;margin-top:8px">
+        <div class="kv"><span class="k"><b>${esc(rc.lender||'Lender')} revision</b> <span class="pill">${!pending?'in force':(ratePending&&instPending?'upcoming':(instPending?'instalment upcoming':'rate upcoming'))}</span></span>
+          <span class="v"><button class="btn ghost" style="padding:2px 8px;font-size:11px" onclick="delRateChange(${ix})">Remove</button></span></div>
+        ${rc.ratePct!=null?`<div class="kv"><span class="k">Interest rate${ratePending?' (from '+esc(dayLabel(rc.rateEffective))+')':''}</span><span class="v">${rc.previousRatePct!=null?pct(rc.previousRatePct,5)+' → ':''}<b>${pct(rc.ratePct,5)}</b>${!ratePending&&rc.rateEffective?` <span class="k" style="font-size:11px">since ${esc(dayLabel(rc.rateEffective))}</span>`:''}</span></div>`:''}
+        ${rc.instalment!=null?`<div class="kv"><span class="k">Monthly instalment${instPending?' (from '+esc(dayLabel(rc.instalmentEffective))+(days!=null&&days>=0?', in '+days+' days':'')+')':''}</span><span class="v">${prevInst!=null?money(prevInst,2)+' → ':''}<b>${money(rc.instalment,2)}</b></span></div>`:''}
+        ${d!=null?`<div class="kv"><span class="k">Change</span><span class="v ${d>=0?'neg':'pos'}">${d>=0?'+':''}${money(d,2)}/mo · ${d>=0?'+':''}${money(d*12,2)}/yr</span></div>`:''}
+        ${(rentM>0&&rc.instalment!=null)?`<div class="kv"><span class="k">Rent cover of the instalment</span><span class="v">${prevInst!=null?pct(rentM/prevInst*100,1)+' → ':''}<b class="${rentM>=rc.instalment?'pos':'neg'}">${pct(rentM/rc.instalment*100,1)}</b></span></div>`:''}
+        ${conflict?`<div class="warnbox" style="margin-top:6px"><b>Two different "previous" rates.</b> The letter says the old rate was ${pct(rc.previousRatePct,5)}, but Fortress holds ${pct(heldBefore.v,2)} for ${esc(monthLabel(heldBefore.m))}. The letter states the rate that applied up to ${esc(dayLabel(rc.rateEffective))}, so it is the stronger evidence for ${esc(monthLabel(heldBefore.m))} — but check the UOB app before changing it.
+          <button class="btn ghost" style="margin-top:8px;padding:4px 10px;font-size:12px" onclick="usePrevRate('${esc(heldBefore.m)}',${rc.previousRatePct})">Use ${pct(rc.previousRatePct,5)} for ${esc(monthLabel(heldBefore.m))}</button></div>`:''}
+        <p class="note" style="margin-top:4px">${esc(rc.source||'')}</p>
+      </div>`;
+    }).join('');
+  return `<div class="card" style="margin:12px 0 0"><h2>Rate revisions</h2>${rows}
+    <p class="note">A floating loan reprices against the bank's benchmark. The rate can bite before the instalment catches up — until the new instalment starts, the extra interest comes out of the principal portion, so the balance falls more slowly.</p></div>`;
 }
 
 /* ================= derived metrics ================= */
@@ -557,7 +638,7 @@ async function decryptBlob(blob){
   const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(blob.iv)},cryptoKey,unb64(blob.ct));
   return JSON.parse(dec.decode(pt));
 }
-const DATA_KEYS=['snapshots','manual','income','mrtl','lv','reported','settings'];
+const DATA_KEYS=['snapshots','manual','income','mrtl','lv','reported','rateChanges','settings'];
 function collectState(){ const o={}; DATA_KEYS.forEach(k=>o[k]=state[k]); return o; }
 
 async function persistVault(){
@@ -1096,17 +1177,21 @@ function viewDash(){
   ${(()=>{ const mm=latestManual(); if(!mm) return '';
     const impInt = impliedMortgageInterest(mm.month);
     const paidOff = MORTGAGE_META.original && mm.mortgageBalance!=null ? MORTGAGE_META.original - mm.mortgageBalance : null;
+    const eff = effectiveLoanTerms();
+    const rateNow = eff.ratePct!=null ? eff.ratePct : mm.mortgageRatePct;
+    const instNow = eff.instalment!=null ? eff.instalment : mm.mortgagePayment;
     return `
   <div class="card">
     <h2>Home loan — ${esc(MORTGAGE_META.bank)} ${esc(MORTGAGE_META.account)}<span class="pill">manual entry</span></h2>
     <div class="kv"><span class="k">Outstanding balance (${esc(mm.month)})</span><span class="v">${money(mm.mortgageBalance,2)}</span></div>
     <div class="kv"><span class="k">Original / repaid so far</span><span class="v">${money(MORTGAGE_META.original,0)} / ${paidOff!==null?money(paidOff,0):'—'}</span></div>
-    <div class="kv"><span class="k">Rate</span><span class="v">${mm.mortgageRatePct!=null?pct(mm.mortgageRatePct,2)+' p.a. float':'—'}</span></div>
-    <div class="kv"><span class="k">Monthly instalment</span><span class="v">${mm.mortgagePayment!=null?money(mm.mortgagePayment,2):'—'}</span></div>
+    <div class="kv"><span class="k">Rate</span><span class="v">${rateNow!=null?pct(rateNow,rateNow%1===0?2:5)+' p.a. float':'—'}${eff.rateFrom?` <span class="k" style="font-size:11px">since ${esc(dayLabel(eff.rateFrom))}</span>`:''}</span></div>
+    <div class="kv"><span class="k">Monthly instalment</span><span class="v">${instNow!=null?money(instNow,2):'—'}${eff.instalmentFrom?` <span class="k" style="font-size:11px">since ${esc(dayLabel(eff.instalmentFrom))}</span>`:''}</span></div>
     <div class="kv"><span class="k">Interest portion this month (implied)</span><span class="v">${impInt!==null?money(impInt,2):'— (needs prior month + instalment)'}</span></div>
     <div class="kv"><span class="k">UOB deposits</span><span class="v">${mm.deposits!=null?money(mm.deposits,2):'—'}</span></div>
     ${mm.nextDue?`<div class="kv"><span class="k">Next payment due</span><span class="v">${esc(mm.nextDue)}</span></div>`:''}
     ${mm.note?`<p class="note" style="margin-top:6px">${esc(mm.note)}</p>`:''}
+    ${rateChangeBlock(mm, instNow)}
     ${state.settings.homeValue?`<div class="kv"><span class="k">Mortgage LTV vs your entered property value</span><span class="v">${pct(mm.mortgageBalance/state.settings.homeValue*100,1)}</span></div>`:''}
     <p class="note">Implied interest = instalment − principal reduction between your two latest entries (pure arithmetic from UOB statements, no assumptions). A property loan has no market-linked margin call, but its interest is part of the hurdle your portfolio must beat. Update monthly in Settings → Home loan.</p>
   </div>`; })()}
@@ -1358,7 +1443,7 @@ function viewSet(){
   </div>
   <div class="card"><h2>Data</h2>
     <p class="note">Everything is stored only in this browser (localStorage). Use Export in History for a backup before clearing browser data.</p>
-    <button class="btn ghost" style="margin-top:8px" onclick="if(confirm('Delete all snapshots, home-loan entries and settings?')){['fortress.snapshots','fortress.manual','fortress.income','fortress.mrtl','fortress.lv','fortress.reported','fortress.settings'].forEach(k=>localStorage.removeItem(k));location.reload();}">Clear all data</button>
+    <button class="btn ghost" style="margin-top:8px" onclick="if(confirm('Delete all snapshots, home-loan entries and settings?')){['fortress.snapshots','fortress.manual','fortress.income','fortress.mrtl','fortress.lv','fortress.reported','fortress.rateChanges','fortress.settings'].forEach(k=>localStorage.removeItem(k));location.reload();}">Clear all data</button>
   </div>
   <div class="card"><h2>About</h2>
     <div class="kv"><span class="k">Version</span><span class="v">${VERSION}</span></div>
@@ -1449,7 +1534,7 @@ function delSnap(d){
   if(confirm('Delete snapshot '+d+'?')){ delete state.snapshots[d]; saveAll(); render(); }
 }
 function exportData(){
-  const blob=new Blob([JSON.stringify({app:'Fortress',snapshots:state.snapshots,manual:state.manual,income:state.income,mrtl:state.mrtl,lv:state.lv,reported:state.reported,settings:state.settings},null,1)],{type:'application/json'});
+  const blob=new Blob([JSON.stringify({app:'Fortress',snapshots:state.snapshots,manual:state.manual,income:state.income,mrtl:state.mrtl,lv:state.lv,reported:state.reported,rateChanges:state.rateChanges,settings:state.settings},null,1)],{type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download='fortress-backup-'+new Date().toISOString().slice(0,10)+'.json'; a.click();
 }
@@ -1457,7 +1542,7 @@ function importData(inp){
   const f=inp.files[0]; if(!f) return;
   f.text().then(t=>{ const d=JSON.parse(t);
     if(!d.snapshots) throw new Error('not a Fortress backup');
-    state.snapshots=d.snapshots; if(d.manual) state.manual=d.manual; if(d.income) state.income=d.income; if(d.mrtl) state.mrtl=d.mrtl; if(d.lv) state.lv=d.lv; if(d.reported) state.reported=d.reported; if(d.settings) state.settings={...state.settings,...d.settings};
+    state.snapshots=d.snapshots; if(d.manual) state.manual=d.manual; if(d.income) state.income=d.income; if(d.mrtl) state.mrtl=d.mrtl; if(d.lv) state.lv=d.lv; if(d.reported) state.reported=d.reported; if(d.rateChanges) state.rateChanges=d.rateChanges; if(d.settings) state.settings={...state.settings,...d.settings};
     saveAll(); render(); alert('Backup restored: '+Object.keys(d.snapshots).length+' snapshot(s).');
   }).catch(e=>alert('Could not restore: '+e.message));
   inp.value='';
@@ -1526,6 +1611,55 @@ async function pdfText(file){
   }
   return pages;
 }
+/* OCR on a phone photo fails for two ordinary reasons: the page is sideways, and
+   the file is huge. Tesseract does not auto-rotate, so we try the image as-is first
+   (unchanged behaviour for the screenshots that already worked) and only if the
+   recognisers can't place the text do we retry rotated. The winner is whichever
+   pass the recognisers score highest — not a guess about orientation. */
+function loadImageEl(file){
+  return new Promise((res,rej)=>{
+    const img=new Image(), url=URL.createObjectURL(file);
+    img.onload=()=>{ URL.revokeObjectURL(url); res(img); };
+    img.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error('Could not open that image.')); };
+    img.src=url;
+  });
+}
+function rotatedCanvas(img, rot){
+  const maxDim=2600;                       // bound memory on 12MP phone photos
+  const scale=Math.min(1, maxDim/Math.max(img.naturalWidth,img.naturalHeight));
+  const w=Math.round(img.naturalWidth*scale), h=Math.round(img.naturalHeight*scale);
+  const swap = rot===90 || rot===270;
+  const c=document.createElement('canvas');
+  c.width = swap?h:w; c.height = swap?w:h;
+  const x=c.getContext('2d');
+  x.fillStyle='#fff'; x.fillRect(0,0,c.width,c.height);
+  x.translate(c.width/2, c.height/2); x.rotate(rot*Math.PI/180);
+  x.drawImage(img,-w/2,-h/2,w,h);
+  return c;
+}
+function ocrScore(text){
+  if(!text || !text.trim()) return -1;
+  try{ const r=FortressRecognizers.detect(text);
+       return (r.kind==='generic'?0:1) + (r.confidence||0) + Math.min(text.length,4000)/100000; }
+  catch(e){ return 0; }
+}
+async function ocrOnce(src){
+  const { data } = await Tesseract.recognize(src,'eng');
+  return data.text||'';
+}
+async function ocrImage(file){
+  await loadTesseract();
+  let best={ text:'', score:-1, rot:0 };
+  const take=(text,rot)=>{ const sc=ocrScore(text); if(sc>best.score) best={text,score:sc,rot}; return sc; };
+  if(take(await ocrOnce(file), 0) >= 1) return best;      // recognised straight away
+  let img; try{ img=await loadImageEl(file); }catch(e){ return best; }
+  for(const rot of [90,270,180]){
+    busy('Reading image with OCR… trying '+rot+'°');
+    if(take(await ocrOnce(rotatedCanvas(img,rot)), rot) >= 1) return best;
+  }
+  return best;
+}
+
 document.getElementById('anyInput').addEventListener('change', async e=>{
   const f=e.target.files[0]; e.target.value='';
   if(!f) return;
@@ -1541,9 +1675,8 @@ document.getElementById('anyInput').addEventListener('change', async e=>{
     }
     if(/^image\//.test(f.type)){
       busy('Reading image with OCR…');
-      await loadTesseract();
-      const { data } = await Tesseract.recognize(f,'eng');
-      routeText(data.text, f.name, true);
+      const best = await ocrImage(f);
+      routeText(best.text, f.name + (best.rot? ' · rotated '+best.rot+'°':''), true);
       return;
     }
     busy('Reading file…');
@@ -1555,12 +1688,12 @@ document.getElementById('anyInput').addEventListener('change', async e=>{
 function routeText(text, sourceName, viaOcr){
   if(!text || !text.trim()){ showModal(`<h2>Nothing to read</h2><p class="note">No text came out of that. If it's a photo of a screen, try the paste route instead.</p><button class="btn" style="margin-top:14px" onclick="closeModal()">Close</button>`); return; }
   const r=FortressRecognizers.detect(text);
-  r.sourceName=sourceName; r.viaOcr=!!viaOcr;
+  r.sourceName=sourceName; r.viaOcr=!!viaOcr; r.rawText=text;
   window.__rec=r;
   reviewRecognized(r);
 }
 
-const KINDLABEL={ dbsPerformance:'DBS Performance summary', dbsMrtl:'DBS MRTL draw-down screen', dbsPortfolioSummary:'DBS Portfolio Summary screen', uobLoanScreen:'UOB home-loan screen', uobStatement:'UOB Statement of Account', generic:'Unrecognised document' };
+const KINDLABEL={ uobRateChange:'UOB loan rate-revision letter', dbsPerformance:'DBS Performance summary', dbsMrtl:'DBS MRTL draw-down screen', dbsPortfolioSummary:'DBS Portfolio Summary screen', uobLoanScreen:'UOB home-loan screen', uobStatement:'UOB Statement of Account', generic:'Unrecognised document' };
 const fld=(id,label,val,step)=>`<label class="fld">${label}</label><input type="${typeof val==='string'&&!/^-?[\d.]*$/.test(val||'')?'text':'number'}" id="${id}" step="${step||'0.01'}" inputmode="decimal" value="${val==null?'':esc(String(val))}">`;
 
 function reviewRecognized(r){
@@ -1571,6 +1704,26 @@ function reviewRecognized(r){
   ${r.viaOcr?`<div class="warnbox"><b>OCR can misread digits.</b> Compare each number with the screenshot before you save.</div>`:''}
   ${r.warnings.length?`<div class="warnbox"><b>Check these:</b><br>${r.warnings.map(esc).join('<br>')}</div>`:''}`;
 
+  if(r.kind==='uobRateChange'){
+    showModal(head+`
+    ${fld('rRate','Revised interest rate (% p.a.)',f.mortgageRatePct,'0.00001')}
+    ${f.previousRatePct!=null?`<div class="kv"><span class="k">Previous rate on the letter</span><span class="v">${pct(f.previousRatePct,5)}</span></div>`:''}
+    <label class="fld">Rate effective from</label><input type="text" id="rRateFrom" value="${esc(f.rateEffective||'')}" placeholder="YYYY-MM-DD">
+    ${fld('rInst','Revised monthly instalment (SGD)',f.mortgagePayment)}
+    <label class="fld">New instalment effective from</label><input type="text" id="rInstFrom" value="${esc(f.instalmentEffective||'')}" placeholder="YYYY-MM-DD">
+    ${(()=>{ const mm=latestManual(); const cur=mm&&mm.mortgagePayment;
+      if(!cur||f.mortgagePayment==null) return '';
+      const d=f.mortgagePayment-cur, rentM=monthlyIncome();
+      return `<div class="card" style="margin:12px 0"><h2>What this changes</h2>
+        <div class="kv"><span class="k">Instalment</span><span class="v">${money(cur,2)} → ${money(f.mortgagePayment,2)} <span class="${d>=0?'neg':'pos'}">(${d>=0?'+':''}${money(d,2)}/mo)</span></span></div>
+        <div class="kv"><span class="k">Over a year</span><span class="v ${d>=0?'neg':'pos'}">${d>=0?'+':''}${money(d*12,2)}</span></div>
+        ${rentM>0?`<div class="kv"><span class="k">Rent cover of instalment</span><span class="v">${pct(rentM/cur*100,1)} → <b class="${rentM>=f.mortgagePayment?'pos':'neg'}">${pct(rentM/f.mortgagePayment*100,1)}</b></span></div>`:''}
+      </div>`; })()}
+    <p class="note">Saving records the new rate and instalment against the effective month from the letter. Fortress will show it as an upcoming change until that date arrives, then use it.</p>
+    <div class="row2" style="margin-top:12px"><button class="btn ghost" onclick="closeModal()">Cancel</button>
+    <button class="btn" onclick="saveRateChange()">Save rate change</button></div>`);
+    return;
+  }
   if(r.kind==='dbsPerformance'){
     const known=Object.keys(state.lv||{});
     showModal(head+`
@@ -1647,6 +1800,10 @@ function reviewRecognized(r){
   <div class="card" style="margin:8px 0;max-height:200px;overflow:auto">
     ${cands.length?cands.map(c=>`<div class="kv"><span class="k" style="font-size:11px">${esc(c.line)}</span><span class="v">${c.values.map(v=>money(v,2)).join(' · ')}</span></div>`).join(''):'<p class="note">No money-formatted values found at all.</p>'}
   </div>
+  <details style="margin:8px 0"><summary class="note" style="cursor:pointer">Show exactly what was read${r.viaOcr?' by OCR':''}</summary>
+    <pre style="white-space:pre-wrap;font-size:11px;max-height:220px;overflow:auto;background:var(--page);border:1px solid var(--border);border-radius:8px;padding:8px;margin-top:6px">${esc((r.rawText||'').slice(0,4000))||'(nothing)'}</pre>
+    ${r.viaOcr?`<p class="note">If that text is garbled, OCR could not read the photo. Best fix on iPhone: open the photo in Photos, tap the text-selection icon, copy, then use “Paste text instead”.</p>`:''}
+  </details>
   <label class="fld">Month (YYYY-MM)</label><input type="text" id="rMonth" value="${new Date().toISOString().slice(0,7)}">
   ${fld('rBal','Home-loan outstanding balance (SGD) — leave blank to skip',null)}
   ${fld('rDep','Bank deposits / cash (SGD) — optional',null)}
@@ -1654,6 +1811,34 @@ function reviewRecognized(r){
   <button class="btn" onclick="saveLoanFromReview()">Save what I entered</button></div>`);
 }
 const gv=id=>{ const el=document.getElementById(id); if(!el) return null; const v=el.value; return v===''?null:(+v); };
+function saveRateChange(){
+  const rate=gv('rRate'), inst=gv('rInst');
+  const rf=(document.getElementById('rRateFrom').value||'').trim();
+  const inf=(document.getElementById('rInstFrom').value||'').trim();
+  if(rate==null && inst==null){ alert('Enter at least the new rate or the new instalment.'); return; }
+  if(inf && !/^\d{4}-\d{2}-\d{2}$/.test(inf)){ alert('Instalment effective date must be YYYY-MM-DD.'); return; }
+  if(rf && !/^\d{4}-\d{2}-\d{2}$/.test(rf)){ alert('Rate effective date must be YYYY-MM-DD.'); return; }
+  state.rateChanges=state.rateChanges||[];
+  state.rateChanges.push({ id:'rc-'+state.rateChanges.length, lender:'UOB',
+    ratePct:rate, rateEffective:rf||null, instalment:inst, instalmentEffective:inf||null,
+    previousRatePct:(window.__rec?.fields?.previousRatePct)??null,
+    recordedOn:new Date().toISOString().slice(0,10),
+    source:(window.__rec?.sourceName||'manual')+(window.__rec?.viaOcr?' (OCR, reviewed)':' (reviewed)') });
+  // the rate applies from its own date. Only write onto a month that has ARRIVED —
+  // creating a future month here would make it latestManual() and blank the balance.
+  const nowM = new Date().toISOString().slice(0,7);
+  if(rate!=null && rf){ const m=rf.slice(0,7); if(m<=nowM) state.manual[m]={...(state.manual[m]||{}), mortgageRatePct:rate}; }
+  if(inst!=null && inf){ const m=inf.slice(0,7); if(m<=nowM) state.manual[m]={...(state.manual[m]||{}), mortgagePayment:inst}; }
+  saveAll(); closeModal(); go('dash');
+}
+function usePrevRate(month, rate){
+  if(!state.manual[month]) return;
+  if(!confirm('Set the rate recorded for '+monthLabel(month)+' to '+rate+'%? This changes only that month\'s rate.')) return;
+  state.manual[month]={...state.manual[month], mortgageRatePct:rate,
+    rateSource:'UOB rate-revision letter (rate in force before the revision)'};
+  saveAll(); render();
+}
+function delRateChange(ix){ if(confirm('Remove this rate change?')){ state.rateChanges.splice(ix,1); saveAll(); render(); } }
 function saveReportedFromReview(){
   const from=(document.getElementById('rFrom').value||'').trim();
   const to=(document.getElementById('rTo').value||'').trim();
