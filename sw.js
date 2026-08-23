@@ -1,5 +1,5 @@
 /* Fortress service worker — offline app shell + cached PDF engine */
-const CACHE = 'fortress-v2026-08-23a';
+const CACHE = 'fortress-v2026-08-23c';
 const SHELL = ['./', './index.html', './parser.js', './recognizers.js', './fxseries.js', './pdf.min.js', './pdf.worker.min.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon.svg'];
 
 self.addEventListener('install', e => {
@@ -23,14 +23,24 @@ self.addEventListener('fetch', e => {
     );
     return;
   }
-  // app shell: network-first (so updates land), cache fallback for offline
+  // App shell: network-first so a new deploy lands. Network-first is not enough on its
+  // own — GitHub Pages and the phone's own HTTP cache can hand the SW a stale copy of
+  // index.html, which is how an update appears to "not happen". So app files are fetched
+  // with a cache-busting query and no-store, then stored in the SW cache under their
+  // REAL request, which keeps offline working unchanged.
   if (url.origin === location.origin) {
-    e.respondWith(
-      fetch(e.request).then(r => {
-        if (r.ok) { const cp = r.clone(); caches.open(CACHE).then(c => c.put(e.request, cp)); }
+    const isApp = url.pathname.endsWith('/') || /\.(html|js|webmanifest)$/i.test(url.pathname);
+    e.respondWith((async () => {
+      try {
+        const r = isApp
+          ? await fetch(url.href + (url.search ? '&' : '?') + '_sw=' + Date.now(), { cache: 'no-store' })
+          : await fetch(e.request);
+        if (r && r.ok) { const cp = r.clone(); caches.open(CACHE).then(c => c.put(e.request, cp)); }
         return r;
-      }).catch(() => caches.match(e.request, { ignoreSearch: true })
-        .then(hit => hit || caches.match('./index.html')))
-    );
+      } catch (err) {
+        const hit = await caches.match(e.request, { ignoreSearch: true });
+        return hit || await caches.match('./index.html');
+      }
+    })());
   }
 });

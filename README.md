@@ -98,6 +98,24 @@ out of the principal portion, so the balance falls more slowly than the instalme
 If the letter's "previous rate" disagrees with the rate Fortress already holds for the month
 before, it says so and offers a one-tap correction rather than silently picking a winner.
 
+## Making sure you're running the build you published
+
+Fortress installs as an offline PWA, so an old copy can keep running after you publish a new
+one. **The version stamp at the top of every screen is the check** — compare it with the
+`VERSION` constant in the release you pushed. If it lags, tap the stamp (or Settings → About →
+*Check for an update now*): that clears the cached app code, drops the service worker and
+reloads from the server. Your data is stored separately and is not affected.
+
+## Chart scales
+
+Most charts start their axis at zero. The **home-loan balance** chart does not: a 1%
+move on a S$1.3M loan is invisible from zero, so that one axis is zoomed to the data's
+own range and the card says so in words. Truncating an axis without saying so is how
+charts mislead; saying so is the price of showing the slope at all.
+
+The **instalment split** chart labels each bar with its share of the instalment, and lists
+the exact principal and interest figures underneath.
+
 ## Income
 
 Property → **Rent & recurring income** tracks rent and similar. Rent is compared directly against

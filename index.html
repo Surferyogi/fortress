@@ -104,7 +104,7 @@ table.hist th:first-child,table.hist td:first-child{text-align:left}
 <body>
 <header>
   <h1>Fortress</h1>
-  <span class="stamp" id="stamp"></span>
+  <span class="stamp" id="stamp" onclick="forceUpdate()" style="cursor:pointer" title="Tap to check for an update"></span>
 </header>
 <main id="main"></main>
 
@@ -120,7 +120,7 @@ table.hist th:first-child,table.hist td:first-child{text-align:left}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:AUG:23-08:35';
+const VERSION = 'v2026:AUG:23-11:28';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -545,19 +545,23 @@ function niceTicks(min,max,n=4){
   return t;
 }
 // series: [{name,color,values:[{x:label,y}] }] — single shared y axis
-function lineChart(series, {h=190, yFmt=v=>fmt(v), refLines=[]}={}){
+function lineChart(series, {h=190, yFmt=v=>fmt(v), refLines=[], zero=true}={}){
   const W=340, padL=44, padR=12, padT=14, padB=26;
   const labels = series[0].values.map(v=>v.x);
   const all = series.flatMap(s=>s.values.map(v=>v.y)).filter(v=>v!==null&&!isNaN(v));
   refLines.forEach(r=>all.push(r.y));
   if(!all.length) return '<p class="note">No data yet.</p>';
-  let ticks = niceTicks(Math.min(...all,0), Math.max(...all));
+  let ticks = niceTicks(zero?Math.min(...all,0):Math.min(...all), Math.max(...all));
   const y0=ticks[0], y1=ticks[ticks.length-1];
   const X=i=> labels.length===1 ? (padL+(W-padL-padR)/2) : padL + i*(W-padL-padR)/(labels.length-1);
   const Y=v=> padT + (1-(v-y0)/(y1-y0))*(h-padT-padB);
   let g='';
   ticks.forEach(t=>{ g+=`<line class="grid" x1="${padL}" x2="${W-padR}" y1="${Y(t)}" y2="${Y(t)}"/><text x="${padL-6}" y="${Y(t)+3}" text-anchor="end">${yFmt(t)}</text>`; });
-  labels.forEach((l,i)=>{ if(labels.length<=8 || i%Math.ceil(labels.length/8)===0) g+=`<text x="${X(i)}" y="${h-8}" text-anchor="middle">${l}</text>`; });
+  labels.forEach((l,i)=>{ if(labels.length<=8 || i%Math.ceil(labels.length/8)===0){
+    // clamp the end labels inward so the first and last month are never clipped
+    const anc = i===0 ? 'start' : (i===labels.length-1 ? 'end' : 'middle');
+    const x = i===0 ? padL-6 : (i===labels.length-1 ? W-padR+4 : X(i));
+    g+=`<text x="${x}" y="${h-8}" text-anchor="${anc}">${l}</text>`; } });
   refLines.forEach(r=>{ g+=`<line x1="${padL}" x2="${W-padR}" y1="${Y(r.y)}" y2="${Y(r.y)}" stroke="${r.color}" stroke-width="1.5" stroke-dasharray="4 4"/><text x="${W-padR}" y="${Y(r.y)-4}" text-anchor="end" style="fill:${r.color}">${r.label}</text>`; });
   for(const s of series){
     const pts=s.values.map((v,i)=>[X(i),Y(v.y)]);
@@ -589,7 +593,8 @@ function barChart(groups,{h=190,yFmt=v=>fmt(v)}={}){
       const yA=Y(Math.max(0,v.y)), yB=Y(Math.min(0,v.y));
       const hh=Math.max(2,yB-yA);
       const rTop=v.y>=0?4:0, rBot=v.y<0?4:0;
-      g+=`<path d="M${x},${yA+rTop} q0,-${rTop} ${rTop},-${rTop} h${bw-2*rTop} q${rTop},0 ${rTop},${rTop} v${hh-rTop-rBot} q0,${rBot} -${rBot},${rBot} h-${bw-2*rBot} q-${rBot},0 -${rBot},-${rBot} z" fill="${v.color}"><title>${esc(v.name)} ${esc(gr.x)}: ${yFmt(v.y)}</title></path>`;
+      g+=`<path d="M${x},${yA+rTop} q0,-${rTop} ${rTop},-${rTop} h${bw-2*rTop} q${rTop},0 ${rTop},${rTop} v${hh-rTop-rBot} q0,${rBot} -${rBot},${rBot} h-${bw-2*rBot} q-${rBot},0 -${rBot},-${rBot} z" fill="${v.color}"><title>${esc(v.name)} ${esc(gr.x)}: ${yFmt(v.y)}${v.label?' ('+esc(v.label)+')':''}</title></path>`;
+      if(v.label) g+=`<text class="lab" x="${x+bw/2}" y="${(v.y>=0?yA:yB+hh)-5}" text-anchor="middle" style="font-size:9px">${esc(v.label)}</text>`;
     });
     if(groups.length<=8 || gi%Math.ceil(groups.length/8)===0) g+=`<text x="${cx}" y="${h-8}" text-anchor="middle">${esc(gr.x)}</text>`;
   });
@@ -1282,8 +1287,8 @@ function viewProp(){
     const first=state.manual[withBal[0]].mortgageBalance, last=state.manual[withBal[withBal.length-1]].mortgageBalance;
     return `
   <div class="card"><h2>Home loan balance (S$)</h2>
-    ${lineChart(series,{yFmt:v=>fmt(v/1e6,3)+'M'})}
-    <p class="note">Down ${money(first-last,0)} across ${withBal.length} months — amortising, and it shrinks whether or not markets cooperate. Add each month in the form below.</p></div>`; })()}
+    ${lineChart(series,{yFmt:v=>fmt(v/1e6,3)+'M',zero:false})}
+    <p class="note">Down ${money(first-last,0)} across ${withBal.length} months — amortising, and it shrinks whether or not markets cooperate. <b>The axis starts at the range, not at zero</b>, so a ${pct((first-last)/first*100,2)} move is visible at all; read the slope, not the drop. Add each month in the form below.</p></div>`; })()}
   ${(()=>{ const ms=manualMonths().filter(m=>state.manual[m].mortgageBalance!=null);
     const rows=[];
     for(let i=1;i<ms.length;i++){
@@ -1291,15 +1296,20 @@ function viewProp(){
       if(cur.mortgagePayment==null) continue;
       const prin=prev.mortgageBalance-cur.mortgageBalance, int=cur.mortgagePayment-prin;
       if(!isFinite(prin)||!isFinite(int)) continue;
-      rows.push({x:monthLabel(ms[i]+'-01'),vals:[
-        {name:'Principal',color:'var(--s1)',y:Math.round(prin)},
-        {name:'Interest',color:'var(--s2)',y:Math.round(int)}]});
+      const pay=cur.mortgagePayment;
+      rows.push({x:monthLabel(ms[i]+'-01'),pay,prin,int,vals:[
+        {name:'Principal',color:'var(--s1)',y:Math.round(prin),label:pct(prin/pay*100,1)},
+        {name:'Interest',color:'var(--s2)',y:Math.round(int),label:pct(int/pay*100,1)}]});
     }
     if(rows.length<2) return '';
     return `
   <div class="card"><h2>Where each instalment goes (S$)</h2>
     <div class="legend"><span><span class="sw" style="background:var(--s1)"></span>Principal &mdash; becomes your equity</span><span><span class="sw" style="background:var(--s2)"></span>Interest &mdash; the cost</span></div>
     ${barChart(rows,{yFmt:v=>fmt(v,0)})}
+    ${rows.map(r=>`<div class="kv"><span class="k">${esc(r.x)} · instalment ${money(r.pay,2)}</span><span class="v" style="font-weight:400">principal ${money(r.prin,2)} · interest <b class="neg">${money(r.int,2)}</b></span></div>`).join('')}
+    ${(()=>{ if(rows.length<2) return '';
+      const a=rows[0], b=rows[rows.length-1], d=(b.int/b.pay-a.int/a.pay)*100;
+      return `<p class="note">Interest's share of the instalment went from ${pct(a.int/a.pay*100,1)} in ${esc(a.x)} to ${pct(b.int/b.pay*100,1)} in ${esc(b.x)} — ${d>=0?'up':'down'} ${fmt(Math.abs(d),1)} points.</p>`; })()}
     <p class="note">Arithmetic on your own entries: principal = the fall in balance between two recorded months, interest = instalment &minus; principal. Nothing modelled. When the rate rises before the instalment does, the interest bar grows and the principal bar shrinks by the same amount.</p></div>`; })()}
   <div class="card"><h2>Property value</h2>
     <label class="fld">Your estimate of the property's market value (S$). Used for equity and mortgage LTV here, and for net worth on the dashboard. Leave it blank and both stay hidden rather than guessed.</label>
@@ -1339,6 +1349,15 @@ function propForms(){
     <button class="btn" style="margin-top:12px" onclick="addIncome()">Add income</button>
     <p class="note">Rent is the one income stream that directly offsets the mortgage, so it is measured against the instalment above. It also counts towards debt-service cover on the dashboard.</p>
   </div>`;
+}
+/* An offline-capable app can serve yesterday's code from cache. This is the escape hatch:
+   drop the code caches, drop the service worker, reload past the HTTP cache. Data lives in
+   localStorage and is not touched by any of it. */
+async function forceUpdate(){
+  if(!confirm('Clear the cached app code and reload from the server?\n\nYour data (balances, snapshots, settings) is not affected.')) return;
+  try{ if(window.caches){ const ks=await caches.keys(); await Promise.all(ks.map(k=>caches.delete(k))); } }catch(e){}
+  try{ if(navigator.serviceWorker){ const rs=await navigator.serviceWorker.getRegistrations(); await Promise.all(rs.map(r=>r.unregister())); } }catch(e){}
+  location.replace(location.pathname.replace(/[^/]*$/,'') + '?u=' + Date.now());
 }
 function savePropertyValue(){
   const el=document.getElementById('propHome'); if(!el) return;
@@ -1530,6 +1549,8 @@ function viewSet(){
   <div class="card"><h2>About</h2>
     <div class="kv"><span class="k">Version</span><span class="v">${VERSION}</span></div>
     <div class="kv"><span class="k">Source of figures</span><span class="v" style="font-weight:400">DBS Treasures Private Client eStatements you import; parsed on-device</span></div>
+    <button class="btn ghost" style="margin-top:10px" onclick="forceUpdate()">Check for an update now</button>
+    <p class="note">Fortress installs as an offline app, so an old copy can keep running after you publish a new one. This clears the app's cached code and reloads from the server. <b>Your data is untouched</b> — balances, snapshots and settings live separately. The version number above is the check: compare it with the one in the release you published. You can also tap the version at the top of any screen.</p>
     <p class="note">Fortress is a personal monitoring tool, not financial advice. Margin-call estimates depend on lending values that only DBS can confirm; scenario lines shown without a configured lending value are illustrative arithmetic, not DBS figures.</p>
   </div>`;
 }
@@ -2023,7 +2044,10 @@ let booted=false;
   if(isLocked()){ lockScreen(); return; }
   booted=true; render();
 })();
-if('serviceWorker' in navigator && location.protocol==='https:'){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
+/* Secure contexts only — https, or localhost while testing the update path. */
+if('serviceWorker' in navigator && (location.protocol==='https:' || ['localhost','127.0.0.1'].includes(location.hostname))){
+  navigator.serviceWorker.register('sw.js').catch(()=>{});   // the browser re-checks sw.js on each navigation
+}
 </script>
 </body>
 </html>
