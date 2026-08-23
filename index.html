@@ -39,7 +39,7 @@ header{padding:18px 16px 8px;display:flex;align-items:baseline;justify-content:s
 header h1{font-size:20px;font-weight:700;letter-spacing:-.02em}
 header .stamp{font-size:11px;color:var(--muted)}
 .tabs{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--surface);border-top:1px solid var(--border);z-index:40;max-width:760px;margin:0 auto;padding-bottom:env(safe-area-inset-bottom)}
-.tabs button{flex:1;background:none;border:none;color:var(--muted);font:inherit;font-size:11px;padding:10px 2px 8px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px}
+.tabs button{flex:1;background:none;border:none;color:var(--muted);font:inherit;font-size:10px;padding:10px 1px 8px;white-space:nowrap;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px}
 .tabs button.on{color:var(--ink);font-weight:600}
 .tabs button svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 main{padding:0 12px}
@@ -120,7 +120,7 @@ table.hist th:first-child,table.hist td:first-child{text-align:left}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:AUG:22-17:16';
+const VERSION = 'v2026:AUG:23-08:35';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -856,6 +856,7 @@ function candleChart(series, opts){
 /* ================= tabs / rendering ================= */
 const TABS=[
   {id:'dash', label:'Dashboard', icon:'<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>'},
+  {id:'prop', label:'Property', icon:'<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.8V21h14V9.8"/><path d="M10 21v-6h4v6"/>'},
   {id:'trends', label:'Trends', icon:'<polyline points="3,17 9,11 13,14 21,6"/><polyline points="15,6 21,6 21,12"/>'},
   {id:'fx', label:'FX Risk', icon:'<circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/>'},
   {id:'hist', label:'History', icon:'<circle cx="12" cy="12" r="9"/><polyline points="12,7 12,12 15.5,14"/>'},
@@ -1043,23 +1044,6 @@ function viewDash(){
       Its ${money(freeAssets,0)} of assets do <em>not</em> secure the margin loan, so Fortress leaves them out of the LTV denominator — the DBS screen for the borrowing account shows its own assets only, and this account offers “Apply with RM” rather than “Contact RM to draw down”.
       Two consequences: pledging it would add roughly ${money(freeBp,0)} of capacity (${pct(freeBp/(mrtlCapacity(latestMrtl())?.capacity||1)*100,1)} more — probably not worth the paperwork), and as it stands it is <b>unencumbered</b>: assets you could sell to meet a call without touching the pledged portfolio.</div>`:''}
   </div>`; })()}
-  ${(()=>{ const inc=(state.income||[]).filter(i=>i.endMonth==null); if(!inc.length) return '';
-    const mm=latestMrtl?latestManual():null;
-    const rentTotal=monthlyIncome();
-    const inst=mm?.mortgagePayment ?? null;
-    const cover=inst? rentTotal/inst*100 : null;
-    return `
-  <div class="card">
-    <h2>Rental income vs debt service</h2>
-    ${inc.map(i=>`<div class="kv"><span class="k">${esc(i.label)}${i.payer?' · '+esc(i.payer):''}</span><span class="v">${money(i.amount,2)}/mo</span></div>`).join('')}
-    ${inst!=null?`<div class="kv"><span class="k">Mortgage instalment</span><span class="v">-${money(inst,2)}/mo</span></div>
-    <div class="kv"><span class="k">Net after instalment</span><span class="v ${rentTotal-inst>=0?'pos':'neg'}">${money(rentTotal-inst,2)}/mo</span></div>
-    <div class="kv"><span class="k">Rent covers instalment</span><span class="v ${cover>=100?'pos':'neg'}">${pct(cover,1)}</span></div>`:''}
-    <p class="note">${cover!=null && cover>=100
-      ? 'The tenant services the entire mortgage payment — principal and interest — with '+money(rentTotal-inst,2)+' left over each month. The home loan is self-funding at the current rent and rate; it is the floating rate, not the balance, that would break that.'
-      : 'Rent does not fully cover the instalment — the shortfall comes from your own cash flow.'}</p>
-    <p class="note">Credited around day ${esc(String(inc[0].dayOfMonth||'?'))} each month to ${esc(inc[0].account||'')}. Source: ${esc(inc[0].source||'manual entry')}.</p>
-  </div>`; })()}
   <div class="card">
     <h2>Margin headroom${latestMrtl()?'<span class="pill">from DBS MRTL figures</span>':(lv?'':'<span class="pill">illustrative — LV not set</span>')}</h2>
     ${(()=>{ const m=latestMrtl(), c=mrtlCapacity(m);
@@ -1174,27 +1158,6 @@ function viewDash(){
         <b>Gains ÷ interest of ${fmt(gv,1)}×</b> is flattering and fragile: it divides a volatile mark-to-market gain by a near-fixed cost, so it soars in a good year and goes <em>negative</em> in a bad one. July alone was ${money(a.plMtd,0)} — on a full month like that the ratio is meaningless. Treat ${fmt(gv,1)}× as evidence the strategy is working this year, not as a safety margin.</p>
       <p class="note">These are struck on the statement's own P&L for the window in the heading. For percentage returns see the Returns card, which uses DBS's time-weighted figures.</p>`; })()}
   </div>
-  ${(()=>{ const mm=latestManual(); if(!mm) return '';
-    const impInt = impliedMortgageInterest(mm.month);
-    const paidOff = MORTGAGE_META.original && mm.mortgageBalance!=null ? MORTGAGE_META.original - mm.mortgageBalance : null;
-    const eff = effectiveLoanTerms();
-    const rateNow = eff.ratePct!=null ? eff.ratePct : mm.mortgageRatePct;
-    const instNow = eff.instalment!=null ? eff.instalment : mm.mortgagePayment;
-    return `
-  <div class="card">
-    <h2>Home loan — ${esc(MORTGAGE_META.bank)} ${esc(MORTGAGE_META.account)}<span class="pill">manual entry</span></h2>
-    <div class="kv"><span class="k">Outstanding balance (${esc(mm.month)})</span><span class="v">${money(mm.mortgageBalance,2)}</span></div>
-    <div class="kv"><span class="k">Original / repaid so far</span><span class="v">${money(MORTGAGE_META.original,0)} / ${paidOff!==null?money(paidOff,0):'—'}</span></div>
-    <div class="kv"><span class="k">Rate</span><span class="v">${rateNow!=null?pct(rateNow,rateNow%1===0?2:5)+' p.a. float':'—'}${eff.rateFrom?` <span class="k" style="font-size:11px">since ${esc(dayLabel(eff.rateFrom))}</span>`:''}</span></div>
-    <div class="kv"><span class="k">Monthly instalment</span><span class="v">${instNow!=null?money(instNow,2):'—'}${eff.instalmentFrom?` <span class="k" style="font-size:11px">since ${esc(dayLabel(eff.instalmentFrom))}</span>`:''}</span></div>
-    <div class="kv"><span class="k">Interest portion this month (implied)</span><span class="v">${impInt!==null?money(impInt,2):'— (needs prior month + instalment)'}</span></div>
-    <div class="kv"><span class="k">UOB deposits</span><span class="v">${mm.deposits!=null?money(mm.deposits,2):'—'}</span></div>
-    ${mm.nextDue?`<div class="kv"><span class="k">Next payment due</span><span class="v">${esc(mm.nextDue)}</span></div>`:''}
-    ${mm.note?`<p class="note" style="margin-top:6px">${esc(mm.note)}</p>`:''}
-    ${rateChangeBlock(mm, instNow)}
-    ${state.settings.homeValue?`<div class="kv"><span class="k">Mortgage LTV vs your entered property value</span><span class="v">${pct(mm.mortgageBalance/state.settings.homeValue*100,1)}</span></div>`:''}
-    <p class="note">Implied interest = instalment − principal reduction between your two latest entries (pure arithmetic from UOB statements, no assumptions). A property loan has no market-linked margin call, but its interest is part of the hurdle your portfolio must beat. Update monthly in Settings → Home loan.</p>
-  </div>`; })()}
   ${a.loans.map(l=>{const d=daysUntil(l.maturityDate);return `
   <div class="card">
     <h2>Loan — ${esc(l.pf)}</h2>
@@ -1228,6 +1191,90 @@ function viewTrends(){
       {name:'Debt cost YTD',color:'var(--s2)',y:Math.round(s.a.intPaidYtd+s.a.feesYtd)}]})),{yFmt:v=>fmt(v/1000,1)+'k'})}
     <p class="note">Positive carry = the portfolio's cash income alone outruns all financing and account costs.</p></div>
   <div class="card"><h2>Net assets (S$)</h2>${lineChart([{name:'Net assets',color:'var(--s3)',values:snaps.map(s=>({x:monthLabel(s.d),y:Math.round(s.a.net)}))}],{yFmt:v=>fmt(v/1e6,2)+'M'})}</div>
+`;
+}
+
+/* ================= Property tab =================
+   Everything about the house in one place: the UOB loan, the rate letters that
+   reprice it, the rent that services it, and the equity behind it. The dashboard
+   keeps the consolidated debt totals — this tab holds the detail. */
+function viewProp(){
+  const mm = latestManual();
+  const hv = state.settings.homeValue;
+  const eff = effectiveLoanTerms();
+  const rentM = monthlyIncome();
+  const bal = mm?.mortgageBalance ?? null;
+  const rateNow = eff.ratePct ?? mm?.mortgageRatePct ?? null;
+  const instNow = eff.instalment ?? mm?.mortgagePayment ?? null;
+  const impInt = mm ? impliedMortgageInterest(mm.month) : null;
+  const paidOff = (MORTGAGE_META.original!=null && bal!=null) ? MORTGAGE_META.original - bal : null;
+  // average principal per recorded month — arithmetic on your own entries, never a projection
+  const withBal = manualMonths().filter(m=>state.manual[m].mortgageBalance!=null);
+  const avgPrin = withBal.length>1
+    ? (state.manual[withBal[0]].mortgageBalance - state.manual[withBal[withBal.length-1]].mortgageBalance)/(withBal.length-1)
+    : null;
+  const pend = pendingRateChanges();
+  const today = new Date().toISOString().slice(0,10);
+  const pendInst = pend.find(r=>r.instalment!=null && r.instalmentEffective>today) || null;
+
+  if(!mm) return `<div class="banner b-warn"><span class="ic">&#8505;</span><div><b>No home-loan data yet</b>Add a month below, or import a UOB statement, screenshot or rate letter through Add data.</div></div>${propForms()}`;
+
+  return `
+  ${pend.length?`<div class="banner b-warn"><span class="ic">&#8599;</span><div><b>${pend.length} rate change not yet in force</b>${pend.map(rc=>{
+      const bits=[];
+      if(rc.ratePct!=null && rc.rateEffective>today) bits.push('rate '+pct(rc.ratePct,5)+' from '+dayLabel(rc.rateEffective));
+      if(rc.instalment!=null && rc.instalmentEffective>today) bits.push('instalment '+money(rc.instalment,2)+' from '+dayLabel(rc.instalmentEffective)+(daysUntil(rc.instalmentEffective)!=null?' ('+daysUntil(rc.instalmentEffective)+' days)':''));
+      return esc(rc.lender||'')+': '+bits.join(' &middot; ');
+    }).join('<br>')}</div></div>`:''}
+  <div class="card">
+    <div class="hero">${hv!=null&&bal!=null?money(hv-bal):money(bal,2)}</div>
+    <div class="hero-sub">${hv!=null&&bal!=null
+      ? `Property equity &middot; your estimate ${money(hv)} &minus; loan ${money(bal)}`
+      : `Home-loan outstanding &middot; ${esc(MORTGAGE_META.bank)} ${esc(MORTGAGE_META.account)} &middot; ${esc(mm.month)} &middot; property value not entered, so equity is not shown`}</div>
+  </div>
+  <div class="tiles">
+    ${hv!=null&&bal!=null
+      ? `<div class="tile"><div class="v">${money(bal,0)}</div><div class="l">Loan outstanding (${esc(mm.month)})</div><div class="d">${paidOff!==null?money(paidOff,0)+' repaid so far':''}</div></div>`
+      : `<div class="tile"><div class="v">${paidOff!==null?money(paidOff,0):'—'}</div><div class="l">Repaid so far</div><div class="d">of ${money(MORTGAGE_META.original,0)} borrowed</div></div>`}
+    <div class="tile"><div class="v">${rateNow!=null?pct(rateNow,Number.isInteger(rateNow*100)?2:5):'—'}</div><div class="l">Rate in force</div><div class="d">${eff.rateFrom?'since '+esc(dayLabel(eff.rateFrom)):'floating'}</div></div>
+    <div class="tile"><div class="v">${money(instNow,2)}</div><div class="l">Monthly instalment</div><div class="d">${pendInst?`<span class="neg">${money(pendInst.instalment,2)} from ${esc(dayLabel(pendInst.instalmentEffective))}</span>`:(eff.instalmentFrom?'since '+esc(dayLabel(eff.instalmentFrom)):'')}</div></div>
+    <div class="tile"><div class="v">${impInt!==null?money(impInt,2):'—'}</div><div class="l">Interest portion this month</div><div class="d">${impInt!==null&&instNow!=null?'principal '+money(instNow-impInt,2):'needs two recorded months + the instalment'}</div></div>
+    <div class="tile"><div class="v ${rentM>0?'pos':''}">${rentM>0?money(rentM,2):'—'}</div><div class="l">Rent received / month</div><div class="d">${rentM>0&&instNow?money(rentM-instNow,2)+' left after the instalment':'no recurring rent recorded'}</div></div>
+    <div class="tile"><div class="v ${instNow&&rentM>=instNow?'pos':'neg'}">${instNow?pct(rentM/instNow*100,1):'—'}</div><div class="l">Rent cover of instalment</div><div class="d">${instNow&&rentM>=instNow?'self-funding at today&rsquo;s rate':'shortfall comes from your own cash'}</div></div>
+    <div class="tile"><div class="v">${avgPrin!=null?money(avgPrin,0):'—'}</div><div class="l">Principal repaid / month</div><div class="d">${avgPrin!=null?'average across '+withBal.length+' recorded months':'needs two recorded months'}</div></div>
+    <div class="tile"><div class="v">${hv!=null&&bal!=null?pct(bal/hv*100,1):'—'}</div><div class="l">Mortgage LTV</div><div class="d">${hv!=null?'against the value you entered':'enter a property value below'}</div></div>
+  </div>
+  ${(()=>{ const mm=latestManual(); if(!mm) return '';
+    const impInt = impliedMortgageInterest(mm.month);
+    const paidOff = MORTGAGE_META.original && mm.mortgageBalance!=null ? MORTGAGE_META.original - mm.mortgageBalance : null;
+    const eff = effectiveLoanTerms();
+    const rateNow = eff.ratePct!=null ? eff.ratePct : mm.mortgageRatePct;
+    const instNow = eff.instalment!=null ? eff.instalment : mm.mortgagePayment;
+    return `
+  <div class="card">
+    <h2>Home loan — ${esc(MORTGAGE_META.bank)} ${esc(MORTGAGE_META.account)}<span class="pill">manual entry</span></h2>
+    <div class="kv"><span class="k">Original loan / term on the UOB screen</span><span class="v">${money(MORTGAGE_META.original,2)} · ${MORTGAGE_META.tenorMonths} months</span></div>
+    <div class="kv"><span class="k">Type</span><span class="v">${esc(MORTGAGE_META.type)}</span></div>
+    <div class="kv"><span class="k">Repayment account cash (UOB)</span><span class="v">${mm.deposits!=null?money(mm.deposits,2):'— (not entered for '+esc(mm.month)+')'}</span></div>
+    ${mm.nextDue?`<div class="kv"><span class="k">Next payment due</span><span class="v">${esc(mm.nextDue)}</span></div>`:''}
+    ${mm.note?`<p class="note" style="margin-top:6px">${esc(mm.note)}</p>`:''}
+    ${rateChangeBlock(mm, instNow)}
+    <p class="note">Implied interest = instalment − principal reduction between your two latest entries (pure arithmetic from UOB statements, no assumptions). A property loan has no market-linked margin call, but its interest is part of the hurdle your portfolio must beat. Update monthly in the form further down this tab.</p>
+  </div>`; })()}
+  ${(()=>{ const inc=(state.income||[]).filter(i=>i.endMonth==null); if(!inc.length) return '';
+    const mm=latestMrtl?latestManual():null;
+    const rentTotal=monthlyIncome();
+    const inst=mm?.mortgagePayment ?? null;
+    const cover=inst? rentTotal/inst*100 : null;
+    return `
+  <div class="card">
+    <h2>Rental income vs debt service</h2>
+    ${inc.map(i=>`<div class="kv"><span class="k">${esc(i.label)}${i.payer?' · '+esc(i.payer):''}</span><span class="v">${money(i.amount,2)}/mo</span></div>`).join('')}
+    <p class="note">${cover!=null && cover>=100
+      ? 'The tenant services the entire mortgage payment — principal and interest — with '+money(rentTotal-inst,2)+' left over each month. The home loan is self-funding at the current rent and rate; it is the floating rate, not the balance, that would break that.'
+      : 'Rent does not fully cover the instalment — the shortfall comes from your own cash flow.'}</p>
+    <p class="note">Credited around day ${esc(String(inc[0].dayOfMonth||'?'))} each month to ${esc(inc[0].account||'')}. Source: ${esc(inc[0].source||'manual entry')}.</p>
+  </div>`; })()}
   ${(()=>{ const mm=manualMonths(); if(!mm.length) return '';
     const withBal=mm.filter(m=>state.manual[m].mortgageBalance!=null);
     if(withBal.length<2) return '';
@@ -1236,7 +1283,67 @@ function viewTrends(){
     return `
   <div class="card"><h2>Home loan balance (S$)</h2>
     ${lineChart(series,{yFmt:v=>fmt(v/1e6,3)+'M'})}
-    <p class="note">Down ${money(first-last,0)} across ${withBal.length} months — amortising, and it shrinks whether or not markets cooperate. Add each month in Settings → Home loan.</p></div>`; })()}`;
+    <p class="note">Down ${money(first-last,0)} across ${withBal.length} months — amortising, and it shrinks whether or not markets cooperate. Add each month in the form below.</p></div>`; })()}
+  ${(()=>{ const ms=manualMonths().filter(m=>state.manual[m].mortgageBalance!=null);
+    const rows=[];
+    for(let i=1;i<ms.length;i++){
+      const cur=state.manual[ms[i]], prev=state.manual[ms[i-1]];
+      if(cur.mortgagePayment==null) continue;
+      const prin=prev.mortgageBalance-cur.mortgageBalance, int=cur.mortgagePayment-prin;
+      if(!isFinite(prin)||!isFinite(int)) continue;
+      rows.push({x:monthLabel(ms[i]+'-01'),vals:[
+        {name:'Principal',color:'var(--s1)',y:Math.round(prin)},
+        {name:'Interest',color:'var(--s2)',y:Math.round(int)}]});
+    }
+    if(rows.length<2) return '';
+    return `
+  <div class="card"><h2>Where each instalment goes (S$)</h2>
+    <div class="legend"><span><span class="sw" style="background:var(--s1)"></span>Principal &mdash; becomes your equity</span><span><span class="sw" style="background:var(--s2)"></span>Interest &mdash; the cost</span></div>
+    ${barChart(rows,{yFmt:v=>fmt(v,0)})}
+    <p class="note">Arithmetic on your own entries: principal = the fall in balance between two recorded months, interest = instalment &minus; principal. Nothing modelled. When the rate rises before the instalment does, the interest bar grows and the principal bar shrinks by the same amount.</p></div>`; })()}
+  <div class="card"><h2>Property value</h2>
+    <label class="fld">Your estimate of the property's market value (S$). Used for equity and mortgage LTV here, and for net worth on the dashboard. Leave it blank and both stay hidden rather than guessed.</label>
+    <input type="number" id="propHome" step="1000" inputmode="decimal" value="${hv??''}" placeholder="leave blank if unknown">
+    <button class="btn" style="margin-top:12px" onclick="savePropertyValue()">Save</button>
+    ${hv!=null?`<p class="note">This is your own figure, not a valuation &mdash; nothing in Fortress checks it against the market.</p>`:''}
+  </div>
+${propForms()}
+  <button class="btn" onclick="startImport()">&#10514; Add data — UOB statement, screenshot or rate letter</button>
+  <p class="note" style="text-align:center">Read entirely on this device — nothing is uploaded.</p>`;
+}
+
+/* the two editors that feed this tab, kept beside the figures they produce */
+function propForms(){
+  return `
+  <div class="card"><h2>Home loan (${esc(MORTGAGE_META.bank)}) &mdash; monthly entry</h2>
+    <p class="note" style="margin-top:0">Your UOB statement isn't a machine-readable PDF here, so add these numbers each month from the app or statement. Interest is then derived, not assumed.</p>
+    <label class="fld">Month</label>
+    <input type="text" id="mMonth" placeholder="YYYY-MM" inputmode="numeric" value="${new Date().toISOString().slice(0,7)}">
+    <label class="fld">Outstanding balance (S$)</label>
+    <input type="number" id="mBal" step="0.01" inputmode="decimal" placeholder="e.g. 1338729.99">
+    <label class="fld">Monthly instalment (S$) — leave as-is if unchanged</label>
+    <input type="number" id="mPay" step="0.01" inputmode="decimal" value="${latestManual()?.mortgagePayment ?? ''}">
+    <label class="fld">Interest rate (% p.a.) — optional, floating</label>
+    <input type="number" id="mRate" step="0.00001" inputmode="decimal" value="${latestManual()?.mortgageRatePct ?? ''}">
+    <label class="fld">Bank deposits / cash buffer (S$) — optional</label>
+    <input type="number" id="mDep" step="0.01" inputmode="decimal" placeholder="e.g. 17702.23">
+    <button class="btn" style="margin-top:12px" onclick="saveManual()">Save month</button>
+    ${manualMonths().length?`<div style="margin-top:12px">${manualMonths().slice().reverse().map(m=>`<div class="kv"><span class="k">${esc(m)}</span><span class="v">${money(state.manual[m].mortgageBalance,2)} <button class="btn ghost" style="width:auto;padding:2px 8px;font-size:11px;margin-left:8px" onclick="delManual('${esc(m)}')">×</button></span></div>`).join('')}</div>`:''}
+  </div>
+  <div class="card"><h2>Rent &amp; recurring income</h2>
+    ${(state.income||[]).map((i,ix)=>`<div class="kv"><span class="k">${esc(i.label)}${i.payer?' · '+esc(i.payer):''}</span><span class="v">${money(i.amount,2)}/mo
+      <button class="btn ghost" style="width:auto;padding:2px 8px;font-size:11px;margin-left:8px" onclick="delIncome(${ix})">×</button></span></div>`).join('') || '<p class="note">None yet.</p>'}
+    <label class="fld">Label</label><input type="text" id="incLabel" placeholder="e.g. Rent — The Atelier">
+    <label class="fld">Amount per month (S$)</label><input type="number" id="incAmt" step="0.01" inputmode="decimal">
+    <label class="fld">Payer / source (optional)</label><input type="text" id="incPayer">
+    <button class="btn" style="margin-top:12px" onclick="addIncome()">Add income</button>
+    <p class="note">Rent is the one income stream that directly offsets the mortgage, so it is measured against the instalment above. It also counts towards debt-service cover on the dashboard.</p>
+  </div>`;
+}
+function savePropertyValue(){
+  const el=document.getElementById('propHome'); if(!el) return;
+  state.settings.homeValue = el.value===''?null:Math.max(0,+el.value);
+  saveAll(); render(); window.scrollTo(0,0);
 }
 
 function viewFX(){
@@ -1377,30 +1484,6 @@ function viewSet(){
     <input type="number" id="setAlert" min="5" max="95" step="1" inputmode="decimal" value="${s.ltvAlert}">
     <button class="btn" style="margin-top:12px" onclick="saveSettings()">Save settings</button>
   </div>
-  <div class="card"><h2>Home loan (${esc(MORTGAGE_META.bank)}) — monthly entry</h2>
-    <p class="note" style="margin-top:0">Your UOB statement isn't a machine-readable PDF here, so add these three numbers each month from the app or statement. Interest is then derived, not assumed.</p>
-    <label class="fld">Month</label>
-    <input type="text" id="mMonth" placeholder="YYYY-MM" inputmode="numeric" value="${new Date().toISOString().slice(0,7)}">
-    <label class="fld">Outstanding balance (S$)</label>
-    <input type="number" id="mBal" step="0.01" inputmode="decimal" placeholder="e.g. 1338729.99">
-    <label class="fld">Monthly instalment (S$) — leave as-is if unchanged</label>
-    <input type="number" id="mPay" step="0.01" inputmode="decimal" value="${latestManual()?.mortgagePayment ?? ''}">
-    <label class="fld">Interest rate (% p.a.) — optional, floating</label>
-    <input type="number" id="mRate" step="0.01" inputmode="decimal" value="${latestManual()?.mortgageRatePct ?? ''}">
-    <label class="fld">Bank deposits / cash buffer (S$) — optional</label>
-    <input type="number" id="mDep" step="0.01" inputmode="decimal" placeholder="e.g. 17702.23">
-    <button class="btn" style="margin-top:12px" onclick="saveManual()">Save month</button>
-    ${manualMonths().length?`<div style="margin-top:12px">${manualMonths().slice().reverse().map(m=>`<div class="kv"><span class="k">${esc(m)}</span><span class="v">${money(state.manual[m].mortgageBalance,2)} <button class="btn ghost" style="width:auto;padding:2px 8px;font-size:11px;margin-left:8px" onclick="delManual('${esc(m)}')">×</button></span></div>`).join('')}</div>`:''}
-  </div>
-  <div class="card"><h2>Recurring income</h2>
-    ${(state.income||[]).map((i,ix)=>`<div class="kv"><span class="k">${esc(i.label)}${i.payer?' · '+esc(i.payer):''}</span><span class="v">${money(i.amount,2)}/mo
-      <button class="btn ghost" style="width:auto;padding:2px 8px;font-size:11px;margin-left:8px" onclick="delIncome(${ix})">×</button></span></div>`).join('') || '<p class="note">None yet.</p>'}
-    <label class="fld">Label</label><input type="text" id="incLabel" placeholder="e.g. Rent — The Atelier">
-    <label class="fld">Amount per month (S$)</label><input type="number" id="incAmt" step="0.01" inputmode="decimal">
-    <label class="fld">Payer / source (optional)</label><input type="text" id="incPayer">
-    <button class="btn" style="margin-top:12px" onclick="addIncome()">Add income</button>
-    <p class="note">Counted against your debt service on the dashboard. Rent is the one income stream that directly offsets the mortgage.</p>
-  </div>
   <div class="card"><h2>Reported returns (DBS app)</h2>
     ${(state.reported||[]).map((r,ix)=>`<div class="kv"><span class="k">${esc(r.metric)} · ${esc(r.portfolioId||'')}<br><span style="font-size:11px">${esc(rangeLabel(r.from,r.to))}</span></span>
       <span class="v">${r.pct>=0?'+':''}${pct(r.pct,2)}
@@ -1421,10 +1504,9 @@ function viewSet(){
       <button class="btn ghost" style="width:auto;padding:2px 8px;font-size:11px;margin-left:8px" onclick="delMrtl('${esc(d)}')">×</button></span></div>`).join(''):'<p class="note">None yet.</p>'}
     <p class="note">Update by importing a screenshot of DBS iBanking → “Your MRTL loan draw down” through Add data.</p>
   </div>
-  <div class="card"><h2>Property (optional)</h2>
-    <label class="fld">Estimated market value of the mortgaged property (S$). Used only to show mortgage LTV and total net worth — leave blank and both stay hidden rather than guessed.</label>
-    <input type="number" id="setHome" step="1000" inputmode="decimal" value="${s.homeValue??''}" placeholder="leave blank if unknown">
-    <button class="btn" style="margin-top:12px" onclick="saveSettings()">Save</button>
+  <div class="card"><h2>House, loan &amp; rent</h2>
+    <p class="note" style="margin-top:0">The home loan's monthly entry, the rent, the rate-revision letters and the property value all live in the <b>Property</b> tab now — one screen for everything about the house.</p>
+    <button class="btn ghost" onclick="go('prop')">Open the Property tab</button>
   </div>
   <div class="card"><h2>Passcode lock</h2>
     ${isLocked()
@@ -1455,7 +1537,7 @@ function viewSet(){
 function render(){
   renderTabs();
   document.getElementById('stamp').textContent = VERSION;
-  const v={dash:viewDash,trends:viewTrends,fx:viewFX,hist:viewHist,set:viewSet}[state.settings.tab]||viewDash;
+  const v={dash:viewDash,prop:viewProp,trends:viewTrends,fx:viewFX,hist:viewHist,set:viewSet}[state.settings.tab]||viewDash;
   document.getElementById('main').innerHTML = v() + `<p class="fine">Monitoring aid only — verify against your official DBS statements. ${VERSION}</p>`;
 }
 
@@ -1480,7 +1562,7 @@ function saveManual(){
     mortgagePayment:num('mPay') ?? prev.mortgagePayment ?? null,
     mortgageRatePct:num('mRate') ?? prev.mortgageRatePct ?? null,
     deposits:num('mDep') ?? prev.deposits ?? null };
-  saveAll(); go('dash');
+  saveAll(); go('prop');
 }
 function delManual(m){
   if(confirm('Delete home-loan entry '+m+'?')){ delete state.manual[m]; saveAll(); render(); }

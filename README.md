@@ -43,13 +43,25 @@ On iPhone the accurate route is Photos → long-press the text → Copy → **Pa
 
 Nothing auto-saves. Every route ends at an editable review screen.
 
+## Tabs
+
+**Dashboard** — the consolidated picture: DBS margin position, total debt across both banks,
+margin headroom, returns, and the Fortress strength score.
+**Property** — everything about the house in one place: the UOB loan, the rate-revision
+letters that reprice it, the rent that services it, the balance and instalment-split charts,
+your property value, and the monthly-entry form.
+**Trends** · **FX Risk** · **History** · **Settings** as before.
+
+The dashboard keeps the *consolidated* debt totals (they include the mortgage) — the Property
+tab holds the detail behind them.
+
 ## Monthly routine
 
 1. Download the DBS Investment Statement PDF (iBanking → eStatements).
 2. Open Fortress → **Add data** → choose the file.
 3. Review the parsed figures against the statement's Portfolio Summary page → Save.
-4. Add the UOB home loan the same way — import its statement/screenshot, or type the
-   balance in Settings → Home loan. The interest portion is derived as
+4. Add the UOB home loan the same way — import its statement/screenshot/rate letter, or type
+   the balance in the Property tab's monthly-entry form. The interest portion is derived as
    *instalment − principal reduction*: arithmetic from your own two figures, never an estimate.
 5. Screenshot DBS iBanking → **Your MRTL loan draw down** and import it. This is what
    makes the margin-call number real rather than assumed.
@@ -88,7 +100,7 @@ before, it says so and offers a one-tap correction rather than silently picking 
 
 ## Income
 
-Settings → **Recurring income** tracks rent and similar. Rent is compared directly against
+Property → **Rent & recurring income** tracks rent and similar. Rent is compared directly against
 the mortgage instalment, since that is the pairing that decides whether the property funds
 itself.
 
@@ -99,7 +111,7 @@ before clearing browser data or switching phones; **Restore backup** to load it 
 
 ## Optional
 
-Settings → **Property** takes your own estimate of the home's market value. Leave it blank
+Property → **Property value** takes your own estimate of the home's market value. Leave it blank
 and mortgage LTV / total net worth simply stay hidden rather than being guessed.
 
 ## Notes
