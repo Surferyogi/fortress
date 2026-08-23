@@ -31,6 +31,9 @@ home loan.
 | DBS iBanking "Your MRTL loan draw down" | borrowing potential, credit limit, drawn, available |
 | DBS app → Portfolio details → Performance | TWRR **with its date range** |
 | UOB "Update to your loan" rate-revision letter | new rate + its date, new instalment + its date, previous rate |
+| CPF member dashboard | OA / SA / MediSave balances with their "as at" date |
+| CPF Home ownership dashboard | principal withdrawn, accrued interest, properties |
+| CPF transaction history (PDF or pasted) | the full ledger — contributions, interest, housing flows, insurance — reconciled against the opening and closing balances |
 | anything else | manual-mapping screen — values are never guessed |
 
 Screenshots go through in-browser OCR (tesseract.js, fetched once from a CDN and then
@@ -48,8 +51,11 @@ Nothing auto-saves. Every route ends at an editable review screen.
 **Dashboard** — the consolidated picture: DBS margin position, total debt across both banks,
 margin headroom, returns, and the Fortress strength score.
 **Property** — everything about the house in one place: the UOB loan, the rate-revision
-letters that reprice it, the rent that services it, the balance and instalment-split charts,
-your property value, and the monthly-entry form.
+letters that reprice it, the CPF drawn into it and what must be refunded on sale, the rent
+that services it, the balance and instalment-split charts, your property value, and the
+monthly-entry form.
+**CPF** — OA / SA / MediSave balances, what they earn under CPF's published rates, and a
+year-by-year projection of today's balances.
 **Trends** · **FX Risk** · **History** · **Settings** as before.
 
 The dashboard keeps the *consolidated* debt totals (they include the mortgage) — the Property
@@ -105,6 +111,36 @@ one. **The version stamp at the top of every screen is the check** — compare i
 `VERSION` constant in the release you pushed. If it lags, tap the stamp (or Settings → About →
 *Check for an update now*): that clears the cached app code, drops the service worker and
 reloads from the server. Your data is stored separately and is not affected.
+
+## CPF
+
+Two things, deliberately kept apart.
+
+**The ledger** is the ground truth, and Fortress rebuilds the balance path from it row by row
+rather than trusting a summary: the reconstructed curve lands on CPF's own closing balances. Import the printable transaction history and Fortress
+checks that opening balances plus every movement equal the closing balances, to the cent. If
+they don't, rows were lost in the copy and it refuses to save rather than build totals on a
+partial ledger. The ledger also settles questions no dashboard answers: when the housing
+withdrawal actually happened, what contributions really run at, and — from CPF's own transfer
+entry — which MediSave overflow rule applies.
+
+**Balances** are an asset and count towards net worth — last, and in their own line, because
+CPF cannot be pledged, cannot meet a margin call and cannot service either loan. The
+projection grows *today's balances only*: no contributions, no top-ups, no withdrawals, and
+no forecast of future Basic Healthcare Sums or retirement sums. It applies CPF's published
+floor rates (OA 2.5%, SA/MediSave 4%) plus extra interest (+1% on the first $60,000 of
+combined balances below 55, at most $20,000 of it from the OA), and it says in the app what
+it does not model — including age 55, when the Special Account closes and a Retirement
+Account is created at the Full Retirement Sum then in force.
+
+**CPF drawn into the property** is a claim, not an asset. Principal plus accrued interest
+must be refunded when the house is sold. Fortress shows it on the Property tab, subtracts it
+to give cash-at-completion, and nets its monthly accrual off the mortgage principal to give
+the real rate of equity build. It does *not* subtract it from net worth: the refund returns
+to your CPF OA, so it costs liquidity, not wealth. Those are different numbers and the app
+keeps them different.
+
+Every CPF rate, cap and sum in the app carries its source and the date it was checked.
 
 ## Chart scales
 

@@ -39,7 +39,7 @@ header{padding:18px 16px 8px;display:flex;align-items:baseline;justify-content:s
 header h1{font-size:20px;font-weight:700;letter-spacing:-.02em}
 header .stamp{font-size:11px;color:var(--muted)}
 .tabs{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--surface);border-top:1px solid var(--border);z-index:40;max-width:760px;margin:0 auto;padding-bottom:env(safe-area-inset-bottom)}
-.tabs button{flex:1;background:none;border:none;color:var(--muted);font:inherit;font-size:10px;padding:10px 1px 8px;white-space:nowrap;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px}
+.tabs button{flex:1 1 0;min-width:0;background:none;border:none;color:var(--muted);font:inherit;font-size:9.5px;letter-spacing:-.01em;padding:10px 0 8px;white-space:nowrap;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px}
 .tabs button.on{color:var(--ink);font-weight:600}
 .tabs button svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 main{padding:0 12px}
@@ -120,7 +120,7 @@ table.hist th:first-child,table.hist td:first-child{text-align:left}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:AUG:23-11:28';
+const VERSION = 'v2026:AUG:24-00:07';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -133,6 +133,8 @@ const pct = (n,dp=2)=> n===null||n===undefined||isNaN(n) ? '—' : fmt(n,dp)+'%'
 const esc = s=> String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const monthLabel = iso=>{ const [y,m]=iso.split('-'); return new Date(+y,+m-1,1).toLocaleString('en',{month:'short'})+'-'+y.slice(2); };
 const daysUntil = iso=>{ if(!iso) return null; return Math.ceil((new Date(iso+'T00:00:00')-new Date())/86400000); };
+const addMonths = (iso,n)=>{ const [y,m]=iso.split('-').map(Number); const d=new Date(y,m-1+n,1);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); };
 const dayLabel = iso=>{ if(!iso) return '—'; const [y,m,d]=iso.split('-'); return (+d)+' '+new Date(+y,+m-1,1).toLocaleString('en',{month:'short'})+' '+y; };
 
 /* ================= storage (guarded — works without localStorage) ================= */
@@ -166,6 +168,48 @@ const MANUAL_SEED = {
                note:"Balance after the 03-Aug-2026 instalment (UOB app) — not a month-end statement figure" }
 };
 const MORTGAGE_META = { bank:'UOB', account:'168-821-222-2', original:1347500.00, tenorMonths:276, type:'SGD Housing Loan, floating rate' };
+
+/* ===== CPF =====
+   Balances and the housing withdrawal, read off CK's own CPF dashboards.
+   Nothing here is estimated — every figure is transcribed from the screen. */
+const CPF_SEED = {
+  '2026-08-23': { asOf:'2026-08-23', oa:76438.24, sa:310602.02, ma:79000.00,
+    source:'CPF member dashboard, balances as at 23 Aug 2026' }
+};
+const CPF_HOME_SEED = {
+  '2026-08-23': { asOf:'2026-08-23', properties:1, principalWithdrawn:502500.00, accruedInterest:3140.64,
+    source:'CPF Home ownership dashboard, as at 23 Aug 2026' }
+};
+/* CPF transaction ledger, parsed from CK's own printable history (1 Nov 2025 – 23 Aug 2026).
+   It reconciles exactly: opening balances + every movement = closing balances, to the cent. */
+const CPF_TXN_SEED = [{"date":"2025-11-01","code":"BAL","forMonth":null,"oa":62598.55,"sa":288964.37,"ma":75500},{"date":"2025-11-05","code":"HSE","forMonth":null,"oa":41849.93,"sa":0,"ma":0},{"date":"2025-11-05","code":"HSE","forMonth":null,"oa":34568.5,"sa":0,"ma":0},{"date":"2025-11-05","code":"HSE","forMonth":null,"oa":413057.43,"sa":0,"ma":0},{"date":"2025-11-05","code":"HSE","forMonth":null,"oa":2557.1,"sa":0,"ma":0},{"date":"2025-11-10","code":"CON","forMonth":"OCT 2025","oa":1887.03,"sa":850.97,"ma":0},{"date":"2025-12-14","code":"CSL","forMonth":null,"oa":0,"sa":0,"ma":-360.45},{"date":"2025-12-15","code":"CON","forMonth":"NOV 2025","oa":1526.58,"sa":850.97,"ma":360.45},{"date":"2025-12-31","code":"INT","forMonth":null,"oa":2546.11,"sa":11955.04,"ma":2926.39},{"date":"2026-01-01","code":"TFR","forMonth":null,"oa":2926.39,"sa":0,"ma":-2926.39},{"date":"2026-01-09","code":"INV","forMonth":null,"oa":-8.72,"sa":0,"ma":0},{"date":"2026-01-15","code":"CON","forMonth":"DEC 2025","oa":1110.26,"sa":850.97,"ma":776.77},{"date":"2026-01-19","code":"MED","forMonth":null,"oa":0,"sa":0,"ma":-500},{"date":"2026-02-12","code":"CON","forMonth":"JAN 2026","oa":1200.29,"sa":919.96,"ma":839.75},{"date":"2026-03-11","code":"CON","forMonth":"FEB 2026","oa":1200.29,"sa":919.96,"ma":839.75},{"date":"2026-03-13","code":"INV","forMonth":null,"oa":-5553.25,"sa":0,"ma":0},{"date":"2026-04-10","code":"CON","forMonth":"MAR 2026","oa":1200.29,"sa":919.96,"ma":839.75},{"date":"2026-04-24","code":"HSE","forMonth":null,"oa":-500000,"sa":0,"ma":0},{"date":"2026-04-24","code":"HSE","forMonth":null,"oa":-2500,"sa":0,"ma":0},{"date":"2026-05-12","code":"CON","forMonth":"APR 2026","oa":1336.06,"sa":919.96,"ma":703.98},{"date":"2026-05-28","code":"INV","forMonth":null,"oa":7481.98,"sa":0,"ma":0},{"date":"2026-06-11","code":"CON","forMonth":"MAY 2026","oa":3570.06,"sa":1609.94,"ma":0},{"date":"2026-07-09","code":"INV","forMonth":null,"oa":-8.72,"sa":0,"ma":0},{"date":"2026-07-10","code":"CON","forMonth":"JUN 2026","oa":2040.04,"sa":919.96,"ma":0},{"date":"2026-07-28","code":"DPS","forMonth":null,"oa":-188,"sa":0,"ma":0},{"date":"2026-08-13","code":"CON","forMonth":"JUL 2026","oa":2040.04,"sa":919.96,"ma":0},{"date":"2026-08-23","code":"BAL","forMonth":null,"oa":76438.24,"sa":310602.02,"ma":79000}];
+const CPF_TXN_META = { from:'2025-11-01', to:'2026-08-23', employerRef:'REF A — employer contributions',
+  source:'CPF transaction history PDF, printed 23 Aug 2026' };
+
+/* CPF's own published rules. Every number here is sourced and dated; none is assumed.
+   Re-check when CPF announces the next quarter's rates or the next year's BHS/FRS. */
+const CPF_RULES = {
+  oaPct:2.5, saPct:4, maPct:4, raPct:4,
+  ratesPeriod:'1 Jul – 30 Sep 2026 (floor rates; the 4% floor is extended to 31 Dec 2026)',
+  ratesSource:'CPF Board, "CPF interest rates from 1 July to 30 September 2026"',
+  extraBelow55:{ pct:1, onFirst:60000, oaCap:20000 },
+  extraFrom55:{ tiers:[{pct:2, upTo:30000},{pct:1, upTo:60000}], oaCap:20000 },
+  extraSource:'CPF Board — extra interest: below 55, +1% on the first $60,000 of combined balances (up to $20,000 from OA); 55 and above, +2% on the first $30,000 and +1% on the next $30,000',
+  bhs:79000, bhsYear:2026, prevBhs:75500, prevBhsYear:2025,
+  owCeiling:8000, owCeilingYear:2026,
+  owCeilingSource:'CPF Board — the Ordinary Wage ceiling reached $8,000 in 2026',
+  alloc50to55:{ oa:0.4055, sa:0.3108, ma:0.2837 },
+  allocSource:'CPF Board, "CPF Allocation Rates from 1 January 2026" — above 50 to 55: OA 0.4055, SA 0.3108, MA 0.2837 of contributions',
+  overflowSource:'CPF Board — MediSave above the BHS overflows to the SA below 55, but goes to the OA instead once the SA exceeds the Full Retirement Sum',
+  bhsSource:'CPF Board — Basic Healthcare Sum for 2026 is $79,000 for members below 65',
+  brs:110200, frs:220400, ers:440800, sumsYear:2026,
+  // published cohorts only — CPF has announced nothing beyond 2027
+  frsByYear:{ 2023:198800, 2024:205800, 2025:213000, 2026:220400, 2027:228200 },
+  frsLastPublished:2027,
+  frsSource:'CPF Board — Full Retirement Sum by year of 55th birthday',
+  sumsSource:'CPF Board — retirement sums for members turning 55 in 2026: BRS $110,200, FRS $220,400, ERS $440,800',
+  checkedOn:'2026-08-23'
+};
 
 /* recurring income — seeded from the GIRO credits in CK's UOB statements */
 const INCOME_SEED = [{
@@ -243,7 +287,10 @@ let state = {
   lv: store.get('fortress.lv', null),
   reported: store.get('fortress.reported', null),
   rateChanges: store.get('fortress.rateChanges', null),
-  settings: store.get('fortress.settings', { lendingValue:null, ltvAlert:35, homeValue:null, tab:'dash', fxCcy:'USD', fxBars:250 })
+  cpf: store.get('fortress.cpf', null),
+  cpfHome: store.get('fortress.cpfHome', null),
+  cpfTxns: store.get('fortress.cpfTxns', null),
+  settings: store.get('fortress.settings', { lendingValue:null, ltvAlert:35, homeValue:null, tab:'dash', fxCcy:'USD', fxBars:250, cpfYears:10, birthDate:null, frsOverride:null })
 };
 if(!state.snapshots){ state.snapshots = { [SEED.statementDate]: SEED }; store.set('fortress.snapshots', state.snapshots); }
 if(!state.manual){ state.manual = MANUAL_SEED; store.set('fortress.manual', state.manual); }
@@ -252,13 +299,16 @@ if(!state.mrtl){ state.mrtl = MRTL_SEED; store.set('fortress.mrtl', state.mrtl);
 if(!state.lv){ state.lv = LV_SEED; store.set('fortress.lv', state.lv); }
 if(!state.reported){ state.reported = REPORTED_SEED; store.set('fortress.reported', state.reported); }
 if(!state.rateChanges){ state.rateChanges = RATE_CHANGE_SEED; store.set('fortress.rateChanges', state.rateChanges); }
+if(!state.cpf){ state.cpf = CPF_SEED; store.set('fortress.cpf', state.cpf); }
+if(!state.cpfHome){ state.cpfHome = CPF_HOME_SEED; store.set('fortress.cpfHome', state.cpfHome); }
+if(!state.cpfTxns){ state.cpfTxns = CPF_TXN_SEED; store.set('fortress.cpfTxns', state.cpfTxns); }
 
 /* ---- seed migrations ----------------------------------------------------
    A first install copies the seeds above. But an app that keeps gaining seeded
    readings needs those to reach devices that already installed an older build,
    WITHOUT touching anything the user entered. Each migration is additive and
    idempotent: it fills gaps and repairs missing fields, and never deletes.  */
-const SEED_VERSION = 4;
+const SEED_VERSION = 7;
 function runSeedMigrations(){
   const from = store.get('fortress.seedVersion', 0);
   if(from >= SEED_VERSION) return 0;
@@ -297,6 +347,21 @@ function runSeedMigrations(){
     if(!dup){ state.rateChanges.push({...seed, seeded:true}); changed++; }
   });
 
+  // v5 — CPF balances and the housing withdrawal, added after the first build
+  state.cpf = state.cpf || {};
+  Object.keys(CPF_SEED).forEach(d=>{ if(!state.cpf[d]){ state.cpf[d]={...CPF_SEED[d], seeded:true}; changed++; } });
+  state.cpfHome = state.cpfHome || {};
+  Object.keys(CPF_HOME_SEED).forEach(d=>{ if(!state.cpfHome[d]){ state.cpfHome[d]={...CPF_HOME_SEED[d], seeded:true}; changed++; } });
+
+  // v6 — the CPF transaction ledger
+  state.cpfTxns = state.cpfTxns || [];
+  if(!state.cpfTxns.length){ state.cpfTxns = CPF_TXN_SEED.slice(); changed++; }
+
+  // v7 — figures CK gave directly: the property valuation and his date of birth.
+  // Only filled when empty, so anything he has since typed always wins.
+  if(state.settings.homeValue == null){ state.settings.homeValue = 2450000; changed++; }
+  if(!state.settings.birthDate){ state.settings.birthDate = '1973-08-27'; changed++; }
+
   store.set('fortress.seedVersion', SEED_VERSION);
   if(changed) saveAll();
   return changed;
@@ -306,7 +371,9 @@ function saveAll(){
   store.set('fortress.snapshots', state.snapshots); store.set('fortress.manual', state.manual);
   store.set('fortress.income', state.income); store.set('fortress.mrtl', state.mrtl);
   store.set('fortress.lv', state.lv); store.set('fortress.reported', state.reported);
-  store.set('fortress.rateChanges', state.rateChanges); store.set('fortress.settings', state.settings); }
+  store.set('fortress.rateChanges', state.rateChanges); store.set('fortress.cpf', state.cpf);
+  store.set('fortress.cpfHome', state.cpfHome); store.set('fortress.cpfTxns', state.cpfTxns);
+  store.set('fortress.settings', state.settings); }
 
 /* lending value per portfolio: an entered ratio wins; otherwise derive it from
    borrowing potential ÷ total assets read off the same screen at the same time. */
@@ -351,7 +418,10 @@ function netWorth(a){
   const cashMonth=ms.slice().reverse().find(m=>state.manual[m].deposits!=null)||null;
   const uobCash=cashMonth? state.manual[cashMonth].deposits : 0;
   const fwdMtm=(a.forwards||[]).reduce((s,f)=>s+(f.mtmSGD||0),0);
-  return { dbs:a.net, uobCash, cashMonth, mortgage, balMonth, fwdMtm,
+  const cpf = cpfTotal(latestCpf()) || 0;
+  const hc = cpfHomeClaim();
+  return { dbs:a.net, uobCash, cashMonth, mortgage, balMonth, fwdMtm, cpf, cpfAsOf:(latestCpf()||{}).asOf,
+           cpfClaim: hc? hc.claim : 0,
            dbsUob:a.net + uobCash - mortgage, hasUob: !!balMonth || !!cashMonth };
 }
 /* "1 Jan – 31 Jul 2026" style labels, so every % on screen names its own window */
@@ -455,6 +525,184 @@ function rateChangeBlock(mm, instNow){
     }).join('');
   return `<div class="card" style="margin:12px 0 0"><h2>Rate revisions</h2>${rows}
     <p class="note">A floating loan reprices against the bank's benchmark. The rate can bite before the instalment catches up — until the new instalment starts, the extra interest comes out of the principal portion, so the balance falls more slowly.</p></div>`;
+}
+
+/* ================= CPF =================
+   Balances grow under rules CPF publishes; Fortress applies them literally and
+   models nothing else. No contributions, no top-ups, no withdrawals, no forecast
+   of future BHS or retirement sums — those are CPF policy, announced yearly, and
+   guessing them would turn a calculation into a story. */
+const cpfDates = ()=> Object.keys(state.cpf||{}).sort();
+const cpfHomeDates = ()=> Object.keys(state.cpfHome||{}).sort();
+function latestCpf(){ const k=cpfDates(); return k.length? state.cpf[k[k.length-1]] : null; }
+function latestCpfHome(){ const k=cpfHomeDates(); return k.length? state.cpfHome[k[k.length-1]] : null; }
+const cpfTotal = c => c ? (c.oa||0)+(c.sa||0)+(c.ma||0) : null;
+
+/* one year of interest at the published floor rates, including extra interest.
+   Extra interest counts OA first (capped), then SA, then MA. */
+function cpfYearInterest(oa, sa, ma, from55){
+  const R = CPF_RULES;
+  const base = { oa: oa*R.oaPct/100, sa: sa*R.saPct/100, ma: ma*R.maPct/100 };
+  const cap = from55 ? R.extraFrom55.oaCap : R.extraBelow55.oaCap;
+  const pool = Math.min(oa, cap) + sa + ma;
+  let extra = 0;
+  if(!from55){
+    extra = Math.min(pool, R.extraBelow55.onFirst) * R.extraBelow55.pct/100;
+  } else {
+    let prev = 0;
+    R.extraFrom55.tiers.forEach(t=>{ const slice = Math.max(0, Math.min(pool, t.upTo) - prev); extra += slice*t.pct/100; prev = t.upTo; });
+  }
+  return { ...base, extra, total: base.oa+base.sa+base.ma+extra };
+}
+
+/* ---- age, and the dates CPF cares about ---- */
+function cpfAge(){
+  const b = state.settings.birthDate; if(!b) return null;
+  const [by,bm,bd] = b.split('-').map(Number);
+  const now = new Date();
+  let age = now.getFullYear() - by;
+  if(now.getMonth()+1 < bm || (now.getMonth()+1===bm && now.getDate() < bd)) age--;
+  const at = n => by+n+'-'+String(bm).padStart(2,'0')+'-'+String(bd).padStart(2,'0');
+  return { age, birthDate:b, year55: by+55, date55: at(55), days55: daysUntil(at(55)),
+           year65: by+65, date65: at(65) };
+}
+/* the Full Retirement Sum for a cohort: published where CPF has announced it, otherwise
+   whatever CK chooses to assume — never a number Fortress invents for him. */
+function frsFor(year){
+  const R = CPF_RULES;
+  if(R.frsByYear[year] != null) return { value:R.frsByYear[year], published:true };
+  if(state.settings.frsOverride != null) return { value:state.settings.frsOverride, published:false, chosen:true };
+  return { value:R.frsByYear[R.frsLastPublished], published:false, chosen:false, fallbackYear:R.frsLastPublished };
+}
+/* how the published series has actually moved — history, offered as context, not a forecast */
+function frsTrend(){
+  const ys = Object.keys(CPF_RULES.frsByYear).map(Number).sort();
+  const g = [];
+  for(let i=1;i<ys.length;i++) g.push((CPF_RULES.frsByYear[ys[i]]/CPF_RULES.frsByYear[ys[i-1]]-1)*100);
+  return { years:ys, growth:g, min:Math.min(...g), max:Math.max(...g),
+           avg:g.reduce((a,b)=>a+b,0)/g.length, last:ys[ys.length-1] };
+}
+
+/* ---- the ledger: what CPF actually did, month by month ---- */
+const cpfTxns = ()=> (state.cpfTxns||[]).slice().sort((a,b)=>a.date.localeCompare(b.date));
+const cpfTxnSum = code => cpfTxns().filter(t=>t.code===code)
+  .reduce((a,t)=>({oa:a.oa+(t.oa||0), sa:a.sa+(t.sa||0), ma:a.ma+(t.ma||0), n:a.n+1}), {oa:0,sa:0,ma:0,n:0});
+/* the most recent employer contribution — the observed run-rate, not an assumption */
+function cpfLastContribution(){
+  const c = cpfTxns().filter(t=>t.code==='CON');
+  if(!c.length) return null;
+  const last = c[c.length-1];
+  const total = (last.oa||0)+(last.sa||0)+(last.ma||0);
+  // the typical month, ignoring bonus months that run above the usual figure
+  const totals = c.map(t=>(t.oa||0)+(t.sa||0)+(t.ma||0)).sort((a,b)=>a-b);
+  const median = totals[Math.floor(totals.length/2)];
+  return { ...last, total, median, count:c.length };
+}
+/* does SA already exceed the Full Retirement Sum? It decides where MediSave overflows. */
+function cpfSaOverFrs(){
+  const c = latestCpf(); if(!c) return null;
+  return (c.sa||0) > CPF_RULES.frs;
+}
+/* CPF's own ledger is the proof: this TFR moved MediSave's excess, and where it went
+   tells us which overflow rule applies to CK today. */
+function cpfOverflowEvidence(){
+  const t = cpfTxns().find(x=>x.code==='TFR' && (x.ma||0)<0);
+  if(!t) return null;
+  return { date:t.date, amount:Math.abs(t.ma), toOa:(t.oa||0)>0, toSa:(t.sa||0)>0 };
+}
+/* housing flows both ways: a refund when a property is sold, a withdrawal when one is bought */
+function cpfHousingFlows(){
+  const h = cpfTxns().filter(t=>t.code==='HSE');
+  if(!h.length) return null;
+  const byDate={};
+  h.forEach(t=>{ const k=t.date; byDate[k]=byDate[k]||{date:k, amount:0, n:0}; byDate[k].amount+=(t.oa||0); byDate[k].n++; });
+  const groups=Object.values(byDate).sort((a,b)=>a.date.localeCompare(b.date));
+  return { groups, refunded:groups.filter(g=>g.amount>0).reduce((a,g)=>a+g.amount,0),
+           withdrawn:groups.filter(g=>g.amount<0).reduce((a,g)=>a+g.amount,0),
+           net:groups.reduce((a,g)=>a+g.amount,0) };
+}
+
+/* Balances after every ledger row. CPF publishes only opening and closing balances;
+   the path between them is arithmetic on the movements, which is why the reconciliation
+   check matters — if it fails, this curve is fiction. */
+function cpfBalanceHistory(){
+  const t = cpfTxns(); if(t.length < 2) return null;
+  const open = t.find(x=>x.code==='BAL'); if(!open) return null;
+  let oa=open.oa, sa=open.sa, ma=open.ma;
+  const pts = [{ date:open.date, oa, sa, ma, total:oa+sa+ma, code:'BAL' }];
+  t.forEach(x=>{
+    if(x===open || x.code==='BAL') return;
+    oa+=x.oa||0; sa+=x.sa||0; ma+=x.ma||0;
+    pts.push({ date:x.date, oa, sa, ma, total:oa+sa+ma, code:x.code });
+  });
+  const closing = t.filter(x=>x.code==='BAL').slice(-1)[0];
+  const drift = closing ? Math.max(Math.abs(oa-closing.oa), Math.abs(sa-closing.sa), Math.abs(ma-closing.ma)) : null;
+  return { pts, closing, drift, exact: drift!=null && drift < 0.02,
+           startTotal: pts[0].total, endTotal: pts[pts.length-1].total };
+}
+
+/* year-by-year projection of today's balances.
+   Interest is credited the way CPF credits it, and MediSave above the Basic Healthcare
+   Sum overflows — to the SA below 55, but to the OA once the SA already exceeds the Full
+   Retirement Sum. CK's ledger shows the 1 Jan 2026 transfer landing in the OA, which is
+   what fixes the rule for him. That matters: the overflow then earns 2.5%, not 4%.
+   Contributions are included only when asked for, and only at the rate his own
+   payslips have actually produced. */
+function cpfProject(years, withContrib, age55Year){
+  const c = latestCpf(); if(!c) return null;
+  const R = CPF_RULES;
+  const overflowToOa = cpfSaOverFrs();
+  let oa=c.oa||0, sa=c.sa||0, ma=c.ma||0, ra=0;
+  const con = withContrib ? cpfLastContribution() : null;
+  const startYear = +(c.asOf||'').slice(0,4) || new Date().getFullYear();
+  const rows = [{ y:0, year:startYear, oa, sa, ma, ra, total:oa+sa+ma, interest:0, contrib:0 }];
+  for(let y=1; y<=years; y++){
+    const year = startYear+y;
+    const from55 = age55Year!=null && year > age55Year;
+    // SA is closed after 55; the RA carries the retirement savings at the same 4%
+    const i = cpfYearInterest(oa, from55 ? ra : sa, ma, from55);
+    oa += i.oa; ma += i.ma;
+    if(from55){ ra += i.sa + i.extra; } else { sa += i.sa + i.extra; }
+    let contrib = 0;
+    // contributions stop at 55 unless CK tells Fortress otherwise: the rates and the
+    // allocation both change, and his own payslips can no longer stand in for them
+    if(con && !from55){ oa += (con.oa||0)*12; sa += (con.sa||0)*12; ma += (con.ma||0)*12; contrib = con.total*12; }
+    if(R.bhs && ma > R.bhs){ const over = ma - R.bhs; ma = R.bhs;
+      if(from55) ra += over; else if(overflowToOa) oa += over; else sa += over; }
+    let event = null;
+    if(age55Year!=null && year === age55Year){
+      // SA closes: SA first, then OA, fills the RA up to the Full Retirement Sum. The rest stays in OA.
+      const F = frsFor(year);
+      const frs = F.published ? F.value : null;
+      const target = F.value;
+      const fromSa = Math.min(sa, target);
+      ra = fromSa; sa -= fromSa;
+      const fromOa = Math.min(oa, target - ra);
+      ra += fromOa; oa -= fromOa;
+      oa += sa; sa = 0;                                   // anything left in the SA moves to the OA
+      event = { turns55:true, frs:target, frsPublished: frs!=null, frsChosen: !!frsFor(year).chosen, ra, oa };
+    }
+    rows.push({ y, year, oa, sa, ma, ra, total:oa+sa+ma+ra, interest:i.total, contrib, from55, event });
+  }
+  return rows;
+}
+
+/* the housing withdrawal, and what it will cost to unwind.
+   Accrued interest is charged at the OA rate on the principal still withdrawn. */
+function cpfHomeClaim(onDate){
+  const h = latestCpfHome(); if(!h) return null;
+  const prin = h.principalWithdrawn||0, accr = h.accruedInterest||0;
+  const monthly = prin * CPF_RULES.oaPct/100/12;
+  const claim = prin + accr;
+  // how long the accrual has been running, read back out of CPF's own figure
+  const monthsRun = prin>0 ? accr / monthly : null;
+  return { asOf:h.asOf, properties:h.properties, principal:prin, accrued:accr, claim, monthlyAccrual:monthly,
+           monthsRun, yearlyAccrual:prin*CPF_RULES.oaPct/100, source:h.source };
+}
+function cpfClaimIn(years){
+  const h = latestCpfHome(); if(!h) return null;
+  const prin=h.principalWithdrawn||0, accr=h.accruedInterest||0;
+  return (prin+accr) * Math.pow(1+CPF_RULES.oaPct/100, years);
 }
 
 /* ================= derived metrics ================= */
@@ -563,12 +811,17 @@ function lineChart(series, {h=190, yFmt=v=>fmt(v), refLines=[], zero=true}={}){
     const x = i===0 ? padL-6 : (i===labels.length-1 ? W-padR+4 : X(i));
     g+=`<text x="${x}" y="${h-8}" text-anchor="${anc}">${l}</text>`; } });
   refLines.forEach(r=>{ g+=`<line x1="${padL}" x2="${W-padR}" y1="${Y(r.y)}" y2="${Y(r.y)}" stroke="${r.color}" stroke-width="1.5" stroke-dasharray="4 4"/><text x="${W-padR}" y="${Y(r.y)-4}" text-anchor="end" style="fill:${r.color}">${r.label}</text>`; });
+  const usedLabelY=[];
   for(const s of series){
     const pts=s.values.map((v,i)=>[X(i),Y(v.y)]);
     if(pts.length>1) g+=`<path d="M${pts.map(p=>p.join(',')).join('L')}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round"/>`;
     pts.forEach((p,i)=>{ g+=`<circle cx="${p[0]}" cy="${p[1]}" r="${pts.length===1?5:3.5}" fill="${s.color}" stroke="var(--surface)" stroke-width="2"><title>${esc(s.name)} ${labels[i]}: ${yFmt(s.values[i].y)}</title></circle>`; });
     const lp=pts[pts.length-1];
-    g+=`<text class="lab" x="${Math.min(lp[0]+6,W-padR-2)}" y="${lp[1]-7}" text-anchor="${lp[0]>W-70?'end':'start'}">${yFmt(s.values[s.values.length-1].y)}</text>`;
+    // stagger end labels that would land on top of each other (several series, close values)
+    let ly=lp[1]-7;
+    while(usedLabelY.some(u=>Math.abs(u-ly)<11)) ly -= 11;
+    usedLabelY.push(ly);
+    g+=`<text class="lab" x="${Math.min(lp[0]+6,W-padR-2)}" y="${ly}" text-anchor="${lp[0]>W-70?'end':'start'}">${yFmt(s.values[s.values.length-1].y)}</text>`;
   }
   return `<svg ${svgEl(W,h)}>${g}</svg>`;
 }
@@ -643,7 +896,7 @@ async function decryptBlob(blob){
   const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(blob.iv)},cryptoKey,unb64(blob.ct));
   return JSON.parse(dec.decode(pt));
 }
-const DATA_KEYS=['snapshots','manual','income','mrtl','lv','reported','rateChanges','settings'];
+const DATA_KEYS=['snapshots','manual','income','mrtl','lv','reported','rateChanges','cpf','cpfHome','cpfTxns','settings'];
 function collectState(){ const o={}; DATA_KEYS.forEach(k=>o[k]=state[k]); return o; }
 
 async function persistVault(){
@@ -860,10 +1113,11 @@ function candleChart(series, opts){
 
 /* ================= tabs / rendering ================= */
 const TABS=[
-  {id:'dash', label:'Dashboard', icon:'<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>'},
+  {id:'dash', label:'Overview', icon:'<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>'},
   {id:'prop', label:'Property', icon:'<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.8V21h14V9.8"/><path d="M10 21v-6h4v6"/>'},
+  {id:'cpf', label:'CPF', icon:'<path d="M4 8h16v11H4z"/><path d="M4 8l8-5 8 5"/><path d="M9 19v-5h6v5"/><circle cx="12" cy="11" r="1.2"/>'},
   {id:'trends', label:'Trends', icon:'<polyline points="3,17 9,11 13,14 21,6"/><polyline points="15,6 21,6 21,12"/>'},
-  {id:'fx', label:'FX Risk', icon:'<circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/>'},
+  {id:'fx', label:'FX', icon:'<circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/>'},
   {id:'hist', label:'History', icon:'<circle cx="12" cy="12" r="9"/><polyline points="12,7 12,12 15.5,14"/>'},
   {id:'set', label:'Settings', icon:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>'}
 ];
@@ -913,7 +1167,10 @@ function viewDash(){
       <div class="kv"><span class="k"><b>DBS + UOB net assets</b></span><span class="v"><b>${money(w.dbsUob,2)}</b></span></div>
       ${state.settings.homeValue?`<div class="kv"><span class="k">Property (your estimate)</span><span class="v">+${money(state.settings.homeValue,2)}</span></div>
       <div class="kv"><span class="k"><b>Incl. property</b></span><span class="v"><b>${money(w.dbsUob+state.settings.homeValue,2)}</b></span></div>`:''}
-      <p class="note">${state.settings.homeValue?'':'The property the mortgage funds is <b>not</b> counted — enter its value in Settings and a third total appears. '}Excludes the CHF forward's ${money(w.fwdMtm,0)} mark-to-market, which DBS holds outside net assets until it settles.</p>
+      ${w.cpf?`<div class="kv" style="margin-top:6px"><span class="k">CPF balances (restricted)</span><span class="v">+${money(w.cpf,2)}</span></div>
+      <div class="kv"><span class="k"><b>Everything, incl. CPF</b></span><span class="v"><b>${money(w.dbsUob+(state.settings.homeValue||0)+w.cpf,2)}</b></span></div>`:''}
+      <p class="note">${state.settings.homeValue?'':'The property the mortgage funds is <b>not</b> counted — enter its value in the Property tab and a third total appears. '}Excludes the CHF forward's ${money(w.fwdMtm,0)} mark-to-market, which DBS holds outside net assets until it settles.</p>
+      ${w.cpf?`<p class="note"><b>CPF is counted last and separately on purpose.</b> It cannot be pledged, cannot be drawn to meet a margin call, and cannot service either loan — so it belongs in your net worth but nowhere in the margin arithmetic above.${w.cpfClaim?` A further ${money(w.cpfClaim,0)} of CPF already sits in the property and returns to your CPF, not to your bank, when the house is sold — see the Property tab.`:''}</p>`:''}
       </div>`; })()}
   </div>
   ${(()=>{ const mm=latestManual();
@@ -1220,6 +1477,9 @@ function viewProp(){
     : null;
   const pend = pendingRateChanges();
   const today = new Date().toISOString().slice(0,10);
+  const hc = cpfHomeClaim();                      // CPF's claim on this same house
+  const claims = (bal||0) + (hc? hc.claim : 0);   // everything that must be settled on a sale
+  const cashOut = (hv!=null && bal!=null) ? hv - claims : null;
   const pendInst = pend.find(r=>r.instalment!=null && r.instalmentEffective>today) || null;
 
   if(!mm) return `<div class="banner b-warn"><span class="ic">&#8505;</span><div><b>No home-loan data yet</b>Add a month below, or import a UOB statement, screenshot or rate letter through Add data.</div></div>${propForms()}`;
@@ -1232,10 +1492,13 @@ function viewProp(){
       return esc(rc.lender||'')+': '+bits.join(' &middot; ');
     }).join('<br>')}</div></div>`:''}
   <div class="card">
-    <div class="hero">${hv!=null&&bal!=null?money(hv-bal):money(bal,2)}</div>
-    <div class="hero-sub">${hv!=null&&bal!=null
-      ? `Property equity &middot; your estimate ${money(hv)} &minus; loan ${money(bal)}`
+    <div class="hero">${cashOut!=null?money(cashOut):money(bal,2)}</div>
+    <div class="hero-sub">${cashOut!=null
+      ? `Cash to you if sold today &middot; ${money(hv)} &minus; loan ${money(bal)}${hc?` &minus; CPF refund ${money(hc.claim)}`:''} &middot; before selling costs`
       : `Home-loan outstanding &middot; ${esc(MORTGAGE_META.bank)} ${esc(MORTGAGE_META.account)} &middot; ${esc(mm.month)} &middot; property value not entered, so equity is not shown`}</div>
+    ${cashOut!=null&&hc?`<div class="kv" style="margin-top:10px"><span class="k">Equity before the CPF refund</span><span class="v">${money(hv-bal,2)}</span></div>
+    <div class="kv"><span class="k">Of which returns to your CPF</span><span class="v neg">-${money(hc.claim,2)}</span></div>
+    <div class="kv"><span class="k"><b>Reaches your bank</b></span><span class="v"><b>${money(cashOut,2)}</b></span></div>`:''}
   </div>
   <div class="tiles">
     ${hv!=null&&bal!=null
@@ -1247,7 +1510,9 @@ function viewProp(){
     <div class="tile"><div class="v ${rentM>0?'pos':''}">${rentM>0?money(rentM,2):'—'}</div><div class="l">Rent received / month</div><div class="d">${rentM>0&&instNow?money(rentM-instNow,2)+' left after the instalment':'no recurring rent recorded'}</div></div>
     <div class="tile"><div class="v ${instNow&&rentM>=instNow?'pos':'neg'}">${instNow?pct(rentM/instNow*100,1):'—'}</div><div class="l">Rent cover of instalment</div><div class="d">${instNow&&rentM>=instNow?'self-funding at today&rsquo;s rate':'shortfall comes from your own cash'}</div></div>
     <div class="tile"><div class="v">${avgPrin!=null?money(avgPrin,0):'—'}</div><div class="l">Principal repaid / month</div><div class="d">${avgPrin!=null?'average across '+withBal.length+' recorded months':'needs two recorded months'}</div></div>
-    <div class="tile"><div class="v">${hv!=null&&bal!=null?pct(bal/hv*100,1):'—'}</div><div class="l">Mortgage LTV</div><div class="d">${hv!=null?'against the value you entered':'enter a property value below'}</div></div>
+    <div class="tile"><div class="v">${hv!=null&&bal!=null?pct(bal/hv*100,1):'—'}</div><div class="l">Mortgage LTV</div><div class="d">${hv!=null?(hc?'loan only &middot; '+pct(claims/hv*100,1)+' incl. CPF':'against the value you entered'):'enter a property value below'}</div></div>
+    ${hc?`<div class="tile"><div class="v neg">${money(hc.claim,0)}</div><div class="l">CPF refund due on sale</div><div class="d">growing ${money(hc.monthlyAccrual,2)}/mo</div></div>
+    <div class="tile"><div class="v">${avgPrin!=null?money(avgPrin-hc.monthlyAccrual,0):'—'}</div><div class="l">Net equity build / month</div><div class="d">${avgPrin!=null?money(avgPrin,0)+' repaid &minus; '+money(hc.monthlyAccrual,0)+' CPF accrual':''}</div></div>`:''}
   </div>
   ${(()=>{ const mm=latestManual(); if(!mm) return '';
     const impInt = impliedMortgageInterest(mm.month);
@@ -1265,6 +1530,41 @@ function viewProp(){
     ${mm.note?`<p class="note" style="margin-top:6px">${esc(mm.note)}</p>`:''}
     ${rateChangeBlock(mm, instNow)}
     <p class="note">Implied interest = instalment − principal reduction between your two latest entries (pure arithmetic from UOB statements, no assumptions). A property loan has no market-linked margin call, but its interest is part of the hurdle your portfolio must beat. Update monthly in the form further down this tab.</p>
+  </div>`; })()}
+  ${(()=>{ const h=cpfHomeClaim(); if(!h) return '';
+    const R=CPF_RULES;
+    const fundTotal = MORTGAGE_META.original + h.principal;
+    const monthsRun = h.monthsRun!=null ? h.monthsRun : null;
+    const horizons=[1,5,10,15];
+    return `
+  <div class="card">
+    <h2>CPF in this property<span class="pill">as at ${esc(h.asOf)}</span></h2>
+    <div class="kv"><span class="k">Capital drawn from your CPF</span><span class="v">${money(h.principal,2)}</span></div>
+    <div class="kv"><span class="k">Original UOB loan</span><span class="v">${money(MORTGAGE_META.original,2)}</span></div>
+    <div class="kv"><span class="k"><b>Funded from these two sources</b></span><span class="v"><b>${money(fundTotal,2)}</b></span></div>
+    <p class="note">Cash you put in on top of these, and the stamp duty, are not recorded — Fortress shows only what the two statements prove.</p>
+
+    <div style="border-top:1px solid var(--grid);margin-top:12px;padding-top:12px"></div>
+    <div class="kv"><span class="k">Accrued interest owed to CPF</span><span class="v neg">${money(h.accrued,2)}</span></div>
+    <div class="kv"><span class="k"><b>Total refund on sale</b></span><span class="v"><b>${money(h.claim,2)}</b></span></div>
+    <div class="kv"><span class="k">Accruing at ${pct(R.oaPct,1)} p.a.</span><span class="v neg">${money(h.monthlyAccrual,2)}/mo &middot; ${money(h.yearlyAccrual,2)}/yr</span></div>
+    ${(()=>{ const f=cpfHousingFlows();
+      const draw = f && f.groups.filter(g=>g.amount<0).slice(-1)[0];
+      if(draw){
+        const drawn = Math.abs(draw.amount);
+        const match = Math.abs(drawn - h.principal) < 0.02;
+        return `<p class="note">Your CPF ledger dates the withdrawal to <b>${esc(dayLabel(draw.date))}</b>${match?` and its ${money(drawn,2)} matches CPF's published principal to the cent`:` at ${money(drawn,2)}, which does <b>not</b> match the ${money(h.principal,2)} principal on the dashboard — worth checking`}. ${monthsRun!=null?`The accrued interest is ${fmt(monthsRun,1)} months' worth at ${pct(R.oaPct,1)}: CPF starts the meter the month after the money leaves, so ${fmt(monthsRun,0)} months have been charged and the current one is still pending.`:''}</p>`;
+      }
+      return monthsRun!=null?`<p class="note">CPF's accrued figure is ${fmt(monthsRun,1)} months of interest on ${money(h.principal,0)} at ${pct(R.oaPct,1)}. Import your CPF transaction history to date the withdrawal exactly instead of inferring it.</p>`:'';
+    })()}
+
+    <div class="warnbox" style="margin-top:10px"><b>This refund is not a loss of wealth.</b> It moves money from the house back into your CPF Ordinary Account, where it keeps earning ${pct(R.oaPct,1)}. What it costs you is <em>liquidity</em>: ${money(h.claim,0)} of a sale's proceeds never reaches your bank. Net worth is unchanged; cash at completion is ${money(h.claim,0)} lower. Fortress shows both rather than blurring them.</div>
+
+    <div style="margin-top:12px">
+      ${horizons.map(y=>`<div class="kv"><span class="k">Refund due in ${y} year${y>1?'s':''}</span><span class="v">${money(cpfClaimIn(y),0)} <span class="k" style="font-size:11px">accrued ${money(cpfClaimIn(y)-h.principal,0)}</span></span></div>`).join('')}
+    </div>
+    <p class="note">Compounded at the ${pct(R.oaPct,1)} OA rate on the principal still withdrawn. A voluntary refund to CPF stops the meter on whatever you repay; nothing else does. Source: ${esc(h.source)}.</p>
+    <button class="btn ghost" style="margin-top:10px" onclick="go('cpf')">Open the CPF tab</button>
   </div>`; })()}
   ${(()=>{ const inc=(state.income||[]).filter(i=>i.endMonth==null); if(!inc.length) return '';
     const mm=latestMrtl?latestManual():null;
@@ -1364,6 +1664,215 @@ function savePropertyValue(){
   state.settings.homeValue = el.value===''?null:Math.max(0,+el.value);
   saveAll(); render(); window.scrollTo(0,0);
 }
+
+/* ================= CPF tab ================= */
+function viewCpf(){
+  const c = latestCpf();
+  const R = CPF_RULES;
+  if(!c) return `<div class="banner b-warn"><span class="ic">&#8505;</span><div><b>No CPF data yet</b>Add your balances below, or import a screenshot of the CPF dashboard through Add data.</div></div>${cpfForms()}`;
+  const tot = cpfTotal(c);
+  const atBhs = Math.abs((c.ma||0) - R.bhs) < 0.01;
+  const yr = cpfYearInterest(c.oa||0, c.sa||0, c.ma||0, false);
+  const blended = tot>0 ? yr.total/tot*100 : null;
+  const years = state.settings.cpfYears || 10;
+  const withC = !!state.settings.cpfContrib;
+  const con = cpfLastContribution();
+  const overflowToOa = cpfSaOverFrs();
+  const ev = cpfOverflowEvidence();
+  const A = cpfAge();
+  const y55 = state.settings.cpfAge55Year || (A ? A.year55 : null);
+  const proj = cpfProject(years, withC, y55);
+  const turn = proj.find(r=>r.event && r.event.turns55);
+  const last = proj[proj.length-1];
+  const hc = cpfHomeClaim();
+
+  const hasRa = proj.some(r=>r.ra>0);
+  const series = [
+    {name:'Total', color:'var(--s3)', values:proj.map(r=>({x:String(r.year), y:Math.round(r.total)}))},
+    {name:hasRa?'SA / RA':'SA', color:'var(--s1)', values:proj.map(r=>({x:String(r.year), y:Math.round(r.sa+r.ra)}))},
+    {name:'OA',    color:'var(--s2)', values:proj.map(r=>({x:String(r.year), y:Math.round(r.oa)}))},
+    {name:'MA',    color:'var(--s4)', values:proj.map(r=>({x:String(r.year), y:Math.round(r.ma)}))}
+  ];
+  const step = Math.max(1, Math.round(years/5));
+  const shown = proj.filter(r=>r.y===0 || r.y===years || r.y%step===0 || (r.event && r.event.turns55));
+
+  return `
+  <div class="card">
+    <div class="hero">${money(tot,2)}</div>
+    <div class="hero-sub">Total CPF &middot; as at ${esc(c.asOf)} &middot; restricted savings, not available to the margin account</div>
+  </div>
+  <div class="tiles">
+    <div class="tile"><div class="v">${money(c.oa,0)}</div><div class="l">Ordinary Account</div><div class="d">${pct(R.oaPct,1)} p.a. &middot; the account housing draws on</div></div>
+    <div class="tile"><div class="v">${money(c.sa,0)}</div><div class="l">Special Account</div><div class="d">${pct(R.saPct,1)} p.a. &middot; ${pct((c.sa||0)/tot*100,0)} of your CPF</div></div>
+    <div class="tile"><div class="v">${money(c.ma,0)}</div><div class="l">MediSave</div><div class="d">${atBhs?`<span class="pos">at the ${R.bhsYear} Basic Healthcare Sum</span>`:`${pct(R.maPct,1)} p.a. &middot; cap ${money(R.bhs,0)}`}</div></div>
+    <div class="tile"><div class="v pos">${money(yr.total,0)}</div><div class="l">Interest in the next year</div><div class="d">${blended!=null?pct(blended,2)+' blended, no contributions assumed':''}</div></div>
+  </div>
+
+  ${A?`<div class="banner ${A.days55<=1095?'b-warn':''}"><span class="ic">&#9200;</span><div><b>${A.age} years old &middot; 55 on ${esc(dayLabel(A.date55))}</b>${A.days55>0?`That is <b>${fmt(A.days55,0)} days</b> — ${fmt(A.days55/365.25,1)} years. On that date the Special Account closes, ${money(frsFor(A.year55).value,0)} moves to a Retirement Account and the rest of it drops from ${pct(CPF_RULES.saPct,1)} to ${pct(CPF_RULES.oaPct,1)} in the OA. Your SA is ${money(latestCpf().sa,0)} today, so most of the excess is already built.`:'You have passed 55; the projection below uses the post-55 rules.'} MediSave's Basic Healthcare Sum stops rising for you at 65, in ${esc(String(A.year65))}.</div></div>`:''}
+  ${atBhs?`<div class="banner b-good"><span class="ic">&#9679;</span><div><b>MediSave is full</b>It sits exactly at the ${R.bhsYear} Basic Healthcare Sum of ${money(R.bhs,0)}. Interest it earns, and any future contribution, overflows into your Special Account instead — which earns the same ${pct(R.saPct,1)}, so nothing is lost. ${esc(R.bhsSource)}.</div></div>`:''}
+
+  <div class="card">
+    <h2>What it earns<span class="pill">CPF published rates</span></h2>
+    <div class="kv"><span class="k">Ordinary Account</span><span class="v">${pct(R.oaPct,1)} p.a. &rarr; ${money((c.oa||0)*R.oaPct/100,2)}/yr</span></div>
+    <div class="kv"><span class="k">Special Account</span><span class="v">${pct(R.saPct,1)} p.a. &rarr; ${money((c.sa||0)*R.saPct/100,2)}/yr</span></div>
+    <div class="kv"><span class="k">MediSave</span><span class="v">${pct(R.maPct,1)} p.a. &rarr; ${money((c.ma||0)*R.maPct/100,2)}/yr</span></div>
+    <div class="kv"><span class="k">Extra interest (below 55)</span><span class="v pos">+${money(yr.extra,2)}/yr</span></div>
+    <div class="kv"><span class="k"><b>Total next year</b></span><span class="v"><b>${money(yr.total,2)}</b></span></div>
+    <p class="note">Extra interest is ${pct(R.extraBelow55.pct,0)} on the first ${money(R.extraBelow55.onFirst,0)} of combined balances, of which at most ${money(R.extraBelow55.oaCap,0)} may come from the OA. Below 55 it is credited to your Special Account. Rates are the floors in force for ${esc(R.ratesPeriod)}. Source: ${esc(R.ratesSource)}; ${esc(R.extraSource)}. Checked ${esc(R.checkedOn)}.</p>
+    <p class="note"><b>These rates are policy, not contract.</b> The 4% floor is extended only to 31 Dec 2026 and has been extended year by year; the OA floor is 2.5% and set in the CPF Act. Fortress uses today's published floors and does not forecast changes.</p>
+  </div>
+
+  <div class="card">
+    <h2>Projection<span class="pill">${years} years, ${withC?'with contributions':'no contributions'}</span></h2>
+    <div class="legend">${series.map(s=>`<span><span class="sw" style="background:${s.color}"></span>${esc(s.name)}</span>`).join('')}</div>
+    ${lineChart(series,{yFmt:v=>fmt(v/1000,0)+'k', zero:false})}
+    ${con?`<label class="fld"><input type="checkbox" ${withC?'checked':''} onchange="setCpfContrib(this.checked)" style="width:auto;margin-right:6px">Include contributions at ${money(con.median,2)}/month — the figure your own payslips have produced in ${con.count-1} of the last ${con.count} months</label>`:''}
+    ${(()=>{ if(!y55) return '';
+      const F=frsFor(y55); if(F.published) return '';
+      const T=frsTrend();
+      return `<div class="warnbox" style="margin:10px 0"><b>CPF has not announced the Full Retirement Sum for the ${esc(String(y55))} cohort.</b>
+        The published series stops at ${esc(String(CPF_RULES.frsLastPublished))} (${money(CPF_RULES.frsByYear[CPF_RULES.frsLastPublished],0)}). Over its last four steps it rose ${fmt(T.min,2)}–${fmt(T.max,2)}% a year &mdash; that is <em>history, not a forecast</em>, and Fortress will not extrapolate it for you.
+        <label class="fld">Full Retirement Sum to assume for ${esc(String(y55))} (S$) — yours to choose</label>
+        <input type="number" id="frsOv" step="100" inputmode="decimal" value="${state.settings.frsOverride??''}" placeholder="using ${fmt(F.value,0)} — the ${esc(String(F.fallbackYear||''))} figure, which is too low">
+        <button class="btn ghost" style="margin-top:8px" onclick="saveFrsOverride()">Use this figure</button>
+        <p class="note" style="margin-top:6px">${F.chosen?`Currently using <b>${money(F.value,0)}</b>, your figure.`:`Currently using <b>${money(F.value,0)}</b>, the last published cohort — the real number will be higher, so the projection understates how much gets locked into the RA and overstates what stays liquid in the OA.`}</p></div>`; })()}
+    <label class="fld">Year you turn 55${A?' — from your date of birth':' — optional, but it is the biggest single thing this projection turns on'}</label>
+    <select id="cpf55" onchange="setCpf55(this.value)" style="width:100%;background:var(--page);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:10px;font:inherit;font-size:14px">
+      <option value=""${!y55?' selected':''}>${A?`${A.year55} — from your date of birth`:'not set — the transition is not modelled'}</option>
+      ${Array.from({length:12},(_,i)=>2026+i).map(yy=>`<option value="${yy}"${yy===y55?' selected':''}>${yy}${CPF_RULES.frsByYear[yy]?' · FRS '+money(CPF_RULES.frsByYear[yy],0)+' (published)':' · FRS not yet announced'}</option>`).join('')}
+    </select>
+    <label class="fld">Horizon (years)</label>
+    <select id="cpfYears" onchange="setCpfYears(this.value)" style="width:100%;background:var(--page);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:10px;font:inherit;font-size:14px">
+      ${[5,10,15,20,25].map(y=>`<option value="${y}"${y===years?' selected':''}>${y} years</option>`).join('')}
+    </select>
+    <div style="margin-top:12px">
+      ${shown.map(r=>`<div class="kv"><span class="k">${r.y===0?'today':esc(String(r.year))+' &middot; +'+r.y+'y'}${r.event&&r.event.turns55?' <span class="pill">turns 55</span>':''}</span><span class="v">${money(r.total,0)}${r.y?` <span class="k" style="font-size:11px">OA ${money(r.oa,0)} &middot; ${r.ra>0?'RA '+money(r.ra,0):'SA '+money(r.sa,0)} &middot; MA ${money(r.ma,0)}</span>`:''}</span></div>`).join('')}
+    </div>
+    <p class="note"><b>${money(last.total - proj[0].total - (withC? last.contrib*years : 0),0)}</b> of compounding over ${years} years${withC?', on top of '+money(proj.slice(1).reduce((a,r)=>a+r.contrib,0),0)+' contributed':''} &mdash; ${pct((last.total/proj[0].total-1)*100,1)} on today's balances.</p>
+    ${(()=>{ if(!y55) return '';
+      const ignoring = cpfProject(years, withC, null);
+      const d = ignoring[years].total - last.total;
+      if(Math.abs(d) < 1) return '';
+      return `<p class="note">Ignoring the age-55 transition would put this at ${money(ignoring[years].total,0)} &mdash; <b class="neg">${money(d,0)} too high</b>. The money is not lost; ${money(last.oa - ignoring[years].oa,0)} of it simply sits in the OA at ${pct(CPF_RULES.oaPct,1)} instead of earning ${pct(CPF_RULES.saPct,1)}.</p>`; })()}
+    ${turn?`<div class="banner ${turn.event.frsPublished?'b-good':'b-warn'}" style="margin:12px 0"><span class="ic">&#9673;</span><div><b>At 55, in ${esc(String(turn.year))}</b>The Special Account closes. ${money(turn.event.frs,0)} moves into a new Retirement Account — SA first, then OA — and whatever is left stays in the Ordinary Account at ${pct(CPF_RULES.oaPct,1)} instead of ${pct(CPF_RULES.saPct,1)}. On this path that leaves <b>${money(turn.event.oa,0)}</b> in the OA the moment it happens. ${turn.event.frsPublished?`The ${money(turn.event.frs,0)} Full Retirement Sum for that cohort is published.`:`<b>CPF has not yet announced the Full Retirement Sum for that cohort</b> — Fortress is using the latest published figure (${money(CPF_RULES.frs,0)}, for those turning 55 in ${CPF_RULES.sumsYear}), which will be too low. Treat the years after ${esc(String(turn.year))} as indicative only.`} Contributions are stopped at 55 in this projection, because the rates and the allocation both change and your payslips can no longer stand in for them.</div></div>`:''}
+    <div class="warnbox"><b>What this projection does not do.</b> ${withC?`It carries your contributions forward at today's rate for the whole horizon &mdash; that holds only while you stay employed at or above the ${money(CPF_RULES.owCeiling,0)} wage ceiling, and contribution rates step down once you pass 55.`:'It adds no salary contributions, no top-ups and no withdrawals &mdash; it grows only what is there today.'} It holds MediSave at the ${R.bhsYear} Basic Healthcare Sum, though CPF raises that figure most years. It ${y55?`models age 55 using the Full Retirement Sum published for that cohort where CPF has announced one, and the latest published figure where it has not.`:`<b>does not model age 55</b>, when the Special Account closes and a Retirement Account is created at the Full Retirement Sum then in force (${money(R.frs,0)} for those turning 55 in ${R.sumsYear}); after that, savings above the sum sit in the OA at ${pct(R.oaPct,1)} rather than ${pct(R.saPct,1)}, which bends this curve down. Set the year above and Fortress will model it.`} Your contribution split matches CPF's <b>above 50 to 55</b> allocation band exactly, so that year is close — this is not a distant technicality.</div>
+  </div>
+
+  ${(()=>{ const t=cpfTxns(); if(!t.length) return '';
+    const con=cpfTxnSum('CON'), int=cpfTxnSum('INT'), hse=cpfTxnSum('HSE');
+    const conTot=con.oa+con.sa+con.ma, intTot=int.oa+int.sa+int.ma;
+    const out=t.filter(x=>['CSL','MED','DPS','MSL','ESH','SUP','HPS'].includes(x.code));
+    const outTot=out.reduce((a,x)=>a+(x.oa||0)+(x.sa||0)+(x.ma||0),0);
+    const inv=cpfTxnSum('INV'), invTot=inv.oa+inv.sa+inv.ma;
+    const M=CPF_TXN_META;
+    return `
+  <div class="card">
+    <h2>What actually happened<span class="pill">${esc(dayLabel(M.from))} – ${esc(dayLabel(M.to))}</span></h2>
+    <div class="kv"><span class="k">Employer &amp; employee contributions <span style="font-size:11px">(${con.n} months)</span></span><span class="v pos">+${money(conTot,2)}</span></div>
+    <div class="kv"><span class="k">Interest credited 31 Dec 2025</span><span class="v pos">+${money(intTot,2)}</span></div>
+    <div class="kv"><span class="k">Housing, net</span><span class="v ${hse.oa>=0?'pos':'neg'}">${hse.oa>=0?'+':''}${money(hse.oa,2)}</span></div>
+    ${outTot?`<div class="kv"><span class="k">Insurance premiums &amp; withdrawals</span><span class="v neg">${money(outTot,2)}</span></div>`:''}
+    ${invTot?`<div class="kv"><span class="k">CPF Investment Scheme, net</span><span class="v ${invTot>=0?'pos':'neg'}">${invTot>=0?'+':''}${money(invTot,2)}</span></div>`:''}
+    ${(()=>{ const H=cpfBalanceHistory(); if(!H||H.pts.length<3) return '';
+      const s1=[{name:'Total', color:'var(--s3)', values:H.pts.map(p=>({x:monthLabel(p.date.slice(0,7)), y:Math.round(p.total)}))},
+                {name:'SA', color:'var(--s1)', values:H.pts.map(p=>({x:monthLabel(p.date.slice(0,7)), y:Math.round(p.sa)}))},
+                {name:'OA', color:'var(--s2)', values:H.pts.map(p=>({x:monthLabel(p.date.slice(0,7)), y:Math.round(p.oa)}))}];
+      return `<div class="legend">${s1.map(x=>`<span><span class="sw" style="background:${x.color}"></span>${esc(x.name)}</span>`).join('')}</div>
+      ${lineChart(s1,{yFmt:v=>fmt(v/1000,0)+'k'})}
+      <p class="note">Rebuilt row by row from the ledger, not from monthly statements — ${H.exact?`it lands on CPF's closing balances to the cent`:`<b class="neg">it drifts from CPF's closing balances, so some rows are missing</b>`}. The cliff is ${esc(dayLabel('2026-04-24'))}: ${money(502500,0)} leaving the OA for the house. The step up before it is the ${money(492032.96,0)} refunded when the previous property was sold.</p>`; })()}
+    <p class="note">Interest is credited once a year, on 31 December, on the lowest balance in each month — so the ${money(intTot,0)} above is the whole of 2025, not the period shown.</p>
+    ${ev?`<div class="warnbox"><b>Where MediSave's excess goes — settled by your own ledger.</b> On ${esc(dayLabel(ev.date))} CPF moved ${money(ev.amount,2)} out of MediSave and into your <b>${ev.toOa?'Ordinary Account':'Special Account'}</b>. Excess MediSave normally lands in the SA below 55, but goes to the OA once the SA is already above the Full Retirement Sum — and yours is (${money(latestCpf().sa,0)} against ${money(CPF_RULES.frs,0)}). The projection above follows that, so the overflow earns ${pct(CPF_RULES.oaPct,1)}, not ${pct(CPF_RULES.saPct,1)}. ${esc(CPF_RULES.overflowSource)}.</div>`:''}
+    ${con.n?`<p class="note">Contributions run at ${money((cpfLastContribution()||{}).median||0,2)}/month, which is ${pct(((cpfLastContribution()||{}).median||0)/CPF_RULES.owCeiling*100,1)} of the ${money(CPF_RULES.owCeiling,0)} Ordinary Wage ceiling — the pattern of someone earning at or above it, so the figure is stable rather than pay-dependent. The split across OA/SA/MA matches CPF's <b>above 50 to 55</b> allocation band exactly. ${esc(CPF_RULES.allocSource)}.</p>`:''}
+    <div style="margin-top:10px">${t.slice().reverse().slice(0,8).map(x=>`<div class="kv"><span class="k">${esc(dayLabel(x.date))} &middot; ${esc(x.code)}${x.forMonth?' &middot; '+esc(x.forMonth):''}</span><span class="v" style="font-weight:400">${['oa','sa','ma'].filter(k=>x[k]).map(k=>k.toUpperCase()+' '+money(x[k],2)).join(' &middot; ')||'—'}</span></div>`).join('')}</div>
+    <p class="note">Latest 8 of ${t.length} rows. Source: ${esc(M.source)}.</p>
+  </div>`; })()}
+
+  ${(()=>{ const f=cpfHousingFlows(); if(!f||!f.groups.length) return '';
+    return `
+  <div class="card">
+    <h2>CPF into and out of property</h2>
+    ${f.groups.map(g=>`<div class="kv"><span class="k">${esc(dayLabel(g.date))}${g.n>1?` <span style="font-size:11px">(${g.n} entries)</span>`:''}</span><span class="v ${g.amount>=0?'pos':'neg'}">${g.amount>=0?'+':''}${money(g.amount,2)}</span></div>`).join('')}
+    <div class="kv"><span class="k"><b>Net</b></span><span class="v ${f.net>=0?'pos':'neg'}"><b>${f.net>=0?'+':''}${money(f.net,2)}</b></span></div>
+    <p class="note"><b>This is the refund mechanic, in your own numbers.</b> ${money(f.refunded,0)} came back into your CPF when the earlier property was sold, and ${money(Math.abs(f.withdrawn),0)} went out again for the current one — a net ${money(Math.abs(f.net),0)} ${f.net<0?'out':'in'} across both. Money used for housing is not spent; it is parked in the property and returns to CPF on sale, with interest owed on top.</p>
+  </div>`; })()}
+
+  ${hc?`
+  <div class="card">
+    <h2>Your CPF is also in the house</h2>
+    <div class="kv"><span class="k">Principal withdrawn for the property</span><span class="v">${money(hc.principal,2)}</span></div>
+    <div class="kv"><span class="k">Accrued interest so far</span><span class="v neg">${money(hc.accrued,2)}</span></div>
+    <div class="kv"><span class="k"><b>Refund due to CPF on sale</b></span><span class="v"><b>${money(hc.claim,2)}</b></span></div>
+    <div class="kv"><span class="k">Growing by</span><span class="v neg">${money(hc.monthlyAccrual,2)}/mo &middot; ${money(hc.yearlyAccrual,2)}/yr</span></div>
+    <p class="note">That is more than half of your CPF again, sitting in the property rather than earning ${pct(R.oaPct,1)} in the OA. The Property tab shows what it does to your equity and to what you would actually receive on a sale.</p>
+    <button class="btn ghost" onclick="go('prop')">Open the Property tab</button>
+  </div>`:''}
+
+${cpfForms()}
+  <button class="btn" onclick="startImport()">&#10514; Add data — CPF dashboard screenshot</button>
+  <p class="note" style="text-align:center">Read entirely on this device — nothing is uploaded.</p>`;
+}
+
+function cpfForms(){
+  const c = latestCpf(), h = latestCpfHome();
+  return `
+  <div class="card"><h2>Update CPF balances</h2>
+    <label class="fld">As at (YYYY-MM-DD)</label><input type="text" id="cpfDate" value="${new Date().toISOString().slice(0,10)}">
+    ${fld('cpfOA','Ordinary Account (S$)', c?c.oa:null)}
+    ${fld('cpfSA','Special Account (S$)', c?c.sa:null)}
+    ${fld('cpfMA','MediSave Account (S$)', c?c.ma:null)}
+    <button class="btn" style="margin-top:12px" onclick="saveCpf()">Save balances</button>
+    ${cpfDates().length?`<div style="margin-top:12px">${cpfDates().slice().reverse().map(d=>`<div class="kv"><span class="k">${esc(d)}</span><span class="v">${money(cpfTotal(state.cpf[d]),2)} <button class="btn ghost" style="width:auto;padding:2px 8px;font-size:11px;margin-left:8px" onclick="delCpf('${esc(d)}')">×</button></span></div>`).join('')}</div>`:''}
+  </div>
+  <div class="card"><h2>Update the housing withdrawal</h2>
+    <p class="note" style="margin-top:0">From the CPF Home ownership dashboard. Both figures are published there — Fortress never estimates them.</p>
+    <label class="fld">As at (YYYY-MM-DD)</label><input type="text" id="cpfHDate" value="${new Date().toISOString().slice(0,10)}">
+    ${fld('cpfHPrin','Total principal amount withdrawn (S$)', h?h.principalWithdrawn:null)}
+    ${fld('cpfHAccr','Total accrued interest (S$)', h?h.accruedInterest:null)}
+    <button class="btn" style="margin-top:12px" onclick="saveCpfHome()">Save</button>
+    ${cpfHomeDates().length?`<div style="margin-top:12px">${cpfHomeDates().slice().reverse().map(d=>`<div class="kv"><span class="k">${esc(d)}</span><span class="v">${money((state.cpfHome[d].principalWithdrawn||0)+(state.cpfHome[d].accruedInterest||0),2)} <button class="btn ghost" style="width:auto;padding:2px 8px;font-size:11px;margin-left:8px" onclick="delCpfHome('${esc(d)}')">×</button></span></div>`).join('')}</div>`:''}
+  </div>`;
+}
+function setCpfYears(v){ state.settings.cpfYears = +v||10; saveAll(); render(); }
+function setCpfContrib(on){ state.settings.cpfContrib = !!on; saveAll(); render(); }
+function setCpf55(v){ state.settings.cpfAge55Year = v===''?null:+v; saveAll(); render(); }
+function saveFrsOverride(){
+  const el=document.getElementById('frsOv'); if(!el) return;
+  const v = el.value===''?null:+el.value;
+  if(v!==null && (v<50000 || v>2000000)){ alert('That does not look like a Full Retirement Sum.'); return; }
+  state.settings.frsOverride = v; saveAll(); render();
+}
+function saveCpf(){
+  const d=(document.getElementById('cpfDate').value||'').trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(d)){ alert('Date must be YYYY-MM-DD.'); return; }
+  const oa=gv('cpfOA'), sa=gv('cpfSA'), ma=gv('cpfMA');
+  if(oa===null && sa===null && ma===null){ alert('Enter at least one balance.'); return; }
+  state.cpf=state.cpf||{};
+  state.cpf[d]={ asOf:d, oa, sa, ma, source:(window.__rec?.sourceName||'manual entry') };
+  saveAll(); closeModal(); go('cpf');
+}
+function saveCpfHome(){
+  const d=(document.getElementById('cpfHDate').value||'').trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(d)){ alert('Date must be YYYY-MM-DD.'); return; }
+  const p=gv('cpfHPrin'), a=gv('cpfHAccr');
+  if(p===null){ alert('The principal withdrawn is required.'); return; }
+  state.cpfHome=state.cpfHome||{};
+  state.cpfHome[d]={ asOf:d, properties:(latestCpfHome()?.properties)??1, principalWithdrawn:p, accruedInterest:a??0,
+    source:(window.__rec?.sourceName||'manual entry') };
+  saveAll(); closeModal(); go('cpf');
+}
+function saveCpfHistory(){
+  const f=window.__rec?.fields; if(!f||!f.rows?.length){ alert('Nothing to save.'); return; }
+  state.cpfTxns = f.rows.slice();
+  const also=document.getElementById('cpfAlsoBal');
+  if(also && also.checked && f.closing){
+    state.cpf = state.cpf||{};
+    state.cpf[f.closing.date] = { asOf:f.closing.date, oa:f.closing.oa, sa:f.closing.sa, ma:f.closing.ma,
+      source:(window.__rec?.sourceName||'CPF transaction history')+' — closing balance row' };
+  }
+  saveAll(); closeModal(); go('cpf');
+}
+function delCpf(d){ if(confirm('Delete CPF balances for '+d+'?')){ delete state.cpf[d]; saveAll(); render(); } }
+function delCpfHome(d){ if(confirm('Delete the CPF housing entry for '+d+'?')){ delete state.cpfHome[d]; saveAll(); render(); } }
 
 function viewFX(){
   const snap=latest(), a=agg(snap);
@@ -1544,7 +2053,7 @@ function viewSet(){
   </div>
   <div class="card"><h2>Data</h2>
     <p class="note">Everything is stored only in this browser (localStorage). Use Export in History for a backup before clearing browser data.</p>
-    <button class="btn ghost" style="margin-top:8px" onclick="if(confirm('Delete all snapshots, home-loan entries and settings?')){['fortress.snapshots','fortress.manual','fortress.income','fortress.mrtl','fortress.lv','fortress.reported','fortress.rateChanges','fortress.settings'].forEach(k=>localStorage.removeItem(k));location.reload();}">Clear all data</button>
+    <button class="btn ghost" style="margin-top:8px" onclick="if(confirm('Delete all snapshots, home-loan entries and settings?')){['fortress.snapshots','fortress.manual','fortress.income','fortress.mrtl','fortress.lv','fortress.reported','fortress.rateChanges','fortress.cpf','fortress.cpfHome','fortress.cpfTxns','fortress.settings'].forEach(k=>localStorage.removeItem(k));location.reload();}">Clear all data</button>
   </div>
   <div class="card"><h2>About</h2>
     <div class="kv"><span class="k">Version</span><span class="v">${VERSION}</span></div>
@@ -1558,7 +2067,7 @@ function viewSet(){
 function render(){
   renderTabs();
   document.getElementById('stamp').textContent = VERSION;
-  const v={dash:viewDash,prop:viewProp,trends:viewTrends,fx:viewFX,hist:viewHist,set:viewSet}[state.settings.tab]||viewDash;
+  const v={dash:viewDash,prop:viewProp,cpf:viewCpf,trends:viewTrends,fx:viewFX,hist:viewHist,set:viewSet}[state.settings.tab]||viewDash;
   document.getElementById('main').innerHTML = v() + `<p class="fine">Monitoring aid only — verify against your official DBS statements. ${VERSION}</p>`;
 }
 
@@ -1637,7 +2146,7 @@ function delSnap(d){
   if(confirm('Delete snapshot '+d+'?')){ delete state.snapshots[d]; saveAll(); render(); }
 }
 function exportData(){
-  const blob=new Blob([JSON.stringify({app:'Fortress',snapshots:state.snapshots,manual:state.manual,income:state.income,mrtl:state.mrtl,lv:state.lv,reported:state.reported,rateChanges:state.rateChanges,settings:state.settings},null,1)],{type:'application/json'});
+  const blob=new Blob([JSON.stringify({app:'Fortress',snapshots:state.snapshots,manual:state.manual,income:state.income,mrtl:state.mrtl,lv:state.lv,reported:state.reported,rateChanges:state.rateChanges,cpf:state.cpf,cpfHome:state.cpfHome,cpfTxns:state.cpfTxns,settings:state.settings},null,1)],{type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download='fortress-backup-'+new Date().toISOString().slice(0,10)+'.json'; a.click();
 }
@@ -1645,7 +2154,7 @@ function importData(inp){
   const f=inp.files[0]; if(!f) return;
   f.text().then(t=>{ const d=JSON.parse(t);
     if(!d.snapshots) throw new Error('not a Fortress backup');
-    state.snapshots=d.snapshots; if(d.manual) state.manual=d.manual; if(d.income) state.income=d.income; if(d.mrtl) state.mrtl=d.mrtl; if(d.lv) state.lv=d.lv; if(d.reported) state.reported=d.reported; if(d.rateChanges) state.rateChanges=d.rateChanges; if(d.settings) state.settings={...state.settings,...d.settings};
+    state.snapshots=d.snapshots; if(d.manual) state.manual=d.manual; if(d.income) state.income=d.income; if(d.mrtl) state.mrtl=d.mrtl; if(d.lv) state.lv=d.lv; if(d.reported) state.reported=d.reported; if(d.rateChanges) state.rateChanges=d.rateChanges; if(d.cpf) state.cpf=d.cpf; if(d.cpfHome) state.cpfHome=d.cpfHome; if(d.cpfTxns) state.cpfTxns=d.cpfTxns; if(d.settings) state.settings={...state.settings,...d.settings};
     saveAll(); render(); alert('Backup restored: '+Object.keys(d.snapshots).length+' snapshot(s).');
   }).catch(e=>alert('Could not restore: '+e.message));
   inp.value='';
@@ -1796,7 +2305,7 @@ function routeText(text, sourceName, viaOcr){
   reviewRecognized(r);
 }
 
-const KINDLABEL={ uobRateChange:'UOB loan rate-revision letter', dbsPerformance:'DBS Performance summary', dbsMrtl:'DBS MRTL draw-down screen', dbsPortfolioSummary:'DBS Portfolio Summary screen', uobLoanScreen:'UOB home-loan screen', uobStatement:'UOB Statement of Account', generic:'Unrecognised document' };
+const KINDLABEL={ cpfHistory:'CPF transaction history', cpfBalances:'CPF account balances', cpfHousing:'CPF home-ownership dashboard', uobRateChange:'UOB loan rate-revision letter', dbsPerformance:'DBS Performance summary', dbsMrtl:'DBS MRTL draw-down screen', dbsPortfolioSummary:'DBS Portfolio Summary screen', uobLoanScreen:'UOB home-loan screen', uobStatement:'UOB Statement of Account', generic:'Unrecognised document' };
 const fld=(id,label,val,step)=>`<label class="fld">${label}</label><input type="${typeof val==='string'&&!/^-?[\d.]*$/.test(val||'')?'text':'number'}" id="${id}" step="${step||'0.01'}" inputmode="decimal" value="${val==null?'':esc(String(val))}">`;
 
 function reviewRecognized(r){
@@ -1807,6 +2316,55 @@ function reviewRecognized(r){
   ${r.viaOcr?`<div class="warnbox"><b>OCR can misread digits.</b> Compare each number with the screenshot before you save.</div>`:''}
   ${r.warnings.length?`<div class="warnbox"><b>Check these:</b><br>${r.warnings.map(esc).join('<br>')}</div>`:''}`;
 
+  if(r.kind==='cpfHistory'){
+    const rws=f.rows||[];
+    showModal(head+`
+    <div class="kv"><span class="k">Rows read</span><span class="v">${rws.length}</span></div>
+    <div class="kv"><span class="k">Period</span><span class="v">${esc(dayLabel(f.from))} – ${esc(dayLabel(f.to))}</span></div>
+    ${f.opening?`<div class="kv"><span class="k">Opening balances</span><span class="v" style="font-weight:400">OA ${money(f.opening.oa,2)} &middot; SA ${money(f.opening.sa,2)} &middot; MA ${money(f.opening.ma,2)}</span></div>`:''}
+    ${f.closing?`<div class="kv"><span class="k">Closing balances</span><span class="v" style="font-weight:400">OA ${money(f.closing.oa,2)} &middot; SA ${money(f.closing.sa,2)} &middot; MA ${money(f.closing.ma,2)}</span></div>`:''}
+    <div class="kv"><span class="k">Opening + movements = closing?</span><span class="v ${f.reconciles?'pos':'neg'}"><b>${f.reconciles?'reconciles to the cent':'does NOT reconcile'}</b></span></div>
+    ${f.reconciles?'':`<div class="warnbox">Do not save this: rows were lost in the copy, so any total built from it would be wrong. Re-import the PDF itself rather than pasted text.</div>`}
+    <div class="kv"><span class="k">Contributions</span><span class="v pos">+${money(f.contributions.oa+f.contributions.sa+f.contributions.ma,2)}</span></div>
+    <div class="kv"><span class="k">Interest</span><span class="v pos">+${money(f.interest.oa+f.interest.sa+f.interest.ma,2)}</span></div>
+    <div class="kv"><span class="k">Housing, net</span><span class="v ${f.housing.oa>=0?'pos':'neg'}">${f.housing.oa>=0?'+':''}${money(f.housing.oa,2)}</span></div>
+    <label class="fld"><input type="checkbox" id="cpfAlsoBal" checked style="width:auto;margin-right:6px">Also update balances from the closing row</label>
+    <p class="note">Saving replaces the stored ledger with these ${rws.length} rows. Import the full history each time rather than a fragment — Fortress reconciles it, and a partial ledger would fail that check.</p>
+    <div class="row2" style="margin-top:12px"><button class="btn ghost" onclick="closeModal()">Cancel</button>
+    <button class="btn"${f.reconciles?'':' disabled'} onclick="saveCpfHistory()">Save ledger</button></div>`);
+    return;
+  }
+  if(r.kind==='cpfBalances'){
+    showModal(head+`
+    <label class="fld">As at (YYYY-MM-DD)</label><input type="text" id="cpfDate" value="${esc(f.asOf||new Date().toISOString().slice(0,10))}">
+    ${fld('cpfOA','Ordinary Account (S$)',f.oa)}
+    ${fld('cpfSA','Special Account (S$)',f.sa)}
+    ${fld('cpfMA','MediSave Account (S$)',f.ma)}
+    ${f.total!=null?`<div class="kv"><span class="k">Total</span><span class="v">${money(f.total,2)}</span></div>`:''}
+    ${(()=>{ const prev=latestCpf(); if(!prev||f.total==null) return '';
+      const d=f.total-cpfTotal(prev);
+      return `<div class="kv"><span class="k">Change since ${esc(prev.asOf)}</span><span class="v ${d>=0?'pos':'neg'}">${d>=0?'+':''}${money(d,2)}</span></div>`; })()}
+    ${f.ma!=null&&Math.abs(f.ma-CPF_RULES.bhs)<0.01?`<p class="note">MediSave is exactly at the ${CPF_RULES.bhsYear} Basic Healthcare Sum — it is full.</p>`:''}
+    <div class="row2" style="margin-top:12px"><button class="btn ghost" onclick="closeModal()">Cancel</button>
+    <button class="btn" onclick="saveCpf()">Save</button></div>`);
+    return;
+  }
+  if(r.kind==='cpfHousing'){
+    showModal(head+`
+    <label class="fld">As at (YYYY-MM-DD)</label><input type="text" id="cpfHDate" value="${esc(f.asOf||new Date().toISOString().slice(0,10))}">
+    ${fld('cpfHPrin','Total principal amount withdrawn (S$)',f.principalWithdrawn)}
+    ${fld('cpfHAccr','Total accrued interest (S$)',f.accruedInterest)}
+    ${f.claim!=null?`<div class="card" style="margin:12px 0"><h2>What this means</h2>
+      <div class="kv"><span class="k">Refund due to CPF on sale</span><span class="v"><b>${money(f.claim,2)}</b></span></div>
+      <div class="kv"><span class="k">Accruing at ${pct(CPF_RULES.oaPct,1)} p.a.</span><span class="v neg">${money(f.principalWithdrawn*CPF_RULES.oaPct/100/12,2)}/mo</span></div>
+      ${(()=>{ const prev=latestCpfHome(); if(!prev) return '';
+        const d=f.accruedInterest-(prev.accruedInterest||0);
+        return `<div class="kv"><span class="k">Accrued since ${esc(prev.asOf)}</span><span class="v neg">+${money(d,2)}</span></div>`; })()}
+      </div>`:''}
+    <div class="row2" style="margin-top:12px"><button class="btn ghost" onclick="closeModal()">Cancel</button>
+    <button class="btn" onclick="saveCpfHome()">Save</button></div>`);
+    return;
+  }
   if(r.kind==='uobRateChange'){
     showModal(head+`
     ${fld('rRate','Revised interest rate (% p.a.)',f.mortgageRatePct,'0.00001')}

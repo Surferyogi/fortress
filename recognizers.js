@@ -290,6 +290,102 @@
     };
   }
 
+  /* ---------- CPF member dashboard: OA / SA / MA balances ---------- */
+  function cpfBalances(text) {
+    const warnings = [];
+    const oa = after(text, 'Ordinary Account', 60);
+    const sa = after(text, 'Special Account', 60);
+    const ma = after(text, 'MediSave', 60);
+    const asOf = dmy(text, 'as at', 40) || dmy(text, null, 0);
+    [['Ordinary', oa], ['Special', sa], ['MediSave', ma]].forEach(([n, v]) => {
+      if (v === null) warnings.push(n + ' Account balance not found.');
+      else if (v < 0 || v > 5000000) warnings.push(n + ' balance of ' + v + ' looks wrong — check the OCR.');
+    });
+    if (!asOf) warnings.push('No "as at" date found — set it yourself before saving.');
+    const found = [oa, sa, ma].filter(v => v !== null).length;
+    return {
+      kind: 'cpfBalances',
+      fields: { oa, sa, ma, asOf, total: found ? (oa || 0) + (sa || 0) + (ma || 0) : null },
+      warnings,
+      confidence: found * 0.3 + (asOf ? 0.1 : 0)
+    };
+  }
+
+  /* ---------- CPF home-ownership dashboard: what the house owes CPF ---------- */
+  function cpfHousing(text) {
+    const warnings = [];
+    const principal = after(text, 'principal amount withdrawn', 80);
+    const accrued = after(text, 'accrued interest', 80);
+    const propsM = text.match(/using\s+your\s+CPF\s+for\s*\(?i?\)?\s*(\d{1,2})\b/i);
+    const asOf = dmy(text, 'as at', 40) || dmy(text, null, 0);
+    if (principal === null) warnings.push('Total principal amount withdrawn not found.');
+    if (accrued === null) warnings.push('Total accrued interest not found.');
+    if (principal !== null && accrued !== null && principal > 0) {
+      // CPF charges the OA rate on the principal still withdrawn — read back how long it has run
+      const months = accrued / (principal * 0.025 / 12);
+      warnings.push('Accrued interest is ' + months.toFixed(1) + ' months of interest on ' +
+        principal.toLocaleString() + ' at 2.5% — check that against when you drew the money.');
+    }
+    if (!asOf) warnings.push('No "as at" date found — set it yourself before saving.');
+    return {
+      kind: 'cpfHousing',
+      fields: { principalWithdrawn: principal, accruedInterest: accrued,
+                properties: propsM ? +propsM[1] : null, asOf,
+                claim: (principal !== null && accrued !== null) ? principal + accrued : null },
+      warnings,
+      confidence: (principal !== null ? 0.5 : 0) + (accrued !== null ? 0.4 : 0) + (asOf ? 0.1 : 0)
+    };
+  }
+
+  /* ---------- CPF transaction history (the printable ledger) ----------
+     Rows are "date CODE [for-month] [ref] OA SA MA". The three account columns are
+     always the last three numbers on the line, which survives both the PDF text
+     layer and a copy-paste that loses the column alignment. */
+  function cpfHistory(text) {
+    const warnings = [];
+    const rows = [];
+    text.split('\n').forEach(line => {
+      const m = line.match(/^\s*(\d{1,2}[\s\-][A-Za-z]{3}[a-z]*[\s\-]\d{4})\s+([A-Z]{2,3})\b(.*)$/);
+      if (!m) return;
+      const date = dmy(m[1], null, 0);
+      if (!date) return;
+      const rest = m[3];
+      const nums = rest.match(/-?\d[\d,]*\.\d{2}\b/g);       // account columns always carry 2dp
+      if (!nums || nums.length < 3) return;
+      const [oa, sa, ma] = nums.slice(-3).map(toNum);
+      const forM = (rest.match(/([A-Z]{3})\s+(\d{4})/) || [])[0] || null;
+      rows.push({ date, code: m[2], forMonth: forM, oa, sa, ma });
+    });
+    if (!rows.length) return { kind: 'cpfHistory', fields: { rows: [] }, warnings: ['No transaction rows found.'], confidence: 0 };
+
+    const bals = rows.filter(r => r.code === 'BAL');
+    const opening = bals[0] || null, closing = bals.length > 1 ? bals[bals.length - 1] : null;
+    const sum = code => rows.filter(r => r.code === code)
+      .reduce((a, r) => ({ oa: a.oa + r.oa, sa: a.sa + r.sa, ma: a.ma + r.ma }), { oa: 0, sa: 0, ma: 0 });
+    const movement = rows.filter(r => r.code !== 'BAL')
+      .reduce((a, r) => ({ oa: a.oa + r.oa, sa: a.sa + r.sa, ma: a.ma + r.ma }), { oa: 0, sa: 0, ma: 0 });
+
+    // the ledger must reconcile: opening + every movement = closing. If it does not,
+    // rows were lost in the copy and the numbers below cannot be trusted.
+    let reconciles = null;
+    if (opening && closing) {
+      const d = ['oa', 'sa', 'ma'].map(k => opening[k] + movement[k] - closing[k]);
+      reconciles = d.every(x => Math.abs(x) < 0.02);
+      if (!reconciles) warnings.push('Rows do not reconcile: opening + movements - closing = ' +
+        d.map(x => x.toFixed(2)).join(' / ') + ' (OA/SA/MA). Some rows were probably missed.');
+    } else {
+      warnings.push('No opening and closing BAL rows found, so the ledger could not be reconciled.');
+    }
+    return {
+      kind: 'cpfHistory',
+      fields: { rows, opening, closing, movement, reconciles,
+                contributions: sum('CON'), interest: sum('INT'), housing: sum('HSE'),
+                from: rows[0].date, to: rows[rows.length - 1].date, count: rows.length },
+      warnings,
+      confidence: Math.min(1, 0.4 + rows.length * 0.05)
+    };
+  }
+
   /* ---------- 4. generic: any text with money in it ---------- */
   function generic(text) {
     const hits = [];
@@ -308,6 +404,12 @@
         (has(text, 'Revised instalment') && has(text, 'benchmark')) ||
         /revised\s+from\s+[\d.]+\s*%\s*to\s+[\d.]+\s*%/i.test(text) ||
         (has(text, 'benchmark cost of funds') && has(text, 'interest rate'))) scored.push(uobRateChange(text));
+    if (has(text, 'Transaction history') ||
+        (has(text, 'Ordinary') && has(text, 'MediSave') && /\n\s*\d{1,2}\s+[A-Za-z]{3}\s+\d{4}\s+[A-Z]{3}\b/.test(text))) scored.push(cpfHistory(text));
+    if (has(text, 'principal amount withdrawn') ||
+        (has(text, 'Home ownership') && has(text, 'accrued interest'))) scored.push(cpfHousing(text));
+    if ((has(text, 'Ordinary Account') && (has(text, 'Special Account') || has(text, 'MediSave'))) ||
+        has(text, 'Your account balances')) scored.push(cpfBalances(text));
     if ((has(text,'TWRR')||has(text,'MWRR')) && has(text,'Performance')) scored.push(dbsPerformance(text));
     if (has(text, 'borrowing potential') && (has(text, 'Total assets') || has(text, 'Leverage Factor'))) scored.push(dbsPortfolioSummary(text));
     if (has(text, 'MRTL') && (has(text, 'borrowing potential') || has(text, 'Amount drawn'))) scored.push(dbsMrtl(text));
@@ -321,5 +423,5 @@
     return best;
   }
 
-  return { detect, uobStatement, uobLoanScreen, uobRateChange, dbsMrtl, dbsPortfolioSummary, dbsPerformance, generic, toNum, norm, after, dmy };
+  return { detect, uobStatement, uobLoanScreen, uobRateChange, cpfBalances, cpfHousing, cpfHistory, dbsMrtl, dbsPortfolioSummary, dbsPerformance, generic, toNum, norm, after, dmy };
 }));
