@@ -120,7 +120,7 @@ table.hist th:first-child,table.hist td:first-child{text-align:left}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:AUG:24-00:07';
+const VERSION = 'v2026:AUG:25-08:15';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -290,7 +290,7 @@ let state = {
   cpf: store.get('fortress.cpf', null),
   cpfHome: store.get('fortress.cpfHome', null),
   cpfTxns: store.get('fortress.cpfTxns', null),
-  settings: store.get('fortress.settings', { lendingValue:null, ltvAlert:35, homeValue:null, tab:'dash', fxCcy:'USD', fxBars:250, cpfYears:10, birthDate:null, frsOverride:null })
+  settings: store.get('fortress.settings', { lendingValue:null, ltvAlert:35, homeValue:null, tab:'dash', fxCcy:'USD', fxBars:250, cpfYears:10, birthDate:null, frsOverride:null, remindersDone:{} })
 };
 if(!state.snapshots){ state.snapshots = { [SEED.statementDate]: SEED }; store.set('fortress.snapshots', state.snapshots); }
 if(!state.manual){ state.manual = MANUAL_SEED; store.set('fortress.manual', state.manual); }
@@ -1111,6 +1111,146 @@ function candleChart(series, opts){
   };
 }
 
+/* ================= reminders =================
+   Every item here is either a dated fact from CK's own documents, or a rule test
+   recomputed from live balances — never a note typed once and left to rot. A test
+   that says "closed" today flips itself to "open" the moment the numbers change. */
+const REMINDER_SOURCES = {
+  topupCap:'CPF Board — "What is the maximum amount of top-ups I can receive?": below 55 the cap is the current FRS less SA savings less amounts withdrawn from SA for investment',
+  ers:'CPF Board — "Top up to enjoy higher retirement payouts": from 55 you may transfer OA savings to the RA, up to the Enhanced Retirement Sum',
+  sale55:'CPF Board — "Selling your home: before vs after age 55": below 55 refunds go to the OA; from 55 they top the RA to the FRS and the balance stays in the OA, withdrawable',
+  bhs:'CPF Board — Basic Healthcare Sum; it stops rising once you turn 65',
+  frs:'CPF Board — Full Retirement Sum by year of 55th birthday'
+};
+
+function retirementChecks(){
+  const out = [];
+  const A = cpfAge(), c = latestCpf(), R = CPF_RULES;
+  const snap = latest(), a = agg(snap), mm = latestManual();
+  const hc = cpfHomeClaim();
+  const add = o => out.push(o);
+  const today = new Date().toISOString().slice(0,10);
+
+  /* ---------- dated ---------- */
+  const L = (a.loans||[])[0];
+  if(L && L.maturityDate){
+    const d = daysUntil(L.maturityDate);
+    add({ id:'mrtl-maturity', cat:'dated', date:L.maturityDate, days:d,
+      tone: d<=14?'serious':(d<=45?'warn':'info'),
+      title:'Margin loan matures', head:`${money(Math.abs(L.principal),0)} at ${pct(L.ratePct,2)}`,
+      detail:`Roll it or repay it. This is a revolving facility, so renewal depends on DBS, not on your solvency — which is why Fortress scores rollover as the thinnest pillar. Repaying from the unpledged reserve removes the dependency entirely.`,
+      source:`DBS statement ${esc(snap.statementDate)}: ${esc(L.description||'MRTL')}` });
+  }
+  pendingRateChanges().forEach((rc,i)=>{
+    if(rc.instalment==null || !rc.instalmentEffective) return;
+    const d = daysUntil(rc.instalmentEffective);
+    const prev = mm?.mortgagePayment;
+    add({ id:'instalment-'+i, cat:'dated', date:rc.instalmentEffective, days:d,
+      tone: d<=45?'warn':'info',
+      title:'Home-loan instalment rises', head:`${prev!=null?money(prev,2)+' → ':''}${money(rc.instalment,2)}`,
+      detail:`${prev!=null?`Up ${money(rc.instalment-prev,2)}/mo, ${money((rc.instalment-prev)*12,2)}/yr. `:''}Rent cover falls to ${monthlyIncome()>0?pct(monthlyIncome()/rc.instalment*100,1):'—'}. Check the GIRO deduction clears the month it changes.`,
+      source: rc.source||'UOB rate-revision letter' });
+  });
+  if(A){
+    add({ id:'age-55', cat:'dated', date:A.date55, days:A.days55,
+      tone: A.days55>0 && A.days55<=1095 ? 'warn':'info',
+      title:'You turn 55 — the CPF rules change', head:`${money(R.ers-R.frs,0)} decision`,
+      detail:`The Special Account closes. ${money(frsFor(A.year55).value,0)} moves into a Retirement Account; the surplus lands in your OA at ${pct(R.oaPct,1)} instead of ${pct(R.saPct,1)} and becomes withdrawable. From that date you may transfer OA→RA up to the Enhanced Retirement Sum — ${money(R.ers,0)} on ${R.sumsYear} figures — swapping ${pct(R.oaPct,1)} for ${pct(R.saPct,1)} on roughly ${money(R.ers-R.frs,0)}. That is about ${money((R.ers-R.frs)*(R.saPct-R.oaPct)/100,0)}/yr of rate differential plus a larger lifelong payout, against giving up access to the money. Decide before the date, not on it.`,
+      source: REMINDER_SOURCES.ers });
+    add({ id:'bhs-65', cat:'dated', date:A.date65, days:daysUntil(A.date65), tone:'info',
+      title:'MediSave cap stops rising', head:`at 65, in ${A.year65}`,
+      detail:`Your Basic Healthcare Sum is fixed for life in the year you turn 65. Until then it rises most years — it went ${money(R.prevBhs,0)} (${R.prevBhsYear}) → ${money(R.bhs,0)} (${R.bhsYear}) — and each rise quietly re-opens a little MediSave headroom.`,
+      source: REMINDER_SOURCES.bhs });
+    const F = frsFor(A.year55);
+    if(!F.published) add({ id:'frs-unpublished', cat:'dated', date:null, days:null, tone:'warn',
+      title:`Enter the ${A.year55} Full Retirement Sum when CPF announces it`, head:`using ${money(F.value,0)} — too low`,
+      detail:`CPF publishes retirement sums a few years ahead; the series currently stops at ${R.frsLastPublished}. Until your cohort's figure is out, the projection understates what gets locked into the RA and overstates what stays liquid in the OA. Set it on the CPF tab the moment it is published.`,
+      source: REMINDER_SOURCES.frs });
+  }
+  { const age = daysUntil(R.checkedOn);
+    if(age!==null && age < -180) add({ id:'cpf-rules-stale', cat:'dated', date:null, days:null, tone:'warn',
+      title:'Re-check the CPF rates and caps', head:`last checked ${esc(R.checkedOn)}`,
+      detail:`Rates are announced quarterly and the BHS yearly. Everything on the CPF tab is built on figures read on ${esc(R.checkedOn)}; ${fmt(Math.abs(age),0)} days have passed.`,
+      source:'CPF Board publishes interest rates each quarter and the BHS each January' });
+  }
+
+  /* ---------- standing rule tests, recomputed every time ---------- */
+  if(c){
+    const cap = R.frs - (c.sa||0);
+    add({ id:'sa-topup', cat:'standing', tone: cap>0?'good':'info',
+      title:'Cash top-up to your Special Account', head: cap>0?`${money(cap,0)} of room`:'closed to you',
+      detail: cap>0
+        ? `The cap is the current FRS less your SA. You have ${money(cap,0)} of headroom, and cash top-ups carry up to ${money(8000,0)} of tax relief a year.`
+        : `The cap is the current FRS (${money(R.frs,0)}) less your SA (${money(c.sa,0)}) — that is ${money(cap,0)}, so there is no room. The standard advice to "top up your SA for the 4% and the ${money(8000,0)} relief" does not apply to you. This test re-runs on every render: if the FRS ever overtakes your SA it will say so.`,
+      source: REMINDER_SOURCES.topupCap });
+    const maCap = R.bhs - (c.ma||0);
+    add({ id:'ma-vc', cat:'standing', tone: maCap>0.005?'good':'info',
+      title:'Voluntary MediSave contribution', head: maCap>0.005?`${money(maCap,0)} of room`:'closed — at the cap',
+      detail: maCap>0.005
+        ? `MediSave sits ${money(maCap,0)} below the ${R.bhsYear} Basic Healthcare Sum, so that much can still go in.`
+        : `MediSave is exactly at the ${R.bhsYear} Basic Healthcare Sum of ${money(R.bhs,0)}. Nothing more fits until the BHS rises in January.`,
+      source: REMINDER_SOURCES.bhs });
+    add({ id:'loved-ones', cat:'standing', tone:'good',
+      title:'Top-ups for someone else still carry relief', head:`up to ${money(8000,0)}/yr`,
+      detail:`Your own top-up route is shut, but cash top-ups to a parent, spouse or sibling's CPF are a separate allowance with its own tax relief. Whether it is worth doing depends on who you would top up and your tax bracket — neither of which Fortress knows.`,
+      source:'CPF Board — up to $8,000 relief for self and another $8,000 for loved ones each calendar year' });
+  }
+  if(hc){
+    add({ id:'housing-refund', cat:'standing', tone:'info',
+      title:'A voluntary housing refund is close to net-worth-neutral', head:`${money(hc.yearlyAccrual,0)}/yr accruing`,
+      detail:`The accrual is interest you owe <em>yourself</em> — it lowers your proceeds on a sale and raises your CPF by the same amount. Refunding moves cash into the OA at ${pct(CPF_RULES.oaPct,1)} and removes an internal claim that was compounding at ${pct(CPF_RULES.oaPct,1)}. Net worth barely moves; liquidity falls until 55. Not the same as paying down a loan, though it is often described that way.`,
+      source:`CPF Home ownership dashboard, ${esc(hc.asOf)}` });
+    if(A) add({ id:'sale-timing', cat:'standing', tone:'info',
+      title:'If you ever sell, which side of 55 decides the liquidity', head:`${money(hc.claim,0)} at stake`,
+      detail:`Sell before ${esc(dayLabel(A.date55))} and the refund lands in your OA, locked until 55. Sell on or after, and it tops the RA to the FRS — already covered by your SA — with the balance staying in the OA, withdrawable in cash. Same sale, same money, very different access.`,
+      source: REMINDER_SOURCES.sale55 });
+  }
+  { const rates = [];
+    if((a.loans||[]).length) rates.push({ what:'DBS margin', pct:a.loans[0].ratePct, amt:Math.abs(a.loans[0].principal) });
+    const eff = effectiveLoanTerms();
+    const mRate = eff.ratePct ?? mm?.mortgageRatePct;
+    if(mRate!=null && mm?.mortgageBalance!=null) rates.push({ what:'UOB mortgage', pct:mRate, amt:mm.mortgageBalance });
+    const dearest = rates.length ? Math.max(...rates.map(r=>r.pct)) : null;
+    if(dearest!=null) add({ id:'debt-vs-cpf', cat:'standing', tone: dearest < R.oaPct ? 'good':'warn',
+      title:'Your borrowing costs against what CPF pays you', head: dearest < R.oaPct ? 'spread is in your favour' : 'a loan now costs more than CPF pays',
+      detail:`${rates.map(r=>`${r.what} ${money(r.amt,0)} at ${pct(r.pct,r.pct%1===0?2:5)}`).join('; ')}. CPF pays ${pct(R.oaPct,1)} in the OA and ${pct(R.saPct,1)} in the SA. ${dearest < R.oaPct
+        ? `Every loan you carry is cheaper than your own risk-free CPF return, so leaving money in CPF rather than prepaying is arithmetically defensible — the spread is positive. That flips the day a rate rises above ${pct(R.oaPct,1)}, and this line will say so.`
+        : `The dearest loan now runs above the OA rate. Prepaying starts to compete with leaving money in CPF.`}`,
+      source:`DBS statement ${esc(snap.statementDate)}; UOB rate letter; CPF published rates` });
+  }
+  { const top = Object.entries(a.pledgedCcy||{}).filter(([k])=>k!=='SGD').sort((x,y)=>y[1]-x[1])[0];
+    const share = top ? top[1]/a.pledgedAssets*100 : 0;
+    if(top) add({ id:'concentration', cat:'standing', tone: share>60?'warn':'info',
+      title:'Single-currency concentration', head:`${pct(share,1)} ${esc(top[0])}`,
+      detail:`${esc(top[0])} is ${pct(share,1)} of the pledged collateral, against liabilities and living costs that are entirely SGD. Fortress scores this as a wealth risk rather than a margin risk — the FX tab shows why a move of this size barely shifts the LTV — but it is one bet, not five.`,
+      source:`DBS statement ${esc(snap.statementDate)}, currency allocation` });
+  }
+  { const hv = state.settings.homeValue, nw = netWorth(a);
+    if(hv){ const total = nw.dbsUob + hv + (nw.cpf||0);
+      const share = hv/total*100;
+      if(share>50) add({ id:'property-share', cat:'standing', tone:'info',
+        title:'Share of net worth in one property', head:`${pct(share,1)}`,
+        detail:`The house is ${money(hv,0)} of a ${money(total,0)} balance sheet. It is illiquid, it takes months to sell, and ${money((cpfHomeClaim()||{}).claim||0,0)} of any sale goes to CPF rather than to you.`,
+        source:'your own valuation, entered on the Property tab' });
+    }
+  }
+
+  const done = state.settings.remindersDone || {};
+  return out.map(o=>({ ...o, done: !!done[o.id], doneOn: done[o.id]||null }));
+}
+/* The dashboard's alertList already banners loan maturity, FX settlement and LTV.
+   Reminders raise a banner only for dated items it does not cover, and only once the
+   date is close — everything else lives quietly in the card. */
+const ALERTLIST_COVERS = ['mrtl-maturity'];
+const remindersDue = ()=> retirementChecks().filter(r=>
+  !r.done && r.cat==='dated' && !ALERTLIST_COVERS.includes(r.id) &&
+  (r.tone==='serious' || (r.tone==='warn' && r.days!=null && r.days<=120)));
+function toggleReminder(id){
+  const d = state.settings.remindersDone || {};
+  if(d[id]) delete d[id]; else d[id] = new Date().toISOString().slice(0,10);
+  state.settings.remindersDone = d; saveAll(); render();
+}
+
 /* ================= tabs / rendering ================= */
 const TABS=[
   {id:'dash', label:'Overview', icon:'<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>'},
@@ -1146,6 +1286,42 @@ function alertList(snap,a){
   return out;
 }
 
+function reminderRow(r){
+  const cls = r.tone==='serious'?'neg':(r.tone==='warn'?'neg':(r.tone==='good'?'pos':''));
+  const when = r.date ? `${esc(dayLabel(r.date))}${r.days!=null?` · ${r.days>=0?fmt(r.days,0)+' days':'passed '+fmt(-r.days,0)+' days ago'}`:''}` : '';
+  return `
+  <div style="border-top:1px solid var(--border);padding:10px 0;${r.done?'opacity:.45':''}">
+    <div class="kv" style="border:none;padding:0">
+      <span class="k"><b>${esc(r.title)}</b>${when?`<br><span style="font-size:11px">${when}</span>`:''}</span>
+      <span class="v ${cls}">${r.head||''}</span>
+    </div>
+    <details style="margin-top:4px">
+      <summary class="note" style="cursor:pointer;font-size:12px">${r.done?'Dismissed — reopen':'Why this is here'}</summary>
+      <p class="note" style="margin-top:6px">${r.detail}</p>
+      <p class="note" style="font-size:11px">Source: ${esc(r.source)}</p>
+      <button class="btn ghost" style="padding:4px 10px;font-size:12px" onclick="toggleReminder('${esc(r.id)}')">${r.done?'Bring it back':'Dismiss — I have dealt with this'}</button>
+    </details>
+  </div>`;
+}
+function remindersCard(){
+  const all = retirementChecks();
+  if(!all.length) return '';
+  const live = all.filter(r=>!r.done), dismissed = all.filter(r=>r.done);
+  const dated = live.filter(r=>r.cat==='dated').sort((a,b)=>{
+    if(a.days==null) return 1; if(b.days==null) return -1; return a.days-b.days; });
+  const standing = live.filter(r=>r.cat==='standing');
+  const urgent = live.filter(r=>r.tone==='serious'||r.tone==='warn').length;
+  return `
+  <div class="card">
+    <h2>Reminders<span class="pill">${urgent?urgent+' need attention · ':''}${live.length} live</span></h2>
+    <p class="note" style="margin:0 0 4px">Dated items count down from your own documents. The rest are rule tests re-run every time this screen draws — a "closed" here becomes an "open" the moment the numbers change, without anyone editing a note.</p>
+    ${dated.length?`<div style="margin-top:8px"><span class="k" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">Dated</span>${dated.map(reminderRow).join('')}</div>`:''}
+    ${standing.length?`<div style="margin-top:14px"><span class="k" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">Standing — tested against today's numbers</span>${standing.map(reminderRow).join('')}</div>`:''}
+    ${dismissed.length?`<details style="margin-top:14px"><summary class="note" style="cursor:pointer">${dismissed.length} dismissed</summary>${dismissed.map(reminderRow).join('')}</details>`:''}
+    <p class="note" style="margin-top:12px"><b>These are prompts, not advice.</b> Fortress does not know your income needs, tax position, family or how long you intend to work — and the age-55 choice in particular turns on all four. Take the arithmetic to someone licensed before acting on it.</p>
+  </div>`;
+}
+
 function viewDash(){
   const snap=latest(), a=agg(snap), st=marginStatus(a);
   const lv=state.settings.lendingValue;
@@ -1154,6 +1330,7 @@ function viewDash(){
   const upd=daysUntil(snap.statementDate); // negative → days since
   return `
   <div class="banner ${st.cls}"><span class="ic">${st.ic}</span><div><b>${st.title}</b>${st.body}</div></div>
+  ${remindersDue().map(r=>`<div class="banner ${r.tone==='serious'?'b-serious':'b-warn'}"><span class="ic">${r.days!=null&&r.days<=45?'&#9200;':'&#9873;'}</span><div><b>${esc(r.title)}${r.days!=null?` — ${r.days>=0?fmt(r.days,0)+' days':'overdue'}`:''}</b>${r.head?esc(String(r.head).replace(/<[^>]*>/g,''))+'. ':''}Details in Reminders below.</div></div>`).join('')}
   <div class="card">
     <div class="hero">${money(a.net)}</div>
     <div class="hero-sub">DBS net assets · ${snap.portfolios.map(p=>esc(p.id)).join(' + ')} · statement ${snap.statementDate}${upd<-40?' · <span style="color:var(--serious)">statement is '+Math.abs(upd)+' days old — import the new one</span>':''}</div>
@@ -1199,6 +1376,7 @@ function viewDash(){
     <div class="tile"><div class="v">${money(allInMo)}</div><div class="l">All-in interest / month</div><div class="d">DBS ≈ ${money(a.estMonthlyInterest)} + mortgage ${impInt!==null?money(impInt):(mm?.mortgageRatePct!=null?'≈ '+money(mtg*mm.mortgageRatePct/100/12):'—')}</div></div>
     <div class="tile"><div class="v">${liquid>0?pct(totDebt/liquid*100,1):'—'}</div><div class="l">Total debt ÷ liquid assets</div><div class="d">${money(totDebt,0)} of debt against ${money(liquid,0)}${state.settings.homeValue?'<br>'+pct(totDebt/(liquid+state.settings.homeValue)*100,1)+' incl. property':'<br>property not counted'}</div></div>
   </div>`; })()}
+  ${remindersCard()}
   ${window.__seedFixes>0?`<div class="banner b-good"><span class="ic">↻</span><div><b>${window.__seedFixes} update${window.__seedFixes>1?'s':''} applied</b>Readings and settings added in newer versions of Fortress have been merged into this device. Nothing you entered was changed.</div></div>`:''}
   ${(()=>{ const F=fortressStrength(snap,a); if(!F) return '';
     const pctScore=F.tot/F.max*100;

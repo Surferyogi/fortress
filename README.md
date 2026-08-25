@@ -142,6 +142,25 @@ keeps them different.
 
 Every CPF rate, cap and sum in the app carries its source and the date it was checked.
 
+## Reminders
+
+The Overview tab carries a **Reminders** card in two halves.
+
+**Dated** items count down from documents you imported — the loan maturity from the DBS
+statement, the instalment change from the UOB letter, age 55 and the MediSave cap from your
+date of birth. A dated item raises a banner only when its date is close and the existing
+alert list does not already cover it, so there is one banner stack on that screen, not two.
+
+**Standing** items are rule tests re-run every time the screen draws, never notes typed once.
+The SA top-up test computes *FRS − your SA* and reports it closed because that figure is
+negative; the day the FRS overtakes your SA it will say open, with the headroom, without
+anyone editing anything. The same applies to the MediSave cap, the borrowing-rate-versus-CPF
+spread, currency concentration and the property's share of net worth.
+
+Each item carries its source and can be dismissed and brought back. The card ends by saying
+plainly that these are prompts and not advice: Fortress does not know your income needs, tax
+position, family or retirement date, and the age-55 choice turns on all four.
+
 ## Chart scales
 
 Most charts start their axis at zero. The **home-loan balance** chart does not: a 1%
