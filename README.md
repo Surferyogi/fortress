@@ -282,6 +282,63 @@ The shares are counted in net worth and **excluded from every margin calculation
 registered with the company, not pledged to DBS, so they cannot raise a lending value or
 answer a margin call. Same treatment as CPF.
 
+## Plain English
+
+A **Plain English** toggle sits in the header and is **on by default**. It does two things.
+
+It puts an *In plain English* card at the top of every tab: a one-line headline and four to six
+short points, written the way you would say them out loud — "for every $100 of investments, $21 is
+borrowed money", "if you sell, S$X goes back to CPF, not to your bank account". Every figure in it is
+live, computed from the same functions the detailed cards use, so the plain version cannot drift away
+from the numbers underneath it. Where Fortress does not know something, the plain wording says **Not
+known** rather than smoothing over it, and each summary ends by counting the open gaps on that tab.
+
+It also folds each card's explanatory prose — the notes and the warning boxes — into a single
+**Show the detail** block per card. The numbers, tables and charts stay visible; the reasoning is one
+tap away rather than gone. This runs as a pass over the rendered page, so not one of the ~40 cards
+had to be rewritten to support it, and turning the toggle off restores the original view exactly.
+
+The mode is remembered. Existing installs are switched on once by a seed migration that only fires
+when the setting is undefined, so a deliberate choice to go back to full detail is never overridden.
+
+## What Fortress doesn't know
+
+Every tab ends with a **What Fortress doesn't know** card listing the real holes in the data it
+holds — currently 24 across the eight tabs, ranked with the important ones first. Each entry says
+three things: what is missing, **what it stops Fortress saying**, and **how to close it**. They are
+collapsed by default and computed live, so an item disappears the moment the missing figure is
+entered — the tests prove this by entering a purchase price, watching two gaps vanish, clearing it,
+and watching them come back.
+
+The list is deliberately unflattering. It says that Fortress sees what CK owns but not what he earns
+or spends, and calls that the biggest question it cannot answer. It says the property valuation is
+his own figure rather than a valuation. It says unvested Air Liquide grants are invisible, that cost
+basis is known for the performance shares only, and that nothing is known about the tax on a
+disposal. It counts the missing months in the statement series by name.
+
+A **What the house cost you** form was added to the Property tab so the purchase-price gap can
+actually be closed: purchase price, year bought, and annual running costs. Blank fields stay blank —
+nothing is estimated, and the form refuses negative or impossible values rather than storing them.
+
+## Currency: wealth versus collateral
+
+The FX tab now opens with a **Euro exposure** card, because the Air Liquide shares are priced in
+euros and the rest of the tab could not see them.
+
+The distinction it draws is the whole point. Only pledged collateral can answer a margin call, so
+only pledged collateral belongs in the LTV, the buffer and the stress tables — and on that measure
+EUR is 0.78% of the book, a rounding error. But the shares are **40× larger** than the euro sitting at
+DBS, so at the wealth level a 10% euro move costs about S$85,000 against S$2,100 of collateral
+damage. Both statements are true. Fortress keeps them apart deliberately, and says why: folding
+unpledged shares into the collateral figures would flatter borrowing capacity with assets DBS cannot
+lend against, which is a worse error than understating the currency.
+
+A second chart shows **wealth by currency**, and unlike the collateral chart its bars sum exactly to
+net worth — foreign currencies at their asset value, SGD as the residual carrying the house, CPF and
+cash *less every liability*, since every liability is SGD. On that basis non-SGD is **66.8%** of net
+worth. The test suite asserts that the LTV, the pledged assets and the pledged EUR figure are all
+byte-for-byte unchanged by this addition.
+
 ## Chart scales
 
 Most charts start their axis at zero. The **home-loan balance** chart does not: a 1%

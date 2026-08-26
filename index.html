@@ -96,14 +96,34 @@ table.hist th:first-child,table.hist td:first-child{text-align:left}
 .hidden{display:none !important}
 .spin{width:18px;height:18px;border:2px solid var(--page);border-top-color:transparent;border-radius:50%;animation:sp 0.8s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
+.modeBtn{background:var(--surface);border:1px solid var(--border);color:var(--ink2);border-radius:99px;
+  padding:4px 11px;font:inherit;font-size:11px;font-weight:600;cursor:pointer;margin-left:auto;margin-right:8px;white-space:nowrap}
+.modeBtn.on{border-color:var(--s1);color:var(--s1)}
+details.more{margin-top:10px;border-top:1px dashed var(--border);padding-top:8px}
+details.more>summary{cursor:pointer;list-style:none;font-size:11.5px;font-weight:600;color:var(--s1)}
+details.more>summary::-webkit-details-marker{display:none}
+details.more>summary::after{content:'  \203A';display:inline-block;transition:transform .15s}
+details.more[open]>summary::after{transform:rotate(90deg)}
+.plain{background:color-mix(in srgb,var(--s1) 7%,var(--surface));border:1px solid color-mix(in srgb,var(--s1) 28%,transparent)}
+.plain h2{color:var(--s1)}
+.plain ul{margin:8px 0 0;padding-left:18px}
+.plain li{font-size:13.5px;line-height:1.6;margin:6px 0;color:var(--ink)}
+.plain li b{font-weight:700}
+.plain .lead{font-size:14.5px;line-height:1.5;font-weight:600;color:var(--ink);margin:2px 0 0}
 .pill{display:inline-block;font-size:10.5px;padding:2px 8px;border-radius:99px;border:1px solid var(--border);color:var(--ink2);margin-left:6px;vertical-align:middle}
 .warnbox{background:color-mix(in srgb,var(--warn) 12%,var(--surface));border:1px solid color-mix(in srgb,var(--warn) 40%,transparent);border-radius:10px;padding:10px;font-size:12px;margin:8px 0}
+details.gap{border-top:1px solid var(--border);padding:8px 0}
+details.gap>summary{cursor:pointer;list-style:none;font-size:13.5px;line-height:1.45;font-weight:600;color:var(--ink)}
+details.gap>summary::-webkit-details-marker{display:none}
+details.gap>summary::after{content:'  +';color:var(--muted);font-weight:400}
+details.gap[open]>summary::after{content:'  \2212'}
 .fine{font-size:10.5px;color:var(--muted);line-height:1.5;margin:14px 4px 20px}
 </style>
 </head>
 <body>
 <header>
   <h1>Fortress</h1>
+  <button id="simpleBtn" class="modeBtn" onclick="toggleSimple()" title="Switch between plain English and the full detail"></button>
   <span class="stamp" id="stamp" onclick="forceUpdate()" style="cursor:pointer" title="Tap to check for an update"></span>
 </header>
 <main id="main"></main>
@@ -121,7 +141,7 @@ table.hist th:first-child,table.hist td:first-child{text-align:left}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:AUG:26-17:15';
+const VERSION = 'v2026:AUG:26-21:44';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -436,7 +456,7 @@ let state = {
   cpfHome: store.get('fortress.cpfHome', null),
   cpfTxns: store.get('fortress.cpfTxns', null),
   al: store.get('fortress.al', null),
-  settings: store.get('fortress.settings', { lendingValue:null, ltvAlert:35, homeValue:null, tab:'dash', fxCcy:'USD', fxBars:250, cpfYears:10, birthDate:null, frsOverride:null, remindersDone:{}, alChart:'daily' })
+  settings: store.get('fortress.settings', { lendingValue:null, ltvAlert:35, homeValue:null, tab:'dash', fxCcy:'USD', fxBars:250, cpfYears:10, birthDate:null, frsOverride:null, remindersDone:{}, alChart:'daily', simple:true })
 };
 if(!state.snapshots){ state.snapshots = { [SEED.statementDate]: SEED }; store.set('fortress.snapshots', state.snapshots); }
 if(!state.manual){ state.manual = MANUAL_SEED; store.set('fortress.manual', state.manual); }
@@ -455,7 +475,7 @@ if(!state.al){ state.al = AL_SEED; store.set('fortress.al', state.al); }
    readings needs those to reach devices that already installed an older build,
    WITHOUT touching anything the user entered. Each migration is additive and
    idempotent: it fills gaps and repairs missing fields, and never deletes.  */
-const SEED_VERSION = 8;
+const SEED_VERSION = 9;
 function runSeedMigrations(){
   const from = store.get('fortress.seedVersion', 0);
   if(from >= SEED_VERSION) return 0;
@@ -512,6 +532,10 @@ function runSeedMigrations(){
   // v8 — the Air Liquide shareholding
   state.al = state.al || {};
   Object.keys(AL_SEED).forEach(d=>{ if(!state.al[d]){ state.al[d]={...AL_SEED[d], seeded:true}; changed++; } });
+
+  // v9 — plain-English mode arrived; existing installs default to ON, and the choice
+  //      is remembered from then on because it is only set when it is undefined.
+  if(state.settings.simple === undefined){ state.settings.simple = true; changed++; }
 
   store.set('fortress.seedVersion', SEED_VERSION);
   if(changed) saveAll();
@@ -1501,6 +1525,52 @@ function alBasis(){
         .map(y=>({ label:'from '+y, qty: rows.filter(r=>r.bonusYear===y).reduce((a,r)=>a+r.qty,0) }))) };
 }
 
+/* ---- currency exposure at TWO levels -------------------------------------
+   Margin level: only what DBS holds as collateral can answer a margin call, so only
+   that belongs in the LTV and buffer maths. The Air Liquide shares are registered with
+   the company, not pledged - they raise no lending value and are deliberately excluded.
+   Wealth level: a euro move hits them all the same, pledged or not. Fortress reports
+   both and never mixes them, because confusing the two is how a currency risk gets
+   either ignored or double-counted. */
+function fxExposure(){
+  const a = agg(latest());
+  const pledged = { ...(a.pledgedCcy||{}) };
+  const p = (typeof alPosition==='function') ? alPosition() : null;
+  const alSgd = (p && p.sgd!=null) ? p.sgd : 0;
+  const alCcy = p ? AL_META.ccy : null;                      // EUR, from the holding itself
+  const w = netWorth(a);
+  const wealthBase = w.dbsUob + (state.settings.homeValue||0) + (w.cpf||0) + alSgd;
+
+  /* Build wealth-by-currency so the parts actually sum to net worth. Foreign currencies
+     are carried at their asset value; SGD absorbs everything else - the house, CPF, UOB
+     cash - less every liability, since every liability is SGD. */
+  const wealth = {};
+  Object.keys(pledged).filter(c=>c!=='SGD').forEach(c=>{ wealth[c] = pledged[c]; });
+  if(alCcy && alSgd) wealth[alCcy] = (wealth[alCcy]||0) + alSgd;
+  const nonSgdTotal = Object.keys(wealth).reduce((t,c)=>t+wealth[c],0);
+  wealth.SGD = wealthBase - nonSgdTotal;      // the residual, by construction
+
+  const rows = Object.keys(wealth).sort((x,y)=>wealth[y]-wealth[x]).map(c=>({
+    ccy:c,
+    pledged: pledged[c]||0,
+    unpledged: (wealth[c]||0) - (pledged[c]||0),
+    total: wealth[c]||0,
+    pctOfCollateral: a.pledgedAssets ? (pledged[c]||0)/a.pledgedAssets*100 : null,
+    pctOfWealth: wealthBase ? (wealth[c]||0)/wealthBase*100 : null,
+    marginRelevant: (pledged[c]||0) > 0
+  }));
+  const eur = rows.find(r=>r.ccy===alCcy) || null;
+  const nonSgdWealth = nonSgdTotal;
+  const sumsToBase = Math.abs(rows.reduce((t,r)=>t+r.total,0) - wealthBase) < 0.01;
+  return { rows, eur, alSgd, alCcy, wealthBase, pledgedAssets:a.pledgedAssets,
+    nonSgdWealth, sumsToBase, sgdWealth: wealth.SGD, nonSgdWealthPct: wealthBase ? nonSgdWealth/wealthBase*100 : null,
+    /* how much bigger the wealth exposure is than the collateral exposure, for that currency */
+    eurMultiple: (eur && eur.pledged) ? eur.total/eur.pledged : null,
+    /* a move of x% in the currency, in SGD, at each level */
+    move: (c,pctMove) => { const r = rows.find(x=>x.ccy===c); if(!r) return null;
+      return { onCollateral: r.pledged*pctMove/100, onWealth: r.total*pctMove/100 }; } };
+}
+
 /* how much of everything is now one company */
 function alConcentration(){
   const p = alPosition(); if(!p||p.sgd==null) return null;
@@ -1512,6 +1582,155 @@ function alConcentration(){
            dbsUsdPct: (()=>{ const t=Object.entries(a.pledgedCcy||{}).filter(([k])=>k!=='SGD').sort((x,y)=>y[1]-x[1])[0];
              return t? t[1]/a.pledgedAssets*100 : null; })() };
 }
+
+/* ================= gaps =================
+   What Fortress does NOT know, tab by tab. Every entry is a real hole in the data it
+   holds - not a hypothetical - and each one is recomputed, so an item disappears the
+   moment the missing figure is entered. `blocks` says what the gap actually stops
+   Fortress from telling you; `fix` says how to close it. Nothing here is invented:
+   if a number is unavailable it is named as unavailable rather than estimated. */
+function gaps(){
+  const out = [];
+  const add = (tab, severity, title, blocks, fix, source) =>
+    out.push({ tab, severity, title, blocks, fix, source: source||null });
+
+  const snap = latest(), a = agg(snap), mm = latestManual(), w = netWorth(a);
+  const A = cpfAge(), c = latestCpf(), R = CPF_RULES;
+  const hc = cpfHomeClaim();
+  const p = (typeof alPosition==='function') ? alPosition() : null;
+  const BA = (typeof alBasis==='function') ? alBasis() : null;
+  const D = (typeof alDividends==='function') ? alDividends() : null;
+
+  /* ---------- Property ---------- */
+  if(!state.settings.homePurchasePrice)
+    add('prop','high','The purchase price of the house is not recorded',
+      'Fortress cannot tell you what the property has actually returned. It shows a valuation and a mortgage, but with no cost it cannot compute a gain, a holding-period return, or how much of your net worth is appreciation versus repayment.',
+      'Enter it under \u201cWhat the house cost you\u201d on the Property tab, with the year you bought.');
+  if(state.settings.homeValue)
+    add('prop','medium','The S$'+fmt(state.settings.homeValue,0)+' valuation is your own figure, not a valuation',
+      'Every property percentage on the dashboard moves with this number, including the share of net worth and the CPF claim as a fraction of proceeds.',
+      'Re-check it against recent transacted prices in the same development and update the date it was set.',
+      'entered by you on the Property tab');
+  if(!monthlyIncome())
+    add('prop','high','No rental income is recorded',
+      'Rent cover against the mortgage instalment cannot be computed, so Fortress cannot say whether the property funds itself.',
+      'Add the monthly rent on the Property tab.');
+  if(state.settings.homeAnnualCosts==null) add('prop','medium','Property running costs are not captured',
+    'Rent cover is measured against the instalment alone. Property tax, maintenance, agent fees, insurance and vacancy are not in Fortress, so the true net yield is lower than anything shown.',
+    'Add the annual total under \u201cWhat the house cost you\u201d on the Property tab.');
+
+  /* ---------- CPF ---------- */
+  if(A){ const F = frsFor(A.year55);
+    if(!F.published) add('cpf','high','The '+A.year55+' Full Retirement Sum has not been published',
+      'The projection to 55 uses '+money(F.value,0)+', the last published figure. Your cohort\'s sum will be higher, so Fortress currently understates what gets locked into the Retirement Account and overstates what stays liquid in the OA.',
+      'Enter it on the CPF tab the moment CPF announces it.',
+      'CPF publishes retirement sums a few years ahead; the series stops at '+R.frsLastPublished); }
+  add('cpf','medium','Future CPF contributions are an assumption, not a fact',
+    'The projection can run with or without contributions, but Fortress does not know your salary, your employer\'s rate, or how long you intend to work. The contribution figure it uses is derived from your recent ledger, not from anything you have told it.',
+    'Confirm the monthly contribution and the year you expect it to stop.');
+  add('cpf','medium','CPF interest rates are treated as fixed at today\'s floors',
+    'OA at '+pct(R.oaPct,1)+' and SA at '+pct(R.saPct,1)+' are statutory floors, reviewed quarterly. A long projection compounds whatever rate it is given, so a change of a quarter-point moves the 55 figure materially.',
+    'Re-check the rates each quarter; the CPF tab records when they were last verified ('+esc(R.checkedOn)+').',
+    'CPF Board publishes interest rates quarterly');
+
+  /* ---------- Air Liquide ---------- */
+  if(p){
+    add('al','high','Unvested grants are not in Fortress at all',
+      'Everything on the AL tab is shares you already hold. Any performance shares granted but not yet vested are invisible, so both your true Air Liquide exposure and your forward income are understated.',
+      'Load the portal\'s grant schedule for anything attributed but not yet vested.');
+    if(BA && BA.shortRows.length) BA.shortRows.forEach(r=>
+      add('al','high','About '+fmt(Math.abs(r.shortQty),0)+' shares left the '+esc(r.plan)+' tranche and nothing says why',
+        'Roughly '+money(Math.abs(r.shortBasis),0).replace('S$','€')+' of cost basis is unaccounted for. If it was a sale there is a disposal Fortress knows nothing about, with tax consequences it cannot see.',
+        'Find the contract note or the portal transaction for that plan.',
+        'derived by Fortress from the adjusted vesting price against the vesting History'));
+    add('al','medium','Cost basis is known for the performance shares only',
+      fmt(p.total - (BA?BA.qty:0),0)+' of your '+fmt(p.total,0)+' shares are ESPP and ordinary shares, and Fortress has no purchase price for any of them. It cannot state your total gain, only the gain on the '+fmt(BA?BA.qty:0,0)+' performance shares.',
+      'Load the ESPP subscription prices and the ordinary-share purchase prices.');
+    add('al','medium','Nothing is known about the tax on a disposal',
+      'Fortress reports the unrealised gain and refuses to net any tax off it, because it does not know how France or Singapore would treat a sale of these shares in your hands.',
+      'Establish this before any decision to sell, not after.');
+  }
+  if(D){
+    if(D.rateChanged) add('al','medium','The historic withholding rates are unexplained',
+      'Fortress can source today’s '+fmt(D.regimes[0].mean,2)+'% but not the rates that applied before 2020, so it cannot tell you whether the '+D.worst.span+' deductions were correct or whether anything was ever over-withheld.',
+      'A tax adviser can answer this from the payment notices; any French reclaim window is in any case long closed.',
+      'sourced: '+esc(AL_DIV_META.frDomestic.slice(0,60))+'…');
+    if(D.drops.length) add('al','medium','Two years of dividend coupons fell and the reason is not recorded',
+      D.drops.map(d=>d.year+' ('+fmt(Math.abs(d.delta),0)+' fewer)').join(' and ')+'. Shares left registered form. Fortress cannot tell whether that was a sale, a transfer, or a plan release, so it cannot reconcile your share history end to end.',
+      'The portal’s operations history for those years would settle it.');
+  }
+
+  /* ---------- DBS / margin ---------- */
+  { const L=(a.loans||[])[0];
+    if(L) add('dash','high','The margin facility’s renewal terms are not in Fortress',
+      'Rollover is scored as the thinnest pillar precisely because it depends on DBS, not on you. Fortress does not hold the facility agreement, so it does not know the margin-call trigger, the cure period, or whether the rate resets on renewal.',
+      'Add the facility letter’s key terms.',
+      'DBS statement '+esc(snap.statementDate)+' shows the loan but not the agreement');
+    add('dash','medium','Lending values are DBS’s, and they can change without a price move',
+      'The margin buffer assumes each holding keeps its current lending value. A haircut revision would cut the buffer with no market movement at all.',
+      'Note the current haircut per holding, and re-check after any concentrated position changes.');
+    add('dash','high','Fortress does not know your income or your spending',
+      'It can measure balance sheets and it cannot measure cash flow. Whether you can service the mortgage, the margin interest and your life from income is the single biggest question it cannot answer.',
+      'Even a rough monthly income and expense figure would let it test coverage rather than assume it.');
+    add('dash','medium','No insurance, will or CPF nomination is recorded',
+      'A net-worth picture with a concentrated employer holding and a mortgaged property says nothing about what happens to any of it if you cannot work.',
+      'These sit outside Fortress today; note whether they exist and when they were last reviewed.'); }
+
+  /* ---------- FX ---------- */
+  { const X=(typeof fxExposure==='function')?fxExposure():null;
+    if(X) add('fx','medium','The FX series is an embedded snapshot, not a live feed',
+      'Every rate on this tab, and the SGD value of your Air Liquide shares, is as at the last data load. Nothing here updates on its own.',
+      'Re-import when you next take a statement.',
+      esc((window.FX_META||{}).source||'embedded series'));
+    add('fx','medium','Nothing hedges the currency exposure and no cost of hedging is known',
+      'Fortress can show that non-SGD is the majority of your net worth. It cannot tell you what a hedge would cost, because it has no forward pricing beyond the one contract on the statement.',
+      'If hedging is ever considered, price it before deciding.'); }
+
+  /* ---------- Trends / returns ---------- */
+  add('trends','medium','Returns are computed from month-end snapshots only',
+    'A month-end series cannot see what happened inside the month, and both TWRR and MWRR are sensitive to the window chosen. Short windows here are indicative, not precise.',
+    'Nothing to fix — but read short-window returns as approximate.');
+  { const n=dates().length;
+    if(n<12) add('trends','medium','Only '+n+' monthly snapshot'+(n===1?'':'s')+' are loaded',
+      'Annualised figures from fewer than twelve months compound a short, possibly unrepresentative period. Fortress shows them but they are fragile.',
+      'Load earlier statements to lengthen the series.'); }
+
+  /* ---------- History ---------- */
+  { const ds = dates();
+    if(ds.length){
+      const miss = [];
+      const [y0,m0] = ds[0].split('-').map(Number);
+      const [y1,m1] = ds[ds.length-1].split('-').map(Number);
+      for(let y=y0, m=m0; y<y1 || (y===y1 && m<=m1); m++){
+        if(m>12){ m=1; y++; }
+        const k = y+'-'+String(m).padStart(2,'0');
+        if(!state.snapshots[k]) miss.push(k);
+      }
+      if(miss.length) add('hist','medium','The statement series has '+fmt(miss.length,0)+' missing month'+(miss.length>1?'s':''),
+        'Between '+esc(ds[0])+' and '+esc(ds[ds.length-1])+' these months have no statement: '+miss.map(esc).join(', ')+'. Every return, every trend line and every month-on-month change steps over those holes without saying so.',
+        'Load the missing eStatements.');
+      add('hist','medium','Fortress holds nothing before '+esc(ds[0]),
+        'It cannot tell you anything about how this portfolio behaved in an earlier drawdown, because it has never seen one.',
+        'Load older statements if you have them.');
+    }
+    const ms = manualMonths();
+    if(ms.length) add('hist','medium','UOB mortgage and cash figures exist only for the months you typed',
+      'There are '+fmt(ms.length,0)+' manual month'+(ms.length>1?'s':'')+' against '+fmt(dates().length,0)+' statement month'+(dates().length>1?'s':'')+'. Where a month has no manual entry, Fortress carries the last one forward rather than inventing a balance — which is honest but means those months are stale, not measured.',
+      'Add the missing months on the Property tab.'); }
+
+  /* ---------- Data hygiene, whole app ---------- */
+  { const age=daysUntil(R.checkedOn);
+    if(age!==null && age<-90) add('set','medium','The CPF rules were last verified '+fmt(Math.abs(age),0)+' days ago',
+      'Rates, the BHS and the retirement sums all change on published schedules. Everything on the CPF tab is built on figures read on '+esc(R.checkedOn)+'.',
+      'Re-check and update the date.'); }
+  add('set','medium','Fortress holds one source per institution and no independent check',
+    'Every DBS figure comes from DBS, every CPF figure from CPF, every Air Liquide figure from Air Liquide. Where two documents from the same source disagreed, Fortress said so — but a single source that is wrong throughout would not be caught.',
+    'Nothing to fix routinely; worth knowing when a number looks surprising.');
+
+  const order = { high:0, medium:1, low:2 };
+  return out.sort((x,y)=>order[x.severity]-order[y.severity]);
+}
+const gapsFor = tab => gaps().filter(g=>g.tab===tab);
 
 /* ================= reminders =================
    Every item here is either a dated fact from CK's own documents, or a rule test
@@ -2267,6 +2486,16 @@ function propForms(){
     <button class="btn" style="margin-top:12px" onclick="saveManual()">Save month</button>
     ${manualMonths().length?`<div style="margin-top:12px">${manualMonths().slice().reverse().map(m=>`<div class="kv"><span class="k">${esc(m)}</span><span class="v">${money(state.manual[m].mortgageBalance,2)} <button class="btn ghost" style="width:auto;padding:2px 8px;font-size:11px;margin-left:8px" onclick="delManual('${esc(m)}')">×</button></span></div>`).join('')}</div>`:''}
   </div>
+  <div class="card"><h2>What the house cost you</h2>
+    <p class="note" style="margin-top:0">Without a purchase price Fortress can show what the property is worth but not what it has returned. Nothing here is guessed — leave a field blank and Fortress says the figure is unavailable rather than estimating it.</p>
+    <label class="fld">Purchase price (S$)</label>
+    <input type="number" id="pPrice" step="0.01" inputmode="decimal" value="${state.settings.homePurchasePrice ?? ''}" placeholder="what you paid">
+    <label class="fld">Year bought</label>
+    <input type="number" id="pYear" step="1" inputmode="numeric" value="${state.settings.homeBoughtYear ?? ''}" placeholder="e.g. 2019">
+    <label class="fld">Running costs per year (S$) — tax, maintenance, agent, insurance</label>
+    <input type="number" id="pCosts" step="0.01" inputmode="decimal" value="${state.settings.homeAnnualCosts ?? ''}" placeholder="optional but it makes the yield honest">
+    <button class="btn" style="margin-top:12px" onclick="savePropCost()">Save</button>
+  </div>
   <div class="card"><h2>Rent &amp; recurring income</h2>
     ${(state.income||[]).map((i,ix)=>`<div class="kv"><span class="k">${esc(i.label)}${i.payer?' · '+esc(i.payer):''}</span><span class="v">${money(i.amount,2)}/mo
       <button class="btn ghost" style="width:auto;padding:2px 8px;font-size:11px;margin-left:8px" onclick="delIncome(${ix})">×</button></span></div>`).join('') || '<p class="note">None yet.</p>'}
@@ -2818,6 +3047,27 @@ function viewFX(){
   })();
   return `
   ${chartCard}
+  ${(()=>{ const X=fxExposure(); if(!X||!X.eur||!X.alSgd) return '';
+    const E=X.eur, m10=X.move(X.alCcy,-10);
+    const items2=X.rows.filter(r=>r.total>0).map((r,i)=>({label:r.ccy, v:r.total, pct:r.pctOfWealth,
+      color:['var(--s1)','var(--s2)','var(--s3)','var(--s4)','var(--muted)','var(--axis)'][Math.min(i,5)]}));
+    return `
+  <div class="card">
+    <h2>Euro exposure<span class="pill">two different things</span></h2>
+    <div class="kv"><span class="k">${esc(X.alCcy)} pledged at DBS<br><span style="font-size:11px">collateral — this is what a margin call can reach</span></span><span class="v">${money(E.pledged,0)}<br><span class="k" style="font-size:11px">${pct(E.pctOfCollateral,2)} of collateral</span></span></div>
+    <div class="kv"><span class="k">Air Liquide shares<br><span style="font-size:11px">${esc(X.alCcy)}-denominated, <b>not</b> pledged to anyone</span></span><span class="v">${money(X.alSgd,0)}</span></div>
+    <div class="kv"><span class="k"><b>Total ${esc(X.alCcy)} you actually own</b></span><span class="v"><b>${money(E.total,0)}</b><br><span class="k" style="font-size:11px">${pct(E.pctOfWealth,1)} of everything you own</span></span></div>
+
+    <div class="warnbox" style="margin-top:10px"><b>The FX tab has been understating your euro exposure by a factor of ${fmt(X.eurMultiple,0)}.</b>
+      Every stress table below is built on <em>collateral</em>, because collateral is the only thing that can answer a margin call — and on that measure ${esc(X.alCcy)} is a rounding error at ${pct(E.pctOfCollateral,2)}. But you own ${money(X.alSgd,0)} of Air Liquide shares priced in ${esc(X.alCcy)}, which is ${fmt(X.eurMultiple,0)}&times; the ${money(E.pledged,0)} sitting at DBS. A ${esc(X.alCcy)} fall does not touch your LTV; it takes ${money(Math.abs(m10.onWealth),0)} off your net worth for every 10% it moves, against ${money(Math.abs(m10.onCollateral),0)} of collateral damage.
+      <br><br><b>Both statements are true and they are not in conflict.</b> ${esc(X.alCcy)} is a wealth risk, not a margin risk. Fortress keeps the two apart deliberately: folding the shares into the collateral figures would flatter your borrowing capacity with assets DBS cannot lend against, and that is a worse error than understating the currency.</div>
+
+    <div style="margin-top:12px"><b style="font-size:13px">Everything you own, by currency</b></div>
+    ${hBars(items2,{yFmt:v=>money(v)})}
+    <p class="note">This chart is <b>wealth</b>, not collateral, and the bars sum to your ${money(X.wealthBase,0)} net worth${X.sumsToBase?'':' — <b>except they do not, which is a bug worth reporting</b>'}. Foreign currencies are carried at their asset value; the SGD bar is everything else — the house${state.settings.homeValue?` at ${money(state.settings.homeValue,0)}`:''}, CPF and UOB cash — <em>less every liability</em>, because the mortgage and the margin loan are both SGD. <b>Non-SGD is ${pct(X.nonSgdWealthPct,1)} of your net worth</b>, against ${pct(X.rows.find(r=>r.ccy==='SGD').pctOfWealth,1)} in SGD, while every liability and every living cost you have is SGD. The collateral chart below is a different measure and will not match this one.</p>
+    <p class="note">${esc(AL_META.company)} trades in ${esc(X.alCcy)} on ${esc(AL_META.exchange)}; converted at ${fmt((alPosition()||{}).fx,6)} SGD/${esc(X.alCcy)} from the DBS statement's indicative rate. Source: Air Liquide account statement and the DBS statement's FX table.</p>
+  </div>`; })()}
+
   <div class="card"><h2>Currency exposure (collateral, SGD-equivalent)</h2>
     ${hBars(items,{yFmt:v=>money(v)})}
     <p class="note">Loans by currency: ${Object.entries(loanCcy).map(([c,v])=>`${c} ${money(v)}`).join(', ')||'none'}. ${(()=>{const usd=a.pledgedCcy.USD||0; return usd/a.pledgedAssets>0.5 && !loanCcy.USD ? `Mismatch: ${pct(usd/a.pledgedAssets*100,1)} of assets are USD while the loan is ${Object.keys(loanCcy).join('/')||'—'} — a USD fall shrinks assets but not the debt, so LTV and net worth both take the hit.`:''})()}</p>
@@ -2951,11 +3201,178 @@ function viewSet(){
   </div>`;
 }
 
+/* ================= plain English =================
+   The same facts as the rest of the app, said the way you would say them out loud.
+   Every number is live - nothing here is a fixed sentence with a figure typed into it,
+   so these summaries cannot drift away from the cards below them. Where Fortress does
+   not know something, the plain version says "not known" rather than smoothing over it. */
+function plainSummary(tab){
+  const snap=latest(), a=agg(snap), mm=latestManual(), w=netWorth(a);
+  const M = n => money(n,0);
+  const nw = w.dbsUob + (state.settings.homeValue||0) + (w.cpf||0) + (w.al||0);
+  const mr=latestMrtl(), cap=mrtlCapacity(mr);
+  const buf = (mr&&cap&&mr.amountDrawn!=null) ? 100-mr.amountDrawn/cap.capacity*100 : null;
+  const p=(typeof alPosition==='function')?alPosition():null;
+  const C=(typeof alConcentration==='function')?alConcentration():null;
+  const c=latestCpf(), A=cpfAge();
+  const X=(typeof fxExposure==='function')?fxExposure():null;
+  const inc=monthlyIncome(), eff=effectiveLoanTerms();
+  const instal = eff.instalment ?? mm?.mortgagePayment ?? null;
+  const D=(typeof alDividends==='function')?alDividends():null;
+  const BA=(typeof alBasis==='function')?alBasis():null;
+  const G=gapsFor(tab), hi=G.filter(g=>g.severity==='high').length;
+
+  const T = {
+    dash: {
+      lead:`You are worth about <b>${M(nw)}</b>. The main thing to watch is how much you have borrowed against your investments.`,
+      points:[
+        `Your investments at DBS are worth <b>${M(a.pledgedAssets)}</b>, and you have borrowed <b>${M(a.debt)}</b> against them. That is <b>${pct(a.ltv,1)}</b> — for every $100 of investments, $${fmt(a.ltv,0)} is borrowed money.`,
+        buf!=null?`If those investments fell about <b>${pct(buf,0)}</b>, the bank could demand you pay some of the loan back straight away. That is called a margin call. Right now you are a long way from it.`:null,
+        `The house is worth <b>${M(state.settings.homeValue||0)}</b> and you still owe <b>${M(mm?.mortgageBalance||0)}</b> on it.`,
+        `Your CPF is <b>${M(w.cpf||0)}</b>. You cannot spend most of it yet.`,
+        p?`Your Air Liquide shares are <b>${M(p.sgd)}</b>${C?` — that is <b>${pct(C.pctOfNet,0)}</b> of everything you own, in the company that also pays your salary`:''}.`:null,
+        `<b>The big unknown:</b> Fortress sees what you own, not what you earn or spend. It cannot tell you whether your income covers your bills.`
+      ]},
+    prop: {
+      lead:`The house is worth about <b>${M(state.settings.homeValue||0)}</b>. You still owe <b>${M(mm?.mortgageBalance||0)}</b>, so your share of it is roughly <b>${M((state.settings.homeValue||0)-(mm?.mortgageBalance||0))}</b>.`,
+      points:[
+        instal!=null?`You pay <b>${money(instal,0)}</b> a month.${inc?` The rent brings in <b>${money(inc,0)}</b>, which covers <b>${pct(inc/instal*100,0)}</b> of it.`:''}`:null,
+        eff.ratePct!=null?`The interest rate is <b>${pct(eff.ratePct,2)}</b> and it is <b>floating</b> — it can change, and the bank writes to tell you when it does.`:null,
+        `Every payment splits two ways: part is interest, which is gone, and part reduces what you owe. Only the second part builds your wealth.`,
+        (typeof cpfHomeClaim==='function'&&cpfHomeClaim())?`You used <b>${M(cpfHomeClaim().principal)}</b> of CPF to buy it. If you sell, <b>${M(cpfHomeClaim().claim)}</b> goes back to CPF, not to your bank account.`:null,
+        state.settings.homePurchasePrice?null:`<b>Not known:</b> what you paid for it. Without that, Fortress cannot say whether the house has been a good investment.`
+      ]},
+    cpf: {
+      lead:c?`You have <b>${M(cpfTotal(c))}</b> in CPF. It earns ${pct(CPF_RULES.oaPct,1)}–${pct(CPF_RULES.saPct,1)} a year risk-free, which is more than most savings accounts.`:`No CPF balances are loaded yet.`,
+      points:c?[
+        `It sits in three pots: <b>${M(c.oa)}</b> Ordinary (housing and some investing), <b>${M(c.sa)}</b> Special (retirement, higher interest), <b>${M(c.ma)}</b> MediSave (healthcare).`,
+        A?`At <b>55</b>, in ${A.year55}, the rules change. The Special Account closes, a set amount moves into a Retirement Account, and whatever is left over becomes money you can actually withdraw.`:null,
+        `The Special Account pays ${pct(CPF_RULES.saPct,1)} and the Ordinary Account ${pct(CPF_RULES.oaPct,1)}. That gap is why where the money sits matters.`,
+        (typeof cpfSaOverFrs==='function'&&cpfSaOverFrs())?`Your Special Account is already above the current Full Retirement Sum, so the usual advice to "top up your SA for the tax relief" is <b>closed to you</b>. Fortress checks this every time it loads.`:null,
+        `<b>Not known:</b> the retirement sum for your year. CPF has not published it yet, so the projection uses the last published figure and is therefore a little optimistic about how much stays liquid.`
+      ]:[]},
+    al: {
+      lead:p?`You own <b>${fmt(p.total,0)}</b> Air Liquide shares worth <b>${M(p.sgd)}</b>. They came from working there, not from buying them.`:'No Air Liquide holding is loaded.',
+      points:p?[
+        C?`This is <b>${pct(C.pctOfNet,0)}</b> of everything you own. Your salary, your CPF contributions and these shares all depend on the same company. If it has a bad decade, three things go wrong at once.`:null,
+        `Hold shares in registered form for two full calendar years and Air Liquide pays you <b>10% extra</b> dividend on them, and extra free shares too. ${p.byBonus.filter(b=>!b.qualified).length?`<b>${fmt(p.byBonus.filter(b=>!b.qualified).reduce((t,b)=>t+b.qty,0),0)}</b> of your shares are still waiting for that clock to finish.`:''}`,
+        D?`Dividends paid you <b>&euro;${fmt(D.last.net,0)}</b> last year after tax. Over ${D.rows.length} years the total is <b>&euro;${fmt(D.totalNet,0)}</b>.`:null,
+        BA?`The performance shares cost you nothing — they were granted. They are worth <b>&euro;${fmt(BA.val,0)}</b> today against a tax cost base of <b>&euro;${fmt(BA.cost,0)}</b>.`:null,
+        `These shares are <b>not</b> pledged to DBS, so they cannot be seized in a margin call — but they also cannot help you survive one.`,
+        `<b>Not known:</b> what tax you would pay if you sold. Fortress refuses to guess it.`
+      ]:[]},
+    trends: {
+      lead:`This tab answers one question: is the money growing, and how much of that is skill versus simply adding more money?`,
+      points:[
+        `<b>Time-weighted return</b> ignores your deposits and withdrawals. It measures how the <em>investments</em> did.`,
+        `<b>Money-weighted return</b> counts your timing too. If you added money right before a rise, it looks better.`,
+        `The two differ whenever you move money in or out. Neither is wrong — they answer different questions.`,
+        `Interest paid on the margin loan is a real drag on returns. It comes out whether the market rises or not.`,
+        `<b>Care needed:</b> these numbers come from month-end snapshots only, so short periods are rough, not exact.`
+      ]},
+    fx: {
+      lead:X?`<b>${pct(X.nonSgdWealthPct,0)}</b> of your wealth is in foreign currencies, while every bill you pay is in Singapore dollars.`:'No currency data loaded.',
+      points:X?[
+        `If the Singapore dollar gets stronger, your foreign assets are worth <em>less</em> in SGD — even if their price abroad never moved.`,
+        `<b>US dollars</b> are the big one: ${M(X.rows.find(r=>r.ccy==='USD')?.total||0)}, about ${pct(X.rows.find(r=>r.ccy==='USD')?.pctOfWealth||0,0)} of your wealth.`,
+        X.eur?`<b>Euros</b> are ${M(X.eur.total)} once the Air Liquide shares are counted — <b>${fmt(X.eurMultiple,0)} times</b> the euro sitting at DBS. The stress tables below only see the DBS part, because only that part can be caught in a margin call.`:null,
+        `A currency fall and a margin call are different dangers. A fall makes you poorer; only the pledged investments can trigger a call.`,
+        `<b>Not known:</b> what hedging would cost. Fortress can show the risk but not price the insurance.`
+      ]:[]},
+    hist: {
+      lead:`This is the raw record — one row per bank statement Fortress has read. Everything else in the app is built from these rows.`,
+      points:[
+        `<b>${fmt(dates().length,0)}</b> monthly statements are loaded${dates().length?`, from ${esc(dates()[0])} to ${esc(dates()[dates().length-1])}`:''}.`,
+        `Nothing here was typed by hand — the figures are parsed straight out of each statement, and an import is refused outright if the numbers do not add up.`,
+        `Use <b>Export backup</b> before you change devices. Fortress stores everything on this phone and nowhere else.`,
+        `Gaps in the series matter: a missing month makes every trend line step over a hole without saying so.`
+      ]},
+    set: {
+      lead:`Your data lives only on this device. There is no account, no server, and no copy anywhere else.`,
+      points:[
+        `Set a passcode and everything is scrambled before it is stored, so a stolen phone does not hand over your balances.`,
+        `<b>If you forget the passcode there is no reset.</b> The data cannot be recovered. Export a backup first.`,
+        `Clearing your browser data deletes Fortress's data too.`,
+        `The lending value and alert level here change the warnings on the dashboard, not the underlying facts.`
+      ]}
+  };
+  const t = T[tab]; if(!t) return null;
+  const points = (t.points||[]).filter(Boolean);
+  return { lead:t.lead, points, gapCount:G.length, highGaps:hi };
+}
+
+function plainCard(tab){
+  if(!state.settings.simple) return '';
+  const P = plainSummary(tab); if(!P) return '';
+  return `
+  <div class="card plain">
+    <h2>In plain English</h2>
+    <p class="lead">${P.lead}</p>
+    ${P.points.length?`<ul>${P.points.map(x=>`<li>${x}</li>`).join('')}</ul>`:''}
+    ${P.gapCount?`<p class="note" style="margin-top:10px">Fortress is missing <b>${fmt(P.gapCount,0)}</b> piece${P.gapCount>1?'s':''} of information for this tab${P.highGaps?`, ${P.highGaps} of them important`:''}. They are listed at the bottom of the page.</p>`:''}
+  </div>`;
+}
+
+/* Collapse the explanatory prose into one expandable block per card, so the numbers
+   read first and the reasoning is one tap away rather than gone. Runs after render
+   rather than being baked into each card, so no card had to be rewritten for it. */
+function simplify(){
+  const root = document.getElementById('main');
+  root.classList.toggle('simple', !!state.settings.simple);
+  if(!state.settings.simple) return;
+  root.querySelectorAll('.card').forEach(card=>{
+    if(card.classList.contains('plain')) return;
+    if(card.querySelector('details.gap')) return;              // the gaps card collapses itself
+    if(card.querySelector('details.more')) return;             // already done
+    const detail = [...card.children].filter(el =>
+      el.classList && (el.classList.contains('note') || el.classList.contains('warnbox')));
+    if(detail.length < 1) return;
+    const keep = card.querySelectorAll('.kv, table, svg, .banner').length;
+    if(!keep) return;                                          // a card that is ONLY prose stays open
+    const d = document.createElement('details');
+    d.className = 'more';
+    const sum = document.createElement('summary');
+    sum.textContent = detail.length===1 ? 'Show the detail' : `Show the detail (${detail.length})`;
+    d.appendChild(sum);
+    detail.forEach(el=>d.appendChild(el));
+    card.appendChild(d);
+  });
+}
+
+function toggleSimple(){ state.settings.simple = !state.settings.simple; saveAll(); render(); }
+
+/* Every tab ends with the same honest footer: what Fortress does not know about it. */
+function gapsCard(tab){
+  const g = gapsFor(tab); if(!g.length) return '';
+  const dot = s => s==='high' ? '<span style="color:var(--serious)">&#9679;</span>'
+                 : s==='medium' ? '<span style="color:var(--warn,#b8860b)">&#9679;</span>'
+                 : '<span style="color:var(--muted)">&#9679;</span>';
+  const high = g.filter(x=>x.severity==='high').length;
+  return `
+  <div class="card">
+    <h2>What Fortress doesn't know<span class="pill">${g.length} gap${g.length>1?'s':''}${high?' · '+high+' major':''}</span></h2>
+    <p class="note" style="margin-top:0">Every item is a real hole in the data Fortress holds, not a hypothetical. Each one disappears from this list the moment the missing figure is entered.</p>
+    ${g.map(x=>`
+    <details class="gap">
+      <summary>${dot(x.severity)} ${esc(x.title)}</summary>
+      <p class="note" style="margin:6px 0 0"><b>What it stops Fortress saying:</b> ${x.blocks}</p>
+      <p class="note" style="margin:4px 0 0"><b>How to close it:</b> ${x.fix}</p>
+      ${x.source?`<p class="note" style="margin:4px 0 0;font-size:11px">Source: ${x.source}</p>`:''}
+    </details>`).join('')}
+  </div>`;
+}
+
 function render(){
   renderTabs();
   document.getElementById('stamp').textContent = VERSION;
   const v={dash:viewDash,prop:viewProp,cpf:viewCpf,al:viewAl,trends:viewTrends,fx:viewFX,hist:viewHist,set:viewSet}[state.settings.tab]||viewDash;
-  document.getElementById('main').innerHTML = v() + `<p class="fine">Monitoring aid only — verify against your official DBS statements. ${VERSION}</p>`;
+  const tab = state.settings.tab;
+  document.getElementById('main').innerHTML = plainCard(tab) + v() + gapsCard(tab)
+    + `<p class="fine">Monitoring aid only — verify against your official DBS statements. ${VERSION}</p>`;
+  simplify();
+  const btn = document.getElementById('simpleBtn');
+  if(btn){ btn.textContent = state.settings.simple ? 'Plain English' : 'Full detail';
+           btn.classList.toggle('on', !!state.settings.simple); }
 }
 
 /* ================= actions ================= */
@@ -2967,6 +3384,18 @@ function saveSettings(){
   state.settings.ltvAlert = al===''?35:Math.min(95,Math.max(5,+al));
   if(hv) state.settings.homeValue = hv.value===''?null:Math.max(0,+hv.value);
   saveAll(); go('dash');
+}
+function savePropCost(){
+  const n=id=>{ const e=document.getElementById(id); if(!e) return undefined;
+                return e.value===''? null : +e.value; };
+  const price=n('pPrice'), yr=n('pYear'), costs=n('pCosts');
+  if(price!==null && price!==undefined && !(price>0)){ alert('Purchase price must be a positive number, or blank.'); return; }
+  if(yr!==null && yr!==undefined && !(yr>=1960 && yr<=new Date().getFullYear())){ alert('Year bought looks wrong.'); return; }
+  if(costs!==null && costs!==undefined && costs<0){ alert('Running costs cannot be negative.'); return; }
+  if(price!==undefined) state.settings.homePurchasePrice = price;
+  if(yr!==undefined)    state.settings.homeBoughtYear    = yr;
+  if(costs!==undefined) state.settings.homeAnnualCosts   = costs;
+  saveAll(); render();
 }
 function saveManual(){
   const m=document.getElementById('mMonth').value.trim();
