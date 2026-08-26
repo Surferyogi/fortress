@@ -386,6 +386,73 @@
     };
   }
 
+  /* ---------- Air Liquide: the account statement, or the shareholder portal ----------
+     The statement carries the line detail; the portal carries the headline totals and the
+     loyalty-bonus tranches. Both are parsed here and each is checked against its own
+     stated totals, so a partial read is caught rather than believed. */
+  function alHolding(text) {
+    const warnings = [];
+    const lines = [];
+    const TYPES = { 'ordinary shares':'Ordinary', 'employee savings shares (espp)':'ESPP', 'performance shares':'Performance' };
+    // The statement groups rows into blocks that each END with a Sub-total, and prints the
+    // "Bonus in YYYY" label once per block, vertically centred — so it can sit above or below
+    // the rows it governs. Parse block by block rather than carrying a label across boundaries.
+    const rowRe = /(ordinary shares|employee savings\s+shares \(espp\)|performance\s+shares)\s+(\d{4})\s+(available|unavailable|blocked)\s+([\d,]+)/gi;
+    const portalRowRe = /(ordinary shares|employee savings\s+shares \(espp\)|performance\s+shares)\s+([\d,]+)\s+(?:status\s+)?(available|unavailable|blocked)\s+(?:number of years\s+held\s+)?(\d{4})/gi;
+    const blocks = text.split(/sub-?total/i);
+    blocks.forEach(block => {
+      const yr = (block.match(/bonus\s+in\s+(\d{4})/i) || [])[1];
+      const isin = (block.match(/FR[0-9A-Z]{10}/) || [])[0] || null;
+      const found = [];
+      let m;
+      rowRe.lastIndex = 0;
+      while ((m = rowRe.exec(block)) !== null)
+        found.push({ type: TYPES[m[1].toLowerCase().replace(/\s+/g, ' ')], vintage: +m[2],
+                     available: m[3].toLowerCase() === 'available', qty: toNum(m[4]) });
+      if (!found.length) {                       // portal layout: quantity before the status
+        portalRowRe.lastIndex = 0;
+        while ((m = portalRowRe.exec(block)) !== null)
+          found.push({ type: TYPES[m[1].toLowerCase().replace(/\s+/g, ' ')], vintage: +m[4],
+                       available: m[3].toLowerCase() === 'available', qty: toNum(m[2]) });
+      }
+      found.forEach(f => lines.push({ ...f, bonusYear: yr ? +yr : null, isin }));
+    });
+    const isins = [...new Set((text.match(/FR[0-9A-Z]{10}/g) || []))];
+
+    const sum = lines.reduce((a, l) => a + (l.qty || 0), 0);
+    const blocked = lines.filter(l => !l.available).reduce((a, l) => a + l.qty, 0);
+    // "Sub-total" lines also contain the word total — take the last true Total only
+    const statedTotal = (() => {
+      const portal = text.match(/([\d,]{3,})\s+total\s+portfolio/i);          // portal: number first
+      if (portal) return toNum(portal[1]);
+      const all = [...text.matchAll(/(^|[^-\w])total\s*[:\s]*([\d,]{3,})/gi)]; // statement: number last
+      return all.length ? toNum(all[all.length - 1][2]) : null;
+    })();
+    const priceM = text.match(/([\d,]+\.\d{2})\s*EUR\s+([\d,]+\.\d{2})\s*EUR/i);
+    const price = priceM ? toNum(priceM[1]) : (() => { const p = text.match(/last known share price[^\d]*([\d,]+\.\d{2})/i); return p ? toNum(p[1]) : null; })();
+    const value = priceM ? toNum(priceM[2]) : (() => { const v = text.match(/([\d,]+\.\d{2})\s*€|global valuation/i); return v && v[1] ? toNum(v[1]) : null; })();
+    const availM = text.match(/([\d,]+)\s+available shares/i);
+    const blockM = text.match(/([\d,]+)\s+blocked or pending/i);
+    const asOf = (() => { const d = text.match(/(\d{2})\/(\d{2})\/(\d{4})/); return d ? d[3] + '-' + d[1] + '-' + d[2] : null; })();
+
+    if (!lines.length && statedTotal === null) warnings.push('No holding lines and no total found.');
+    if (lines.length && statedTotal !== null && Math.abs(sum - statedTotal) > 0.5)
+      warnings.push('Lines add to ' + sum + ' but the document states ' + statedTotal + ' — some rows were missed, do not save this.');
+    if (blockM && lines.length && Math.abs(blocked - toNum(blockM[1])) > 0.5)
+      warnings.push('Blocked lines add to ' + blocked + ' but the page says ' + toNum(blockM[1]) + '.');
+    if (price !== null && (price < 20 || price > 1000)) warnings.push('Share price of ' + price + ' looks wrong — check the OCR.');
+
+    const reconciles = lines.length ? (statedTotal === null || Math.abs(sum - statedTotal) <= 0.5) : null;
+    return {
+      kind: 'alHolding',
+      fields: { lines, isins, total: lines.length ? sum : statedTotal, statedTotal, blocked: lines.length ? blocked : (blockM ? toNum(blockM[1]) : null),
+                available: availM ? toNum(availM[1]) : (lines.length ? sum - blocked : null),
+                price, value, asOf, reconciles },
+      warnings,
+      confidence: Math.min(1, (lines.length ? 0.5 + Math.min(lines.length, 10) * 0.05 : 0) + (statedTotal !== null ? 0.2 : 0) + (price !== null ? 0.2 : 0))
+    };
+  }
+
   /* ---------- 4. generic: any text with money in it ---------- */
   function generic(text) {
     const hits = [];
@@ -404,6 +471,9 @@
         (has(text, 'Revised instalment') && has(text, 'benchmark')) ||
         /revised\s+from\s+[\d.]+\s*%\s*to\s+[\d.]+\s*%/i.test(text) ||
         (has(text, 'benchmark cost of funds') && has(text, 'interest rate'))) scored.push(uobRateChange(text));
+    if (has(text, 'AIR LIQUIDE') || has(text, 'Air Liquide') ||
+        has(text, 'loyalty bonus') || has(text, 'Global valuation') ||
+        /FR[0-9A-Z]{10}/.test(text) && (has(text, 'Performance shares') || has(text, 'Employee savings'))) scored.push(alHolding(text));
     if (has(text, 'Transaction history') ||
         (has(text, 'Ordinary') && has(text, 'MediSave') && /\n\s*\d{1,2}\s+[A-Za-z]{3}\s+\d{4}\s+[A-Z]{3}\b/.test(text))) scored.push(cpfHistory(text));
     if (has(text, 'principal amount withdrawn') ||
@@ -423,5 +493,5 @@
     return best;
   }
 
-  return { detect, uobStatement, uobLoanScreen, uobRateChange, cpfBalances, cpfHousing, cpfHistory, dbsMrtl, dbsPortfolioSummary, dbsPerformance, generic, toNum, norm, after, dmy };
+  return { detect, uobStatement, uobLoanScreen, uobRateChange, cpfBalances, cpfHousing, cpfHistory, alHolding, dbsMrtl, dbsPortfolioSummary, dbsPerformance, generic, toNum, norm, after, dmy };
 }));

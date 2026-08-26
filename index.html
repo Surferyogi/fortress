@@ -39,7 +39,7 @@ header{padding:18px 16px 8px;display:flex;align-items:baseline;justify-content:s
 header h1{font-size:20px;font-weight:700;letter-spacing:-.02em}
 header .stamp{font-size:11px;color:var(--muted)}
 .tabs{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--surface);border-top:1px solid var(--border);z-index:40;max-width:760px;margin:0 auto;padding-bottom:env(safe-area-inset-bottom)}
-.tabs button{flex:1 1 0;min-width:0;background:none;border:none;color:var(--muted);font:inherit;font-size:9.5px;letter-spacing:-.01em;padding:10px 0 8px;white-space:nowrap;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px}
+.tabs button{flex:1 1 0;min-width:0;background:none;border:none;color:var(--muted);font:inherit;font-size:8.5px;letter-spacing:-.02em;padding:10px 0 8px;white-space:nowrap;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px}
 .tabs button.on{color:var(--ink);font-weight:600}
 .tabs button svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 main{padding:0 12px}
@@ -117,10 +117,11 @@ table.hist th:first-child,table.hist td:first-child{text-align:left}
 <script src="parser.js"></script>
 <script src="recognizers.js"></script>
 <script src="fxseries.js"></script>
+<script src="alseries.js"></script>
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:AUG:25-08:15';
+const VERSION = 'v2026:AUG:26-17:15';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -168,6 +169,150 @@ const MANUAL_SEED = {
                note:"Balance after the 03-Aug-2026 instalment (UOB app) — not a month-end statement figure" }
 };
 const MORTGAGE_META = { bank:'UOB', account:'168-821-222-2', original:1347500.00, tenorMonths:276, type:'SGD Housing Loan, floating rate' };
+
+/* ===== Air Liquide employee shareholding =====
+   Transcribed line by line from CK's account statement of 25 Aug 2026. Vintages are
+   the "number of years held" column, which is what drives the loyalty-bonus clock. */
+const AL_SEED = {
+  '2026-08-25': {
+    asOf:'2026-08-25', priceEur:167.70, priceDate:'2026-08-24',
+    holderId:'1171912',
+    lines:[
+      { isin:'FR0014010OO5', bonusYear:2028, type:'Ordinary',    vintage:2025, available:true,  qty:2   },
+      { isin:'FR0014010OO5', bonusYear:2028, type:'ESPP',        vintage:2025, available:false, qty:107 },
+      { isin:'FR0014010OO5', bonusYear:2028, type:'Performance', vintage:2025, available:true,  qty:447 },
+      { isin:'FR001400T5U9', bonusYear:2027, type:'Performance', vintage:2024, available:true,  qty:410 },
+      { isin:'FR0000053951', bonusYear:2026, type:'Ordinary',    vintage:2023, available:true,  qty:3   },
+      { isin:'FR0000053951', bonusYear:2026, type:'Ordinary',    vintage:2022, available:true,  qty:1   },
+      { isin:'FR0000053951', bonusYear:2026, type:'Ordinary',    vintage:2018, available:true,  qty:1   },
+      { isin:'FR0000053951', bonusYear:2026, type:'ESPP',        vintage:2023, available:false, qty:82  },
+      { isin:'FR0000053951', bonusYear:2026, type:'ESPP',        vintage:2021, available:false, qty:216 },
+      { isin:'FR0000053951', bonusYear:2026, type:'ESPP',        vintage:2018, available:true,  qty:301 },
+      { isin:'FR0000053951', bonusYear:2026, type:'ESPP',        vintage:2016, available:true,  qty:143 },
+      { isin:'FR0000053951', bonusYear:2026, type:'ESPP',        vintage:2013, available:true,  qty:75  },
+      { isin:'FR0000053951', bonusYear:2026, type:'ESPP',        vintage:2006, available:true,  qty:261 },
+      { isin:'FR0000053951', bonusYear:2026, type:'Performance', vintage:2023, available:true,  qty:338 },
+      { isin:'FR0000053951', bonusYear:2026, type:'Performance', vintage:2022, available:true,  qty:324 },
+      { isin:'FR0000053951', bonusYear:2026, type:'Performance', vintage:2018, available:true,  qty:199 },
+      { isin:'FR0000053951', bonusYear:2026, type:'Performance', vintage:2017, available:true,  qty:227 },
+      { isin:'FR0000053951', bonusYear:2026, type:'Performance', vintage:2016, available:true,  qty:153 },
+      { isin:'FR0000053951', bonusYear:2026, type:'Performance', vintage:2011, available:true,  qty:66  }
+    ],
+    statedTotal:3356, statedValueEur:562801.20,
+    source:'Air Liquide account statement, 25 Aug 2026 (holder 1171912)',
+    verified:{ by:'action.airliquide.com — Rights for loyalty bonus display, line detail expanded',
+      on:'2026-08-25', scope:'all three tranches', lines:19,
+      note:'All 19 lines across all three tranches — type, quantity, blocked/available status and vintage — match the PDF transcription exactly. Two independent sources, no discrepancy.' }
+  }
+};
+/* Performance-share plans that have vested, from the portal's History section.
+   "Capital gain on acquisition" is the vested quantity at the opening price on the
+   vesting day — the acquisition gain, not a market gain since. Every row's arithmetic
+   is checked in alparsetest. The list is what the portal showed; older plans may exist. */
+const AL_VESTING = [
+  { plan:'27/09/2012 Monde', vested:'2016-09-27', qty:93,  price:94.70,  gain:8807.10  },
+  { plan:'26/09/2013 Monde', vested:'2017-09-26', qty:137, price:109.70, gain:15028.90 },
+  { plan:'25/09/2018 Monde', vested:'2022-09-26', qty:366, price:117.02, gain:42829.32 },
+  { plan:'29/09/2020 Monde', vested:'2024-09-30', qty:373, price:175.40, gain:65424.20 },
+  { plan:'29/09/2021 Monde', vested:'2025-09-29', qty:407, price:176.30, gain:71754.10 }
+];
+const AL_VESTING_META = { source:'action.airliquide.com — Performance shares, History, 25 Aug 2026',
+  priceNote:'Historic vesting market price is the Air Liquide share opening price on the vesting date',
+  cycle:'Every plan shown vested four years after its attribution, each late September',
+  incomplete:'The portal shows recent plans only. Grants attributed after 2021 that have not yet vested do not appear in the portfolio at all, so Fortress does not count them.' };
+
+/* Dividend payments, from the portal's "Payment of your dividends".
+   Air Liquide pays each year in two lines: the base dividend on every share, and a
+   second line that is exactly +10% of it on the shares that have completed two full
+   calendar years. The loyalty bonus is therefore not a promise — it is a payment,
+   and it is visible here every year. Withholding has been 12.80% throughout. */
+const AL_DIVIDENDS = [
+  { year:2026, paid:'2026-05-20', method:'SUBSIDIARY', baseCoupons:3032, baseUnit:3.70, baseGross:11218.40, baseNet:9782.44,
+    loyaltyCoupons:2154, loyaltyUnit:0.37, loyaltyGross:796.98, loyaltyNet:694.97 },
+  { year:2025, paid:'2025-05-21', method:'SUBSIDIARY', baseCoupons:2527, baseUnit:3.30, baseGross:8339.10, baseNet:7271.70,
+    loyaltyCoupons:1775, loyaltyUnit:0.33, loyaltyGross:585.75, loyaltyNet:510.77 },
+  { year:2024, paid:'2024-05-22', method:'SUBSIDIARY', baseCoupons:1947, baseUnit:3.20, baseGross:6230.40, baseNet:5432.91,
+    loyaltyCoupons:1336, loyaltyUnit:0.32, loyaltyGross:427.52, loyaltyNet:372.80 },
+  { year:2023, paid:'2023-05-17', method:'SUBSIDIARY', baseCoupons:1602, baseUnit:2.95, baseGross:4725.90, baseNet:4120.98,
+    loyaltyCoupons:1160, loyaltyUnit:0.29, loyaltyGross:336.40, loyaltyNet:293.34 },
+  { year:2022, paid:'2022-05-18', method:'SUBSIDIARY', baseCoupons:1296, baseUnit:2.90, baseGross:3758.40, baseNet:3277.32,
+    loyaltyCoupons:1046, loyaltyUnit:0.29, loyaltyGross:303.34, loyaltyNet:264.51 },
+  { year:2021, paid:'2021-05-19', method:'SUBSIDIARY', baseCoupons:1639, baseUnit:2.75, baseGross:4507.25, baseNet:3930.32,
+    loyaltyCoupons:1551, loyaltyUnit:0.27, loyaltyGross:418.77, loyaltyNet:365.17 },
+  { year:2020, paid:'2020-05-13', method:'BANK TRANSFER', baseCoupons:1688, baseUnit:2.70, baseGross:4557.60, baseNet:3974.23,
+    loyaltyCoupons:1184, loyaltyUnit:0.27, loyaltyGross:319.68, loyaltyNet:278.76 },
+  { year:2019, paid:'2019-05-22', method:'BANK TRANSFER', baseCoupons:1402, baseUnit:2.65, baseGross:3715.30, baseNet:3343.77,
+    loyaltyCoupons:919,  loyaltyUnit:0.26, loyaltyGross:238.94, loyaltyNet:215.05 },
+  { year:2018, paid:'2018-05-30', method:'BANK TRANSFER', baseCoupons:1069, baseUnit:2.65, baseGross:2832.85, baseNet:2549.57,
+    loyaltyCoupons:723,  loyaltyUnit:0.26, loyaltyGross:187.98, loyaltyNet:169.18 },
+  { year:2017, paid:'2017-05-17', method:'BANK TRANSFER', baseCoupons:830,  baseUnit:2.60, baseGross:2158.00, baseNet:1942.20,
+    loyaltyCoupons:652,  loyaltyUnit:0.26, loyaltyGross:169.52, loyaltyNet:152.57 },
+  { year:2016, paid:'2016-05-25', method:'SUBSIDIARY', baseCoupons:737,  baseUnit:2.60, baseGross:1916.20, baseNet:1341.34,
+    loyaltyCoupons:652,  loyaltyUnit:0.26, loyaltyGross:169.52, loyaltyNet:118.66 },
+  { year:2015, paid:'2015-05-20', method:'SUBSIDIARY', baseCoupons:652,  baseUnit:2.55, baseGross:1662.60, baseNet:1163.88,
+    loyaltyCoupons:608,  loyaltyUnit:0.25, loyaltyGross:152.00, loyaltyNet:106.40 },
+  { year:2014, paid:'2014-05-21', method:'SUBSIDIARY', baseCoupons:589,  baseUnit:2.55, baseGross:1501.95, baseNet:1052.46,
+    loyaltyCoupons:549,  loyaltyUnit:0.25, loyaltyGross:137.25, loyaltyNet:96.18 },
+  { year:2013, paid:'2013-05-22', method:'SUBSIDIARY', baseCoupons:549,  baseUnit:2.50, baseGross:1372.50, baseNet:1235.32,
+    loyaltyCoupons:302,  loyaltyUnit:0.25, loyaltyGross:75.50,  loyaltyNet:67.95 },
+  { year:2012, paid:'2012-05-16', method:'SUBSIDIARY', baseCoupons:499,  baseUnit:2.50, baseGross:1247.50, baseNet:1122.82,
+    loyaltyCoupons:160,  loyaltyUnit:0.25, loyaltyGross:40.00,  loyaltyNet:36.00 }
+];
+const AL_DIV_META = { source:'action.airliquide.com \u2014 "Payment of your dividends", pages 1\u20136 of 6 \u2014 the complete record, read 25 Aug 2026',
+  payWindow:'Paid in May every year on record, between the 13th and the 30th',
+  note:'The per-share amounts are as paid and are not restated for the free-share attributions in between, so the DPS series understates the true growth per original share while the coupon count overstates it.',
+  frDomestic:'PwC Worldwide Tax Summaries \u2014 France, Corporate/Withholding taxes: "The rate of WHT under domestic law is set at 12.8% where the beneficiary of the income is an individual. This rate came into force for distributed income paid since 1 January 2018."',
+  frUnknown:'Fortress could not find a source confirming what French domestic rate applied to non-resident individuals BEFORE 2018, so it does not attribute the earlier rates to any rule.',
+  frSource:'impots.gouv.fr \u2014 "Dividends" (international/individual): the flat-rate levy on dividends paid to non-resident individuals is 12.80%, effective rate on 1 January 2026',
+  treatySource:'France\u2013Singapore double tax agreement, in effect since 1 January 2017: dividend withholding capped at 15% for portfolio holders, 5% for a company holding \u226510% (secondary source: corporateservices.com DTAA guide, updated 5 Jan 2026)',
+  sgUnverified:'Fortress has NOT verified how Singapore treats this income in your hands. Do not read a conclusion about your Singapore position from this card.' };
+
+/* Portal "Performance shares" detail: adjusted cost basis per surviving tranche.
+   The adjusted vesting price is the original vesting price restated for every free-share
+   attribution since, so quantity x adjusted price preserves the original outlay. */
+const AL_BASIS = [
+  { isin:'FR0000053951', bonusYear:null, qty:66,  grant:'2011-01-01', source:'Attribution du 15/06/2009 France',
+    adjPrice:47.47,  unrealised:7940.46,  valuation:11073.48 },
+  { isin:'FR0000053951', bonusYear:null, qty:153, grant:'2016-09-27', source:'Attribution du 27/09/2012 Monde',
+    adjPrice:57.55,  unrealised:16865.19, valuation:25670.34 },
+  { isin:'FR0000053951', bonusYear:null, qty:227, grant:'2017-09-26', source:'Attribution du 26/09/2013 Monde',
+    adjPrice:66.20,  unrealised:23058.66, valuation:38086.06 },
+  { isin:'FR0000053951', bonusYear:null, qty:199, grant:'2018-09-22', source:'Attribution du 22/09/2014 Monde',
+    adjPrice:73.67,  unrealised:18727.89, valuation:33388.22 },
+  { isin:'FR0000053951', bonusYear:null, qty:324, grant:'2022-09-26', source:'Attribution du 25/09/2018 Monde',
+    adjPrice:96.07,  unrealised:23234.04, valuation:54360.72 },
+  { isin:'FR0000053951', bonusYear:null, qty:338, grant:'2023-10-02', source:'Attribution du 30/09/2019 Monde',
+    adjPrice:131.76, unrealised:12174.76, valuation:56709.64 },
+  { isin:'FR001400T5U9', bonusYear:2027, qty:410, grant:'2024-09-30', source:'Attribution du 29/09/2020 Monde',
+    adjPrice:159.57, unrealised:3366.10,  valuation:68789.80 },
+  { isin:'FR0014010OO5', bonusYear:2028, qty:447, grant:'2025-09-29', source:'Attribution du 29/09/2021 Monde',
+    adjPrice:160.52, unrealised:3245.22,  valuation:74997.66 }
+];
+const AL_BASIS_META = { source:'action.airliquide.com \u2014 Performance shares detail, pages 1\u20132 of 2 \u2014 the complete list, read 25 Aug 2026',
+  priceNote:'\u201cAdjusted vesting price\u201d is the vesting price restated for the free-share attributions since, so it is a cost basis, not a market price. Every line is marked \u201cAvailable shares\u201d \u2014 none of the performance shares are blocked.',
+  unknownCause:'Fortress does not know why a tranche is short. A sale, a transfer out, or a plan-level adjustment would all look like this from the portal alone, and the portal history loaded so far does not say.' };
+
+/* Ordinary-share registrations, which is where the loyalty clock actually starts */
+const AL_REGISTRATIONS = [
+  { isin:'FR0000053951', qty:1, on:'2018-12-07', valuationEur:167.78 },
+  { isin:'FR0000053951', qty:1, on:'2022-09-26', valuationEur:167.78 },
+  { isin:'FR0000053951', qty:3, on:'2023-12-07', valuationEur:503.34 },
+  { isin:'FR0014010OO5', qty:2, on:'2025-12-09', valuationEur:335.56 }
+];
+
+/* what the shareholder portal showed the same day, at a later quote */
+const AL_PORTAL = { asOf:'2026-08-25', valuationEur:563069.68, totalShares:3356,
+  available:2951, blocked:405, priceImplied:167.78,
+  source:'action.airliquide.com — My portfolio, 25 Aug 2026' };
+const AL_META = {
+  company:'Air Liquide S.A.', ticker:'AI', exchange:'Euronext Paris', ccy:'EUR',
+  employer:true,
+  loyaltyPct:10,
+  loyaltyRule:'+10% on the dividend and on the number of free shares at attributions, for shares held in registered form for more than two full calendar years, and still held on the payment or attribution date',
+  loyaltySource:'Air Liquide — Loyalty bonus',
+  attributionCadence:'Air Liquide has attributed free shares 10 times in the last 20 years and generally does so about every two years — an observed practice, not a commitment',
+  attributionSource:'Air Liquide — Free Share attribution'
+};
 
 /* ===== CPF =====
    Balances and the housing withdrawal, read off CK's own CPF dashboards.
@@ -290,7 +435,8 @@ let state = {
   cpf: store.get('fortress.cpf', null),
   cpfHome: store.get('fortress.cpfHome', null),
   cpfTxns: store.get('fortress.cpfTxns', null),
-  settings: store.get('fortress.settings', { lendingValue:null, ltvAlert:35, homeValue:null, tab:'dash', fxCcy:'USD', fxBars:250, cpfYears:10, birthDate:null, frsOverride:null, remindersDone:{} })
+  al: store.get('fortress.al', null),
+  settings: store.get('fortress.settings', { lendingValue:null, ltvAlert:35, homeValue:null, tab:'dash', fxCcy:'USD', fxBars:250, cpfYears:10, birthDate:null, frsOverride:null, remindersDone:{}, alChart:'daily' })
 };
 if(!state.snapshots){ state.snapshots = { [SEED.statementDate]: SEED }; store.set('fortress.snapshots', state.snapshots); }
 if(!state.manual){ state.manual = MANUAL_SEED; store.set('fortress.manual', state.manual); }
@@ -302,13 +448,14 @@ if(!state.rateChanges){ state.rateChanges = RATE_CHANGE_SEED; store.set('fortres
 if(!state.cpf){ state.cpf = CPF_SEED; store.set('fortress.cpf', state.cpf); }
 if(!state.cpfHome){ state.cpfHome = CPF_HOME_SEED; store.set('fortress.cpfHome', state.cpfHome); }
 if(!state.cpfTxns){ state.cpfTxns = CPF_TXN_SEED; store.set('fortress.cpfTxns', state.cpfTxns); }
+if(!state.al){ state.al = AL_SEED; store.set('fortress.al', state.al); }
 
 /* ---- seed migrations ----------------------------------------------------
    A first install copies the seeds above. But an app that keeps gaining seeded
    readings needs those to reach devices that already installed an older build,
    WITHOUT touching anything the user entered. Each migration is additive and
    idempotent: it fills gaps and repairs missing fields, and never deletes.  */
-const SEED_VERSION = 7;
+const SEED_VERSION = 8;
 function runSeedMigrations(){
   const from = store.get('fortress.seedVersion', 0);
   if(from >= SEED_VERSION) return 0;
@@ -362,6 +509,10 @@ function runSeedMigrations(){
   if(state.settings.homeValue == null){ state.settings.homeValue = 2450000; changed++; }
   if(!state.settings.birthDate){ state.settings.birthDate = '1973-08-27'; changed++; }
 
+  // v8 — the Air Liquide shareholding
+  state.al = state.al || {};
+  Object.keys(AL_SEED).forEach(d=>{ if(!state.al[d]){ state.al[d]={...AL_SEED[d], seeded:true}; changed++; } });
+
   store.set('fortress.seedVersion', SEED_VERSION);
   if(changed) saveAll();
   return changed;
@@ -373,6 +524,7 @@ function saveAll(){
   store.set('fortress.lv', state.lv); store.set('fortress.reported', state.reported);
   store.set('fortress.rateChanges', state.rateChanges); store.set('fortress.cpf', state.cpf);
   store.set('fortress.cpfHome', state.cpfHome); store.set('fortress.cpfTxns', state.cpfTxns);
+  store.set('fortress.al', state.al);
   store.set('fortress.settings', state.settings); }
 
 /* lending value per portfolio: an entered ratio wins; otherwise derive it from
@@ -419,9 +571,12 @@ function netWorth(a){
   const uobCash=cashMonth? state.manual[cashMonth].deposits : 0;
   const fwdMtm=(a.forwards||[]).reduce((s,f)=>s+(f.mtmSGD||0),0);
   const cpf = cpfTotal(latestCpf()) || 0;
+  const alp = (typeof alPosition==='function') ? alPosition() : null;
+  const al = alp && alp.sgd!=null ? alp.sgd : 0;
   const hc = cpfHomeClaim();
   return { dbs:a.net, uobCash, cashMonth, mortgage, balMonth, fwdMtm, cpf, cpfAsOf:(latestCpf()||{}).asOf,
            cpfClaim: hc? hc.claim : 0,
+           al, alShares: alp? alp.total : 0,
            dbsUob:a.net + uobCash - mortgage, hasUob: !!balMonth || !!cashMonth };
 }
 /* "1 Jan – 31 Jul 2026" style labels, so every % on screen names its own window */
@@ -896,7 +1051,7 @@ async function decryptBlob(blob){
   const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(blob.iv)},cryptoKey,unb64(blob.ct));
   return JSON.parse(dec.decode(pt));
 }
-const DATA_KEYS=['snapshots','manual','income','mrtl','lv','reported','rateChanges','cpf','cpfHome','cpfTxns','settings'];
+const DATA_KEYS=['snapshots','manual','income','mrtl','lv','reported','rateChanges','cpf','cpfHome','cpfTxns','al','settings'];
 function collectState(){ const o={}; DATA_KEYS.forEach(k=>o[k]=state[k]); return o; }
 
 async function persistVault(){
@@ -1111,6 +1266,253 @@ function candleChart(series, opts){
   };
 }
 
+/* ================= Air Liquide =================
+   One employer, three exposures: the salary, the shares, and the CPF contributions
+   the salary generates. Fortress keeps the shares out of every margin calculation —
+   they are not pledged to DBS — but counts them in net worth, and says how big the
+   single-name bet has become. */
+const alDates = ()=> Object.keys(state.al||{}).sort();
+function latestAl(){ const k=alDates(); return k.length? state.al[k[k.length-1]] : null; }
+function alFx(){ const f=(latest().fxRates||{}).EUR; return f||null; }
+
+function alPosition(){
+  const A = latestAl(); if(!A) return null;
+  const lines = A.lines||[];
+  const sum = f => lines.filter(f).reduce((t,l)=>t+l.qty,0);
+  const total = sum(()=>true);
+  const price = AL_PRICE_META.last ?? A.priceEur;
+  const fx = alFx();
+  const byType = ['Performance','ESPP','Ordinary'].map(t=>({ t, qty:sum(l=>l.type===t) })).filter(x=>x.qty);
+  const byBonus = [...new Set(lines.map(l=>l.bonusYear))].sort().map(y=>({
+    y, isin:(lines.find(l=>l.bonusYear===y)||{}).isin, qty:sum(l=>l.bonusYear===y),
+    qualified: y <= new Date().getFullYear() }));
+  const blocked = sum(l=>!l.available), available = sum(l=>l.available);
+  const vintages = [...new Set(lines.map(l=>l.vintage))].sort();
+  const eur = total*price, sgd = fx? eur*fx : null;
+  return { asOf:A.asOf, lines, total, price, priceDate:AL_PRICE_META.lastDate, fx, eur, sgd,
+           byType, byBonus, blocked, available, vintages,
+           blockedEur: blocked*price, oldest:vintages[0], newest:vintages[vintages.length-1],
+           statedTotal:A.statedTotal, statedValueEur:A.statedValueEur, statementPrice:A.priceEur,
+           statementPriceDate:A.priceDate, source:A.source };
+}
+/* the statement and the portal disagreed; this says by how much and why */
+function alReconcile(){
+  const p = alPosition(); if(!p) return null;
+  const portalPrice = AL_PORTAL.totalShares ? AL_PORTAL.valuationEur/AL_PORTAL.totalShares : null;
+  const dayOf = px => (AL_DAILY.find(d=>Math.abs(d[4]-px)<0.005)||[])[0] || null;
+  return {
+    countsMatch: p.total === AL_PORTAL.totalShares && p.total === p.statedTotal,
+    total:p.total, stated:p.statedTotal, portal:AL_PORTAL.totalShares,
+    blockedMatch: p.blocked === AL_PORTAL.blocked, blocked:p.blocked, portalBlocked:AL_PORTAL.blocked,
+    statementPrice:p.statementPrice, statementPriceDay:dayOf(p.statementPrice),
+    portalPrice, portalPriceDay: portalPrice!=null? dayOf(+portalPrice.toFixed(2)) : null,
+    gapEur: AL_PORTAL.valuationEur - p.statedValueEur
+  };
+}
+/* price behaviour, straight off the series — no smoothing, no interpretation */
+function alPriceStats(){
+  const d = AL_DAILY; if(!d||d.length<2) return null;
+  const last = d[d.length-1][4];
+  const hi = Math.max(...d.map(x=>x[2])), lo = Math.min(...d.map(x=>x[3]));
+  const hiRow = d.find(x=>x[2]===hi), loRow = d.find(x=>x[3]===lo);
+  const m = AL_MONTHLY;
+  const at = iso => { const r = m.filter(x=>x[0]<=iso).slice(-1)[0]; return r? r[1] : null; };
+  const back = yrs => { const y=(+AL_PRICE_META.lastDate.slice(0,4))-yrs;
+    return at(y+AL_PRICE_META.lastDate.slice(4)); };
+  const perf = yrs => { const p0=back(yrs); return p0? { yrs, from:p0, pct:(last/p0-1)*100, cagr:(Math.pow(last/p0,1/yrs)-1)*100 } : null; };
+  return { last, hi, lo, hiDate:hiRow&&hiRow[0], loDate:loRow&&loRow[0],
+           offHigh:(last/hi-1)*100, offLow:(last/lo-1)*100,
+           windows:[1,3,5,10,15].map(perf).filter(Boolean),
+           firstDay:d[0][0], lastDay:d[d.length-1][0] };
+}
+/* what the performance-share plans delivered, and when */
+function alVesting(){
+  if(!AL_VESTING.length) return null;
+  const rows = AL_VESTING.slice().sort((a,b)=>a.vested.localeCompare(b.vested));
+  const qty = rows.reduce((a,r)=>a+r.qty,0), gain = rows.reduce((a,r)=>a+r.gain,0);
+  const lags = rows.map(r=>+r.vested.slice(0,4) - +r.plan.slice(6,10));
+  return { rows, qty, gain, first:rows[0], last:rows[rows.length-1],
+           lagYears:[...new Set(lags)], atToday: qty*AL_PRICE_META.last };
+}
+/* The June 2026 attribution is visible in his own line counts. Two tranches vested in
+   2024 and 2025, neither old enough for the loyalty bonus, and both land exactly on the
+   plain 1-for-10 rounded down — which is how the entitlement is settled. Nothing here is
+   asserted from the rulebook; it is arithmetic on two numbers he already had. */
+function alAttributionProof(){
+  const p = alPosition(), V = alVesting();
+  if(!p || !V) return null;
+  const out = [];
+  V.rows.forEach(r=>{
+    const vy = +r.vested.slice(0,4);
+    const held = p.lines.filter(l=>l.type==='Performance' && l.vintage===vy).reduce((a,l)=>a+l.qty,0);
+    if(!held) return;
+    const plain = Math.floor(r.qty*1.10), loyal = Math.floor(r.qty*1.11);
+    out.push({ vestedYear:vy, vested:r.qty, held, plain, loyal,
+               fits: held===plain ? 'plain' : (held===loyal ? 'loyalty' : null),
+               qualifiedThen: vy <= (+AL_PRICE_META.attribution.date.slice(0,4)) - 3 });
+  });
+  // Only tranches through exactly one attribution can be checked in a single step. Older
+  // lines have seen several, and may have been sold into as well, so their counts carry no
+  // clean signal — they are dropped rather than reported as anomalies.
+  return { checkable: out.filter(o=>o.fits), skipped: out.filter(o=>!o.fits) };
+}
+
+/* the dividend record, and what it is running at now */
+function alDividends(){
+  if(!AL_DIVIDENDS.length) return null;
+  const rows = AL_DIVIDENDS.slice().sort((a,b)=>b.year-a.year).map(d=>{
+    const gross = d.baseGross + d.loyaltyGross, net = d.baseNet + d.loyaltyNet;
+    return { ...d, gross, net, withheldPct:(1-net/gross)*100,
+             loyaltyPctOfBase: d.baseUnit? d.loyaltyUnit/d.baseUnit*100 : null,
+             qualifiedPct: d.baseCoupons? d.loyaltyCoupons/d.baseCoupons*100 : null };
+  });
+  const last = rows[0], first = rows[rows.length-1];
+  const yrs = rows.length - 1;
+  const p = alPosition();
+
+  /* Withholding is not one constant across the whole record. Group the years by the
+     rate actually applied (to 2 dp) and report the regimes, rather than averaging
+     two different rates into a number that was never charged. */
+  const regimes = [];
+  rows.slice().reverse().forEach(r=>{
+    const k = Math.round(r.withheldPct);           // group on the headline rate...
+    const cur = regimes[regimes.length-1];
+    if(cur && cur.key===k){ cur.to = r.year; cur.years.push(r); }
+    else regimes.push({ key:k, from:r.year, to:r.year, years:[r] });
+  });
+  regimes.forEach(g=>{                             // ...but report what was ACTUALLY charged
+    const p = g.years.map(r=>r.withheldPct);
+    g.lo = Math.min(...p); g.hi = Math.max(...p);
+    g.mean = p.reduce((a,x)=>a+x,0)/p.length;
+    g.exact = (g.hi-g.lo) < 0.01;                  // every year in the run charged the same rate?
+    g.pct = g.exact ? g.mean : null;
+    g.gross = g.years.reduce((a,r)=>a+r.gross,0);
+    g.withheld = g.years.reduce((a,r)=>a+r.gross-r.net,0);
+    g.label = g.exact ? fmt(g.mean,2)+'%' : fmt(g.lo,2)+'\u2013'+fmt(g.hi,2)+'%';
+    g.span = g.from===g.to ? String(g.from) : g.from+'\u2013'+g.to;
+  });
+  regimes.reverse();                               // newest regime first
+  const rateChanged = regimes.length > 1;
+  const prevRegime = rateChanged ? regimes[1] : null;
+  /* the step against the regime immediately before it, on the years actually charged */
+  const stepPp = rateChanged ? regimes[0].mean - prevRegime.mean : null;
+  const stepCost = rateChanged ? regimes[0].gross * stepPp/100 : null;
+  /* the single worst run, measured against the cheapest rate ever applied to him */
+  const bestPct = Math.min(...regimes.map(g=>g.mean));
+  const worst = regimes.slice().sort((a,b)=>(b.mean-bestPct)*b.gross-(a.mean-bestPct)*a.gross)[0];
+  const worstExcess = worst ? worst.gross*(worst.mean-bestPct)/100 : null;
+  const worstIsCurrent = worst === regimes[0];
+  const blendedPct = (rows.reduce((a,r)=>a+r.gross-r.net,0)/rows.reduce((a,r)=>a+r.gross,0))*100;
+  /* years whose effective rate does not land on a round figure */
+  /* A year is "odd" when it does not match the headline rate of its OWN run - an internal
+     inconsistency in the deduction, not a deviation from some rate we assume it should be. */
+  const odd = [];
+  regimes.forEach(g=>g.years.forEach(r=>{
+    if(Math.abs(r.withheldPct-g.hi) > 0.01)
+      odd.push({ year:r.year, pct:r.withheldPct, headline:g.hi, span:g.span,
+                 shortfall:(g.hi-r.withheldPct)/100*r.gross });
+  }));
+
+  /* Coupon counts are NOT monotonic - a fall means shares left registered form. */
+  const asc = rows.slice().reverse();
+  const drops = asc.map((r,i)=> i? { year:r.year, delta:r.baseCoupons-asc[i-1].baseCoupons,
+                                     loyaltyDelta:r.loyaltyCoupons-asc[i-1].loyaltyCoupons } : null)
+                   .filter(d=>d && d.delta<0);
+
+  /* the loyalty unit is the base truncated to the cent, not rounded - 10/10 years agree */
+  const truncAll = rows.every(r=> Math.floor(r.baseUnit*10)/100 === r.loyaltyUnit);
+  const roundAll = rows.every(r=> Math.round(r.baseUnit*10)/100 === r.loyaltyUnit);
+  // the run-rate is today's share count at the LAST DECLARED rate — next year's is not announced
+  const runBase = p ? p.total * last.baseUnit : null;
+  const runLoyal = p ? p.byBonus.filter(b=>b.qualified).reduce((a,b)=>a+b.qty,0) * last.loyaltyUnit : null;
+  const runGross = runBase!=null ? runBase + runLoyal : null;
+  const withheld = last.withheldPct/100;
+  const onClock = p ? p.byBonus.filter(b=>!b.qualified).reduce((a,b)=>a+b.qty,0) : 0;
+  return { rows, last, first, yrs,
+    totalGross: rows.reduce((a,r)=>a+r.gross,0), totalNet: rows.reduce((a,r)=>a+r.net,0),
+    loyaltyTotalGross: rows.reduce((a,r)=>a+r.loyaltyGross,0),
+    netCagr: yrs>0 ? (Math.pow(last.net/first.net, 1/yrs)-1)*100 : null,
+    dpsChangePct: (last.baseUnit/first.baseUnit-1)*100,
+    couponChangePct: (last.baseCoupons/first.baseCoupons-1)*100,
+    runBase, runLoyal, runGross, runNet: runGross!=null? runGross*(1-withheld) : null,
+    runNetSgd: (runGross!=null && p && p.fx) ? runGross*(1-withheld)*p.fx : null,
+    onClock, onClockValue: onClock * last.loyaltyUnit,
+    regimes, rateChanged, prevRegime, worstIsCurrent, stepPp, stepCost, bestPct, worst, worstExcess, blendedPct, odd, drops, truncAll, roundAll,
+    totalWithheld: rows.reduce((a,r)=>a+r.gross-r.net,0),
+    yieldGross: p ? last.baseUnit/p.price*100 : null,
+    yieldWithLoyalty: p ? (last.baseUnit+last.loyaltyUnit)/p.price*100 : null };
+}
+
+/* Cost basis per tranche, and the cross-check against the vesting record.
+   Every figure below is derived from the portal's own numbers - nothing is assumed. */
+function alBasis(){
+  if(!AL_BASIS.length) return null;
+  const p = alPosition(), px = p ? p.price : null;
+  const V = (typeof AL_VESTING!=='undefined') ? AL_VESTING : [];
+  const snapLines = (()=>{ const k=Object.keys(AL_SEED).sort().pop();
+    return k ? (AL_SEED[k].lines||[]).filter(l=>l.type==='Performance') : []; })();
+
+  const rows = AL_BASIS.map(b=>{
+    const cost = b.qty * b.adjPrice;
+    /* tie to the vesting History by attribution date, where one has been loaded */
+    const plan = (b.source.match(/(\d{2}\/\d{2}\/\d{4})/)||[])[1] || null;
+    const v = plan ? V.find(x=>x.plan.indexOf(plan)===0) : null;
+    /* if nothing left the tranche, quantity x adjusted price must still equal the original outlay,
+       so the count we SHOULD see today is the original outlay divided by the adjusted price */
+    const expectedQty = v ? v.qty*v.price/b.adjPrice : null;
+    const shortQty = expectedQty!=null ? expectedQty - b.qty : null;
+    const short = shortQty!=null && Math.abs(shortQty) > 2;
+    /* tie to the portfolio holding, read from a different document */
+    const held = snapLines.find(l=>l.vintage === +b.grant.slice(0,4) && l.qty === b.qty) || null;
+    return { ...b, cost, plan, vest:v, expectedQty, shortQty, short,
+      shortBasis: short ? shortQty*b.adjPrice : null,
+      shortOriginal: (short && v) ? shortQty*b.adjPrice/v.price : null,
+      origCost: v ? v.qty*v.price : null,
+      costGap: v ? cost - v.qty*v.price : null,
+      costGapPct: v ? (cost - v.qty*v.price)/(v.qty*v.price)*100 : null,
+      qtyRatio: v ? b.qty/v.qty : null,
+      priceRatio: v ? v.price/b.adjPrice : null,
+      addsUp: Math.abs(cost + b.unrealised - b.valuation) < 0.005,
+      atQuote: px!=null && Math.abs(b.qty*px - b.valuation) < 0.005,
+      inPortfolio: !!held,
+      gainPct: cost ? b.unrealised/cost*100 : null,
+      multiple: cost ? b.valuation/cost : null };
+  });
+
+  const qty  = rows.reduce((a,r)=>a+r.qty,0);
+  const cost = rows.reduce((a,r)=>a+r.cost,0);
+  const val  = rows.reduce((a,r)=>a+r.valuation,0);
+  const gain = rows.reduce((a,r)=>a+r.unrealised,0);
+  const ties  = rows.filter(r=>r.vest);
+  const clean = ties.filter(r=>!r.short);
+  const shortRows = rows.filter(r=>r.short);
+  const portfolioQty = snapLines.reduce((a,l)=>a+l.qty,0);
+
+  return { rows, qty, cost, val, gain, ties, clean, shortRows, price:px,
+    allAddUp:  rows.every(r=>r.addsUp),
+    allAtQuote:rows.every(r=>r.atQuote),
+    allHeld:   rows.every(r=>r.inPortfolio),
+    portfolioQty, portfolioMatches: portfolioQty === qty && snapLines.length === rows.length,
+    gainPct: cost ? gain/cost*100 : null,
+    perShare: qty ? cost/qty : null,
+    pctOfHolding: (p && p.total) ? qty/p.total*100 : null,
+    byBonus: [ { label:'qualifying now', qty: rows.filter(r=>!r.bonusYear).reduce((a,r)=>a+r.qty,0) } ]
+      .concat([...new Set(rows.filter(r=>r.bonusYear).map(r=>r.bonusYear))].sort()
+        .map(y=>({ label:'from '+y, qty: rows.filter(r=>r.bonusYear===y).reduce((a,r)=>a+r.qty,0) }))) };
+}
+
+/* how much of everything is now one company */
+function alConcentration(){
+  const p = alPosition(); if(!p||p.sgd==null) return null;
+  const a = agg(latest()), w = netWorth(a);
+  const base = w.dbsUob + (state.settings.homeValue||0) + (w.cpf||0);
+  const total = base + p.sgd;
+  return { sgd:p.sgd, base, total, pctOfNet: p.sgd/total*100,
+           pctOfLiquid: p.sgd/(a.assets + p.sgd)*100,
+           dbsUsdPct: (()=>{ const t=Object.entries(a.pledgedCcy||{}).filter(([k])=>k!=='SGD').sort((x,y)=>y[1]-x[1])[0];
+             return t? t[1]/a.pledgedAssets*100 : null; })() };
+}
+
 /* ================= reminders =================
    Every item here is either a dated fact from CK's own documents, or a rule test
    recomputed from live balances — never a note typed once and left to rot. A test
@@ -1218,6 +1620,50 @@ function retirementChecks(){
         : `The dearest loan now runs above the OA rate. Prepaying starts to compete with leaving money in CPF.`}`,
       source:`DBS statement ${esc(snap.statementDate)}; UOB rate letter; CPF published rates` });
   }
+  { const p = (typeof alPosition==='function') ? alPosition() : null;
+    if(p){
+      p.byBonus.filter(b=>!b.qualified).forEach(b=>{
+        add({ id:'al-loyalty-'+b.y, cat:'dated', date:b.y+'-01-01', days:daysUntil(b.y+'-01-01'), tone:'info',
+          title:`${fmt(b.qty,0)} Air Liquide shares start earning the loyalty bonus`, head:`in ${b.y}`,
+          detail:`${esc(b.isin)}. From ${b.y} these qualify for +${AL_META.loyaltyPct}% on dividends and on free-share attributions. Selling before then forfeits it, and the clock restarts if they are ever re-registered. Air Liquide attributes free shares roughly every two years; the last was ${esc(dayLabel(AL_PRICE_META.attribution.date))}.`,
+          source: AL_META.loyaltySource });
+      });
+      { const D = alDividends();
+        if(D){
+          const months = D.rows.map(r=>+r.paid.slice(5,7));
+          const allMay = months.every(m=>m===5);
+          add({ id:'al-dividend-next', cat:'dated', date:null, days:null, tone:'info',
+            title:'Next Air Liquide dividend — not declared yet',
+            head:`run-rate ${money(D.runNetSgd,0)} net`,
+            detail:`The ${D.last.year} payment was &euro;${fmt(D.last.gross,2)} gross, &euro;${fmt(D.last.net,2)} net, on ${esc(dayLabel(D.last.paid))}. At today's ${fmt(alPosition().total,0)} shares and the ${D.last.year} rate of &euro;${fmt(D.last.baseUnit,2)} plus &euro;${fmt(D.last.loyaltyUnit,2)} loyalty, the same rate would pay &euro;${fmt(D.runGross,0)} gross / &euro;${fmt(D.runNet,0)} net ≈ ${money(D.runNetSgd,0)}. <b>That is a run-rate, not a forecast.</b> The next dividend has not been declared — no rate, no date — and Fortress will not invent either. ${allMay?`All ${D.rows.length} payments on record fell in May (${D.rows.map(r=>dayLabel(r.paid)).join(', ')}), so May ${D.last.year+1} is the window to watch — a month, not a date to diarise.`:''} ${D.onClock?`${fmt(D.onClock,0)} shares are still short of the 2-year registration and earn no loyalty bonus yet — worth about &euro;${fmt(D.onClockValue,0)}/yr once they qualify.`:''}`,
+            source: AL_DIV_META.source });
+          if(D.rateChanged) add({ id:'al-withholding-step', cat:'standing', tone:'warn',
+            title:'Your dividend withholding rate has moved four ways',
+            head:`${D.regimes.map(g=>g.label).reverse().join(' → ')}`,
+            detail:`${D.regimes.slice().reverse().map(g=>`<b>${g.span}</b> ${g.label}`).join(', then ')}. Blended over the whole record: ${pct(D.blendedPct,2)}. The ${D.worst.span} stretch ${D.worstIsCurrent?'has cost':'cost'} <b>&euro;${fmt(D.worstExcess,2)}</b> more than the ${pct(D.bestPct,2)} charged in other years, and any French reclaim window on it is long closed. The current ${fmt(D.regimes[0].mean,2)}% is France's domestic rate for non-resident individuals and the France–Singapore treaty caps at 15%, above it — so there is nothing to reclaim now and the deduction looks correct. Fortress does not know why the earlier rates applied and will not guess. It has <b>not</b> verified how Singapore treats this income in your hands.`,
+            source: AL_DIV_META.frDomestic + ' | ' + AL_DIV_META.treatySource + ' | ' + AL_DIV_META.frUnknown });
+        }
+      }
+      { const BA = (typeof alBasis==='function') ? alBasis() : null;
+        if(BA && BA.shortRows.length) BA.shortRows.forEach(r=>
+          add({ id:'al-basis-short-'+r.grant.slice(0,4), cat:'standing', tone:'warn',
+            title:`One share tranche is short of what the numbers imply`,
+            head:`${fmt(Math.abs(r.shortQty),0)} shares · €${fmt(Math.abs(r.shortBasis),2)} of basis`,
+            detail:`The ${esc(r.plan)} attribution vested as ${fmt(r.vest.qty,0)} shares at &euro;${fmt(r.vest.price,2)}. Its adjusted basis is now &euro;${fmt(r.adjPrice,2)}, which everywhere else means the count rose in exact proportion — here it should be about ${fmt(r.expectedQty,0)} shares and the portal shows ${fmt(r.qty,0)}. Roughly ${fmt(Math.abs(r.shortOriginal),0)} of the original ${fmt(r.vest.qty,0)} have left, taking &euro;${fmt(Math.abs(r.shortBasis),2)} of cost basis with them. A sale, a transfer, or a plan adjustment would all look identical from the portal, and Fortress will not guess which. <b>If it was a sale you should have a contract note and a cost basis for it</b> — worth locating before you need it. The other ${fmt(BA.clean.length,0)} checkable tranches tie to within &euro;2, so this is specific to that plan, not a flaw in the method.`,
+            source: AL_BASIS_META.source + '; vesting History cross-check' }));
+        if(BA) add({ id:'al-unrealised', cat:'standing', tone:'info',
+          title:'Unrealised gain sitting in the performance shares',
+          head:`€${fmt(BA.gain,0)} on €${fmt(BA.cost,0)} of cost`,
+          detail:`${fmt(BA.qty,0)} shares carried at a blended &euro;${fmt(BA.perShare,2)}, worth &euro;${fmt(BA.val,2)} at &euro;${fmt(BA.price,2)} — ${pct(BA.gainPct,1)} on cost, and ${pct(BA.pctOfHolding,1)} of your Air Liquide holding. Every line is marked available, so none of it is blocked from sale. Fortress does <b>not</b> know what tax would fall due on a disposal, in France or in Singapore, and does not estimate it. That is the number to establish before any decision to sell, not after.`,
+          source: AL_BASIS_META.source });
+      }
+      const C = alConcentration();
+      if(C) add({ id:'al-concentration', cat:'standing', tone: C.pctOfNet>15?'warn':'info',
+        title:'Everything that depends on one employer', head:`${pct(C.pctOfNet,1)} of net worth`,
+        detail:`${money(C.sgd,0)} of Air Liquide shares, plus the salary, plus the ${money((cpfLastContribution()||{}).median||0,0)}/month of CPF that salary generates. Three exposures, one company. Nothing you do inside the DBS portfolio diversifies this. The ${fmt(p.blocked,0)} blocked shares cannot be sold at all right now.`,
+        source:`Air Liquide account statement, ${esc(p.asOf)}` });
+    }
+  }
   { const top = Object.entries(a.pledgedCcy||{}).filter(([k])=>k!=='SGD').sort((x,y)=>y[1]-x[1])[0];
     const share = top ? top[1]/a.pledgedAssets*100 : 0;
     if(top) add({ id:'concentration', cat:'standing', tone: share>60?'warn':'info',
@@ -1253,9 +1699,10 @@ function toggleReminder(id){
 
 /* ================= tabs / rendering ================= */
 const TABS=[
-  {id:'dash', label:'Overview', icon:'<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>'},
+  {id:'dash', label:'Summary', icon:'<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>'},
   {id:'prop', label:'Property', icon:'<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.8V21h14V9.8"/><path d="M10 21v-6h4v6"/>'},
   {id:'cpf', label:'CPF', icon:'<path d="M4 8h16v11H4z"/><path d="M4 8l8-5 8 5"/><path d="M9 19v-5h6v5"/><circle cx="12" cy="11" r="1.2"/>'},
+  {id:'al', label:'AL', icon:'<path d="M4 19h16"/><path d="M6 19V9l6-5 6 5v10"/><path d="M10 19v-5h4v5"/>'},
   {id:'trends', label:'Trends', icon:'<polyline points="3,17 9,11 13,14 21,6"/><polyline points="15,6 21,6 21,12"/>'},
   {id:'fx', label:'FX', icon:'<circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/>'},
   {id:'hist', label:'History', icon:'<circle cx="12" cy="12" r="9"/><polyline points="12,7 12,12 15.5,14"/>'},
@@ -1344,9 +1791,11 @@ function viewDash(){
       <div class="kv"><span class="k"><b>DBS + UOB net assets</b></span><span class="v"><b>${money(w.dbsUob,2)}</b></span></div>
       ${state.settings.homeValue?`<div class="kv"><span class="k">Property (your estimate)</span><span class="v">+${money(state.settings.homeValue,2)}</span></div>
       <div class="kv"><span class="k"><b>Incl. property</b></span><span class="v"><b>${money(w.dbsUob+state.settings.homeValue,2)}</b></span></div>`:''}
-      ${w.cpf?`<div class="kv" style="margin-top:6px"><span class="k">CPF balances (restricted)</span><span class="v">+${money(w.cpf,2)}</span></div>
-      <div class="kv"><span class="k"><b>Everything, incl. CPF</b></span><span class="v"><b>${money(w.dbsUob+(state.settings.homeValue||0)+w.cpf,2)}</b></span></div>`:''}
+      ${w.al?`<div class="kv" style="margin-top:6px"><span class="k">Air Liquide shares (not collateral)</span><span class="v">+${money(w.al,2)}</span></div>`:''}
+      ${w.cpf?`<div class="kv"${w.al?'':' style="margin-top:6px"'}><span class="k">CPF balances (restricted)</span><span class="v">+${money(w.cpf,2)}</span></div>`:''}
+      ${(w.cpf||w.al)?`<div class="kv"><span class="k"><b>Everything</b></span><span class="v"><b>${money(w.dbsUob+(state.settings.homeValue||0)+w.cpf+w.al,2)}</b></span></div>`:''}
       <p class="note">${state.settings.homeValue?'':'The property the mortgage funds is <b>not</b> counted — enter its value in the Property tab and a third total appears. '}Excludes the CHF forward's ${money(w.fwdMtm,0)} mark-to-market, which DBS holds outside net assets until it settles.</p>
+      ${w.al?`<p class="note"><b>The Air Liquide shares sit outside the margin account.</b> ${fmt(w.alShares,0)} shares registered directly with the company — they cannot be pledged, cannot raise your lending value and cannot answer a margin call in the hours one allows. Counted in wealth, excluded from headroom, exactly like CPF. See the AL tab.</p>`:''}
       ${w.cpf?`<p class="note"><b>CPF is counted last and separately on purpose.</b> It cannot be pledged, cannot be drawn to meet a margin call, and cannot service either loan — so it belongs in your net worth but nowhere in the margin arithmetic above.${w.cpfClaim?` A further ${money(w.cpfClaim,0)} of CPF already sits in the property and returns to your CPF, not to your bank, when the house is sold — see the Property tab.`:''}</p>`:''}
       </div>`; })()}
   </div>
@@ -2052,6 +2501,266 @@ function saveCpfHistory(){
 function delCpf(d){ if(confirm('Delete CPF balances for '+d+'?')){ delete state.cpf[d]; saveAll(); render(); } }
 function delCpfHome(d){ if(confirm('Delete the CPF housing entry for '+d+'?')){ delete state.cpfHome[d]; saveAll(); render(); } }
 
+/* ================= Air Liquide tab ================= */
+function viewAl(){
+  const p = alPosition();
+  if(!p) return `<div class="banner b-warn"><span class="ic">&#8505;</span><div><b>No Air Liquide holding recorded</b>Import your account statement through Add data.</div></div>${alForms()}`;
+  const S = alPriceStats(), C = alConcentration(), R = alReconcile(), M = AL_META, PM = AL_PRICE_META;
+  const yr = new Date().getFullYear();
+  const view = state.settings.alChart || 'daily';
+  const series = view==='daily'
+    ? [{name:'AL close (EUR)', color:'var(--s1)', values:AL_DAILY.map(d=>({x:dayMon(d[0]), y:d[4]}))}]
+    : [{name:'AL close (EUR)', color:'var(--s1)', values:AL_MONTHLY.map(d=>({x:d[0].slice(0,4), y:d[1]}))}];
+
+  return `
+  <div class="card">
+    <div class="hero">${p.sgd!=null?money(p.sgd):'—'}</div>
+    <div class="hero-sub">${esc(M.company)} &middot; ${fmt(p.total,0)} shares at &euro;${fmt(p.price,2)} = &euro;${fmt(p.eur,2)} &middot; converted at ${fmt(p.fx,6)} SGD/EUR${C?` &middot; <b>${pct(C.pctOfNet,1)} of everything you own</b>`:''}</div>
+  </div>
+  <div class="tiles">
+    <div class="tile"><div class="v">${fmt(p.total,0)}</div><div class="l">Shares held</div><div class="d">vintages ${p.oldest}–${p.newest}</div></div>
+    <div class="tile"><div class="v">&euro;${fmt(p.price,2)}</div><div class="l">Last close</div><div class="d">${esc(dayLabel(p.priceDate))} &middot; ${esc(PM.symbol)}</div></div>
+    <div class="tile"><div class="v">${fmt(p.available,0)}</div><div class="l">Available to sell</div><div class="d">${money(p.available*p.price*p.fx,0)} at today's rate</div></div>
+    <div class="tile"><div class="v neg">${fmt(p.blocked,0)}</div><div class="l">Blocked or pending</div><div class="d">&euro;${fmt(p.blockedEur,0)} you cannot reach</div></div>
+    ${S?`<div class="tile"><div class="v ${S.offHigh>=0?'pos':'neg'}">${pct(S.offHigh,1)}</div><div class="l">Off its ${AL_DAILY.length}-day high</div><div class="d">&euro;${fmt(S.hi,2)} on ${esc(dayLabel(S.hiDate))}</div></div>`:''}
+    ${C?`<div class="tile"><div class="v ${C.pctOfLiquid>25?'neg':''}">${pct(C.pctOfLiquid,1)}</div><div class="l">Of your liquid assets</div><div class="d">one company, one currency</div></div>`:''}
+  </div>
+
+  ${(()=>{ const q=p.byBonus.filter(b=>!b.qualified);
+    if(!q.length) return '';
+    return `<div class="banner b-warn"><span class="ic">&#9873;</span><div><b>${fmt(q.reduce((a,b)=>a+b.qty,0),0)} shares are still short of the loyalty bonus</b>${q.map(b=>`${fmt(b.qty,0)} qualify in ${b.y}`).join(' · ')}. Selling them before then forfeits the +${M.loyaltyPct}%.</div></div>`; })()}
+
+  <div class="card">
+    <h2>Price<span class="pill">${view==='daily'?AL_DAILY.length+' trading days':'since Jul 2007'}</span></h2>
+    ${lineChart(series,{yFmt:v=>'€'+fmt(v,0), zero:false})}
+    <div class="row2" style="margin-top:8px">
+      <button class="btn ${view==='daily'?'':'ghost'}" onclick="setAlChart('daily')">Recent</button>
+      <button class="btn ${view==='monthly'?'':'ghost'}" onclick="setAlChart('monthly')">Long run</button>
+    </div>
+    ${S?`<div style="margin-top:12px">
+      ${S.windows.map(w=>`<div class="kv"><span class="k">${w.yrs} year${w.yrs>1?'s':''} &middot; from &euro;${fmt(w.from,2)}</span><span class="v ${w.pct>=0?'pos':'neg'}">${w.pct>=0?'+':''}${pct(w.pct,1)} <span class="k" style="font-size:11px">${pct(w.cagr,1)}/yr</span></span></div>`).join('')}
+      <div class="kv"><span class="k">${AL_DAILY.length}-day range</span><span class="v">&euro;${fmt(S.lo,2)} – &euro;${fmt(S.hi,2)}</span></div>
+    </div>`:''}
+    <div class="warnbox"><b>The step down on ${esc(dayLabel(PM.attribution.date))} is not a loss.</b> Air Liquide attributed ${esc(PM.attribution.ratio)}; the quote falls by roughly a tenth because there are more shares. These are <b>raw prices, not adjusted for corporate actions</b>, so the percentages above understate the return by whatever the attributions gave you. ${esc(PM.attribution.source)}.</div>
+    <p class="note">${esc(PM.source)}. ${esc(PM.splitNote)}.</p>
+  </div>
+
+  <div class="card">
+    <h2>Loyalty bonus<span class="pill">+${M.loyaltyPct}%</span></h2>
+    ${p.byBonus.map(b=>`<div class="kv"><span class="k">${esc(b.isin)}<br><span style="font-size:11px">${b.qualified?'qualifying now':'qualifies in '+b.y}</span></span><span class="v ${b.qualified?'pos':''}">${fmt(b.qty,0)} shares<br><span class="k" style="font-size:11px">&euro;${fmt(b.qty*p.price,0)}</span></span></div>`).join('')}
+    <p class="note">${esc(M.loyaltyRule)}. Source: ${esc(M.loyaltySource)}.</p>
+    <p class="note">${esc(M.attributionCadence)}. The last was ${esc(dayLabel(PM.attribution.date))}. If that cadence holds, the next would fall around ${+PM.attribution.date.slice(0,4)+2} — by which point every line above would be qualifying, and the bonus would be worth an extra ${fmt(p.total*0.1*0.1,0)} shares on a 1-for-10 attribution rather than the ${fmt(p.byBonus.filter(b=>b.qualified).reduce((a,b)=>a+b.qty,0)*0.1*0.1,0)} today.</p>
+  </div>
+
+  <div class="card">
+    <h2>What you hold</h2>
+    ${p.byType.map(t=>`<div class="kv"><span class="k">${esc(t.t)} shares</span><span class="v">${fmt(t.qty,0)} <span class="k" style="font-size:11px">${pct(t.qty/p.total*100,1)} &middot; &euro;${fmt(t.qty*p.price,0)}</span></span></div>`).join('')}
+    <div class="kv"><span class="k"><b>Total</b></span><span class="v"><b>${fmt(p.total,0)}</b></span></div>
+    <details style="margin-top:8px"><summary class="note" style="cursor:pointer">Every line on the statement</summary>
+      <div style="margin-top:6px">${p.lines.slice().sort((a,b)=>b.vintage-a.vintage||a.type.localeCompare(b.type)).map(l=>`<div class="kv"><span class="k">${l.vintage} &middot; ${esc(l.type)}${l.available?'':' <span class="neg">· blocked</span>'}</span><span class="v" style="font-weight:400">${fmt(l.qty,0)}</span></div>`).join('')}</div>
+    </details>
+    ${(()=>{ const V=(latestAl()||{}).verified; if(!V) return '';
+      return `<div class="banner b-good" style="margin:10px 0"><span class="ic">&#10003;</span><div><b>Checked against a second source</b>${esc(V.note)} Verified ${esc(dayLabel(V.on))} against ${esc(V.by)}.</div></div>`; })()}
+    <p class="note">Blocked lines are the ${p.lines.filter(l=>!l.available).map(l=>l.vintage).join(', ')} employee-savings tranches. Fortress does not assume when they release — the statement says only that they are unavailable, so that is all it claims. Source: ${esc(p.source)}.</p>
+  </div>
+
+  ${R?`<div class="card">
+    <h2>Two valuations, one day<span class="pill">reconciled</span></h2>
+    <div class="kv"><span class="k">Statement, ${esc(dayLabel(p.asOf))}</span><span class="v">&euro;${fmt(p.statedValueEur,2)} <span class="k" style="font-size:11px">at &euro;${fmt(R.statementPrice,2)}</span></span></div>
+    <div class="kv"><span class="k">Shareholder portal, same day</span><span class="v">&euro;${fmt(AL_PORTAL.valuationEur,2)} <span class="k" style="font-size:11px">at &euro;${fmt(R.portalPrice,2)}</span></span></div>
+    <div class="kv"><span class="k">Difference</span><span class="v">&euro;${fmt(R.gapEur,2)}</span></div>
+    <p class="note">Not an error in either. The statement priced you at the <b>${esc(dayLabel(R.statementPriceDay||''))}</b> close and the portal at the <b>${esc(dayLabel(R.portalPriceDay||''))}</b> close — both figures appear in the price series to the cent. Share counts agree exactly: ${fmt(R.total,0)} total and ${fmt(R.blocked,0)} blocked on both.</p>
+  </div>`:''}
+
+  ${(()=>{ const D=alDividends(); if(!D) return '';
+    const M=AL_DIV_META, L=D.last, P=alPosition();
+    const series=[
+      {name:'Net received', color:'var(--s1)', values:D.rows.slice().reverse().map(r=>({x:String(r.year), y:Math.round(r.net)}))},
+      {name:'Loyalty line',  color:'var(--s2)', values:D.rows.slice().reverse().map(r=>({x:String(r.year), y:Math.round(r.loyaltyNet)}))}
+    ];
+    const coupons=[
+      {name:'All coupons', color:'var(--s1)', values:D.rows.slice().reverse().map(r=>({x:String(r.year), y:r.baseCoupons}))},
+      {name:'Earning the bonus', color:'var(--s2)', values:D.rows.slice().reverse().map(r=>({x:String(r.year), y:r.loyaltyCoupons}))}
+    ];
+    return `
+  <div class="card">
+    <h2>Dividends<span class="pill">${D.rows.length} years</span></h2>
+    <div class="kv"><span class="k">Received ${L.year} <span style="font-size:11px">(${esc(dayLabel(L.paid))})</span></span><span class="v pos">&euro;${fmt(L.net,2)}<br><span class="k" style="font-size:11px">&euro;${fmt(L.gross,2)} gross</span></span></div>
+    <div class="kv"><span class="k">Over ${D.rows.length} years, ${D.first.year}&ndash;${L.year}</span><span class="v">&euro;${fmt(D.totalNet,2)} net<br><span class="k" style="font-size:11px">of &euro;${fmt(D.totalGross,2)} gross</span></span></div>
+    <div class="kv"><span class="k">Withheld at source over the period</span><span class="v neg">&euro;${fmt(D.totalWithheld,2)}</span></div>
+    <div class="kv"><span class="k">Gross yield at &euro;${fmt(P.price,2)}</span><span class="v">${pct(D.yieldGross,2)}<br><span class="k" style="font-size:11px">${pct(D.yieldWithLoyalty,2)} on shares earning the bonus</span></span></div>
+
+    <div class="legend" style="margin-top:12px">${series.map(x=>`<span><span class="sw" style="background:${x.color}"></span>${esc(x.name)}</span>`).join('')}</div>
+    ${lineChart(series,{yFmt:v=>'€'+fmt(v/1000,1)+'k', zero:true})}
+
+    <div style="margin-top:12px">
+      ${D.rows.map(r=>`<div class="kv"><span class="k">${r.year}<br><span style="font-size:11px">&euro;${fmt(r.baseUnit,2)} on ${fmt(r.baseCoupons,0)} + &euro;${fmt(r.loyaltyUnit,2)} on ${fmt(r.loyaltyCoupons,0)} &middot; ${esc(r.method||'')}</span></span><span class="v">&euro;${fmt(r.net,2)}<br><span class="k" style="font-size:11px">${pct(r.qualifiedPct,0)} earned the bonus &middot; &minus;${fmt(r.withheldPct,2)}%</span></span></div>`).join('')}
+    </div>
+
+    ${D.rateChanged?`
+    <div class="warnbox" style="margin-top:10px"><b>The withholding rate has moved four ways, and none of it was flagged to you.</b>
+      <div style="margin-top:8px">${D.regimes.map(g=>`<div class="kv"><span class="k">${g.span}<br><span style="font-size:11px">${g.years.length} year${g.years.length>1?'s':''} &middot; &euro;${fmt(g.gross,2)} gross</span></span><span class="v${g.mean>D.bestPct+0.01?' neg':''}">${g.label}<br><span class="k" style="font-size:11px">&euro;${fmt(g.withheld,2)} withheld${g.exact?'':' &middot; not identical across the run'}</span></span></div>`).join('')}</div>
+      <p style="margin:8px 0 0">Over the whole record the blended rate is <b>${pct(D.blendedPct,2)}</b>. The current ${fmt(D.regimes[0].mean,2)}% is ${fmt(D.stepPp,2)}pp above the ${fmt(D.prevRegime.mean,2)}% that ran ${D.prevRegime.span}, which has cost <b>&euro;${fmt(D.stepCost,2)}</b> since ${D.regimes[0].from}. The costliest stretch ${D.worstIsCurrent?'is the current one':'was'} <b>${D.worst.span}</b>: ${D.worst.label} on &euro;${fmt(D.worst.gross,2)}, which is <b>&euro;${fmt(D.worstExcess,2)}</b> more than the ${pct(D.bestPct,2)} you were charged in other years&mdash;${D.worstIsCurrent?'not because the rate is the highest you have paid, but because the sums it applies to now are far larger':'the highest rate on the record'}.</p>
+      <p style="margin:8px 0 0"><b>What is sourced:</b> ${fmt(D.regimes[0].mean,2)}% is France's domestic withholding rate for non-resident individuals, in force for income paid since 1 January 2018, and the France&ndash;Singapore treaty caps portfolio dividends at 15% &mdash; above it &mdash; so the treaty gives you nothing to reclaim and the current deduction looks correct.
+      <b>What is not:</b> Fortress could find no source for the French domestic rate applying to non-resident individuals <em>before</em> 2018, so it does not attribute the ${D.regimes[2]?D.regimes[2].label:''} years to any rule. Nor does it know why ${fmt(D.prevRegime.mean,2)}% applied ${D.prevRegime.span} and then stopped &mdash; that is neither the domestic rate nor the Singapore cap, and most likely turns on your tax residence or a treaty claim in those years. <b>Fortress will not invent a reason.</b> Any French reclaim window on the ${D.worst.span} payments is in any case long closed.</p>
+      ${D.odd.length?`<p style="margin:8px 0 0">${D.odd.length===1?'One year does':fmt(D.odd.length,0)+' years do'} not even match ${D.odd.length===1?'its own':'their own'} run: ${D.odd.map(o=>`<b>${o.year}</b> came out at ${fmt(o.pct,4)}% against the ${fmt(o.headline,2)}% charged elsewhere in ${o.span}, ${fmt(o.shortfall,2)} euro less than that rate would have taken`).join('; ')}. The coupon count and the gross reconcile exactly there, so the difference is in the deduction, not the transcription. Fortress reports the effective rate as computed and does not round it into a story.</p>`:''}
+      <p style="margin:8px 0 0"><b>${esc(M.sgUnverified)}</b></p></div>`:`
+    <div class="kv"><span class="k">Withholding, every year on record</span><span class="v neg">${pct(L.withheldPct,2)}</span></div>`}
+
+    <div class="warnbox" style="margin-top:10px"><b>The second payment each year <em>is</em> the loyalty bonus.</b> Air Liquide pays it as its own line: &euro;${fmt(L.loyaltyUnit,2)} against a &euro;${fmt(L.baseUnit,2)} base, on the ${fmt(L.loyaltyCoupons,0)} coupons that had completed two full calendar years &mdash; ${pct(L.qualifiedPct,0)} of your holding.
+      ${D.truncAll&&!D.roundAll?`Across all ${D.rows.length} years the bonus unit is the base amount taken to a tenth and <b>truncated</b> to the cent, never rounded up: &euro;2.95 gave &euro;0.29 and &euro;2.75 gave &euro;0.27, not &euro;0.30 and &euro;0.28. So the headline "+10%" is really 9.8&ndash;10.0% depending on where the base amount falls.`:''}
+      Over the period the bonus alone has paid <b>&euro;${fmt(D.loyaltyTotalGross,2)}</b> gross, and the ${fmt(D.onClock,0)} shares still on the clock would add roughly <b>&euro;${fmt(D.onClockValue,2)} a year</b> at the ${L.year} rate.</div>
+
+    <div class="legend" style="margin-top:14px">${coupons.map(x=>`<span><span class="sw" style="background:${x.color}"></span>${esc(x.name)}</span>`).join('')}</div>
+    ${lineChart(coupons,{yFmt:v=>fmt(v,0), zero:true})}
+    ${D.drops.length?`<p class="note"><b>The share count has not only gone up.</b> ${D.drops.map(d=>`${d.year} was ${fmt(Math.abs(d.delta),0)} coupons lower than ${d.year-1}${d.loyaltyDelta<0?` and ${fmt(Math.abs(d.loyaltyDelta),0)} lower on the bonus line`:''}`).join('; ')}. A dividend line falls when shares leave registered form &mdash; sold, transferred, or released from a plan. Fortress records the fall; it does not know the reason, and the portal history you have loaded does not say.</p>`:''}
+
+    <div class="kv" style="margin-top:12px"><span class="k"><b>At today's holding and the ${L.year} rate</b></span><span class="v"><b>&euro;${fmt(D.runNet,2)} net</b><br><span class="k" style="font-size:11px">&asymp; ${money(D.runNetSgd,0)}</span></span></div>
+    <p class="note">${fmt(P.total,0)} shares &times; &euro;${fmt(L.baseUnit,2)}, plus &euro;${fmt(L.loyaltyUnit,2)} on the ${fmt(P.byBonus.filter(b=>b.qualified).reduce((a,b)=>a+b.qty,0),0)} qualifying, less ${pct(L.withheldPct,2)}. <b>This is a run-rate, not a forecast</b> &mdash; the ${L.year+1} dividend has not been declared, and Fortress will not invent one.</p>
+
+    <p class="note">Net income grew ${pct((L.net/D.first.net-1)*100,1)} over ${D.yrs} years, ${pct(D.netCagr,1)} a year &mdash; but far more of that is shares than dividend: coupons rose ${pct(D.couponChangePct,1)} while the per-share amount rose ${pct(D.dpsChangePct,1)} (${pct((Math.pow(L.baseUnit/D.first.baseUnit,1/D.yrs)-1)*100,2)} a year). ${esc(M.note)}</p>
+    <p class="note">${esc(M.payWindow)}.${(()=>{ const asc=D.rows.slice().reverse();
+        const sw=asc.findIndex((r,i)=>i&&r.method!==asc[i-1].method);
+        const runs=[]; asc.forEach(r=>{ const c=runs[runs.length-1];
+          if(c&&c.m===r.method) c.to=r.year; else runs.push({m:r.method,from:r.year,to:r.year}); });
+        if(runs.length<2) return '';
+        const rateMoved = y => { const a=D.rows.find(x=>x.year===y), b=D.rows.find(x=>x.year===y-1);
+          return a&&b&&Math.abs(a.withheldPct-b.withheldPct)>0.01; };
+        const both = runs.slice(1).filter(r=>rateMoved(r.from)).length;
+        return ` Paid by ${runs.map(r=>esc(r.m.toLowerCase())+' '+r.from+(r.from!==r.to?'\u2013'+r.to:'')).join(', then ')}. Of the ${runs.length-1} route change${runs.length>2?'s':''} and the ${D.regimes.length-1} rate changes, ${both===0?'none coincide':both===1?('only one coincides ('+runs.slice(1).filter(r=>rateMoved(r.from))[0].from+')'):'only '+both+' coincide'}, so the payment route does not determine the rate.`; })()} Source: ${esc(M.source)}.<br>${esc(M.frSource)}.<br>${esc(M.treatySource)}.</p>
+  </div>`; })()}
+
+  ${(()=>{ const B=alBasis(); if(!B) return '';
+    const M=AL_BASIS_META;
+    return `
+  <div class="card">
+    <h2>Cost basis and unrealised gain<span class="pill">${fmt(B.qty,0)} shares</span></h2>
+    <div class="kv"><span class="k">What these shares cost you</span><span class="v">&euro;${fmt(B.cost,2)}<br><span class="k" style="font-size:11px">&euro;${fmt(B.perShare,2)} a share, blended</span></span></div>
+    <div class="kv"><span class="k">What they are worth at &euro;${fmt(B.price,2)}</span><span class="v">&euro;${fmt(B.val,2)}</span></div>
+    <div class="kv"><span class="k"><b>Unrealised gain if you sold today</b></span><span class="v pos"><b>&euro;${fmt(B.gain,2)}</b><br><span class="k" style="font-size:11px">${pct(B.gainPct,1)} on cost</span></span></div>
+    ${B.pctOfHolding!=null?`<div class="kv"><span class="k">Share of your Air Liquide holding</span><span class="v">${pct(B.pctOfHolding,1)}<br><span class="k" style="font-size:11px">${fmt(B.qty,0)} of ${fmt(alPosition().total,0)} shares</span></span></div>`:''}
+
+    <div style="margin-top:12px">
+      ${B.rows.slice().sort((a,b)=>b.grant.localeCompare(a.grant)).map(r=>`
+      <div class="kv"><span class="k">${esc(r.source.replace('Attribution du ',''))}<br><span style="font-size:11px">${fmt(r.qty,0)} shares &middot; vested ${esc(dayLabel(r.grant))} &middot; ${r.bonusYear?`bonus from ${r.bonusYear}`:'earning the bonus'}</span></span><span class="v">&euro;${fmt(r.valuation,2)}<br><span class="k" style="font-size:11px">basis &euro;${fmt(r.adjPrice,2)} &middot; gain ${pct(r.gainPct,0)}${r.short?' &middot; <b>short</b>':''}</span></span></div>`).join('')}
+    </div>
+
+    <p class="note">${B.allAddUp&&B.allAtQuote?`<b>Every line reconciles three ways.</b> Quantity &times; adjusted price plus the stated unrealised gain equals the stated valuation to the cent; the valuation is exactly the quantity at today's &euro;${fmt(B.price,2)} quote; and ${B.portfolioMatches?`all ${fmt(B.rows.length,0)} lines appear in your account statement with the same quantities, ${fmt(B.portfolioQty,0)} shares in total`:'the portfolio comparison does not line up, which Fortress flags rather than explains'}.`:'<b>A line does not reconcile.</b> Check the transcription before relying on this card.'}</p>
+
+    ${B.shortRows.length?`
+    <div class="warnbox" style="margin-top:4px"><b>One tranche does not add up, and it is worth understanding why.</b>
+      ${B.shortRows.map(r=>`The <b>${esc(r.plan)}</b> attribution vested as <b>${fmt(r.vest.qty,0)} shares at &euro;${fmt(r.vest.price,2)}</b> &mdash; &euro;${fmt(r.origCost,2)} of basis. The adjusted price has since fallen to &euro;${fmt(r.adjPrice,2)}, which on every other tranche means the share count rose in exact proportion. Here it did not: you should be holding about <b>${fmt(r.expectedQty,0)}</b> shares and the portal shows <b>${fmt(r.qty,0)}</b>. That is <b>${fmt(Math.abs(r.shortQty),0)} shares</b> at today's count &mdash; roughly ${fmt(Math.abs(r.shortOriginal),0)} of the original ${fmt(r.vest.qty,0)} &mdash; and <b>&euro;${fmt(Math.abs(r.shortBasis),2)}</b> of cost basis that is no longer in the account. At today's quote those shares would be worth about &euro;${fmt(Math.abs(r.shortQty)*B.price,2)}.`).join('<br><br>')}
+      <br><br><b>${esc(M.unknownCause)}</b> What Fortress can say is that the other ${fmt(B.clean.length,0)} tranches with a vesting record tie to within &euro;2 of their original outlay, so this is not a rounding artefact and not a flaw in the method &mdash; it is specific to that one plan.</div>`:''}
+
+    ${B.clean.length?`
+    <div class="warnbox" style="margin-top:4px"><b>The free-share attributions have cost you nothing in basis.</b>
+      On ${fmt(B.clean.length,0)} of the ${fmt(B.ties.length,0)} tranches Fortress can check, quantity &times; adjusted price still equals the original outlay: ${B.clean.map(r=>`<b>${esc(r.plan)}</b> ${fmt(r.vest.qty,0)}&times;&euro;${fmt(r.vest.price,2)} &rarr; ${fmt(r.qty,0)}&times;&euro;${fmt(r.adjPrice,2)} (${pct(Math.abs(r.costGapPct),3)} apart)`).join('; ')}. In each case the share count grew by the same ratio the price shrank. These are two datasets Fortress read from different pages, agreeing to the cent-rounding.</div>`:''}
+
+    <p class="note">${esc(M.priceNote)}</p>
+    <p class="note">${B.byBonus.map(x=>`${fmt(x.qty,0)} ${esc(x.label)}`).join(' &middot; ')}. The oldest line, the ${fmt(B.rows[0].qty,0)} shares from ${esc(B.rows[0].source.replace('Attribution du ',''))}, has no entry in the vesting History you have loaded, so Fortress cannot cross-check it &mdash; it reconciles internally but has nothing to be compared against.</p>
+    <p class="note">Source: ${esc(M.source)}.</p>
+  </div>`; })()}
+
+  ${(()=>{ const V=alVesting(); if(!V) return '';
+    const M=AL_VESTING_META;
+    return `
+  <div class="card">
+    <h2>Performance shares — what vested<span class="pill">${V.rows.length} plans</span></h2>
+    ${V.rows.map(r=>`<div class="kv"><span class="k">${esc(r.plan)}<br><span style="font-size:11px">vested ${esc(dayLabel(r.vested))} at &euro;${fmt(r.price,2)}</span></span><span class="v">${fmt(r.qty,0)} shares<br><span class="k" style="font-size:11px">&euro;${fmt(r.gain,2)}</span></span></div>`).join('')}
+    <div class="kv"><span class="k"><b>Total across these plans</b></span><span class="v"><b>${fmt(V.qty,0)} shares &middot; &euro;${fmt(V.gain,2)}</b></span></div>
+    <div class="kv"><span class="k">Those shares at today's price</span><span class="v">&euro;${fmt(V.atToday,2)}</span></div>
+    <p class="note"><b>"Capital gain on acquisition" is not a market gain.</b> Performance shares arrive free, so the whole value at vesting is the acquisition gain — quantity &times; the ${esc(M.priceNote.toLowerCase())}. Every row multiplies out to the stated figure to the cent. It is the figure tax authorities care about, not a measure of how the shares have done since.</p>
+    <p class="note">${esc(M.cycle)}. ${esc(M.incomplete)}</p>
+    <p class="note">Source: ${esc(M.source)}.</p>
+  </div>`; })()}
+
+  ${(()=>{ const PR=alAttributionProof(); if(!PR||!PR.checkable.length) return '';
+    const P=PR.checkable, A=AL_PRICE_META.attribution;
+    return `
+  <div class="card">
+    <h2>The loyalty rule, checked against your own counts</h2>
+    ${P.map(x=>`<div class="kv"><span class="k">${fmt(x.vested,0)} vested in ${x.vestedYear}<br><span style="font-size:11px">plain 1-for-10 &rarr; ${fmt(x.plain,0)} &middot; with bonus &rarr; ${fmt(x.loyal,0)}</span></span><span class="v ${x.fits==='plain'?'':'neg'}">${fmt(x.held,0)} held<br><span class="k" style="font-size:11px">${x.fits==='plain'?'plain, no bonus':(x.fits==='loyalty'?'bonus applied':'neither — check')}</span></span></div>`).join('')}
+    <p class="note">The ${esc(dayLabel(A.date))} attribution gave ${esc(A.ratio)}. ${P.length>1?'Both of these tranches were':'This tranche was'} registered too recently to have completed two full calendar years, so ${P.length>1?'neither':'it'} should have earned the +${AL_META.loyaltyPct}% — and ${P.length>1?'neither did':'it did not'}: the counts land on the plain entitlement, rounded down to whole shares. That is the loyalty rule demonstrated in your own portfolio rather than quoted from a factsheet, and it is what the ${fmt(alPosition().byBonus.filter(b=>!b.qualified).reduce((a,b)=>a+b.qty,0),0)} shares still on the clock stand to gain at the next attribution.</p>
+    ${PR.skipped.length?`<p class="note"><b>Older tranches are not checked here.</b> ${PR.skipped.map(x=>x.vestedYear).join(', ')} have each been through several attributions since vesting, and the balances may also have been sold into — so a one-step comparison would prove nothing either way. Fortress leaves them out rather than flagging them as anomalies.</p>`:''}
+  </div>`; })()}
+
+  ${(()=>{ const R=AL_REGISTRATIONS; if(!R||!R.length) return '';
+    return `
+  <div class="card">
+    <h2>Registration dates<span class="pill">where the clock starts</span></h2>
+    ${R.slice().sort((a,b)=>b.on.localeCompare(a.on)).map(r=>{
+      const y=+r.on.slice(0,4), bonus=y+3;
+      return `<div class="kv"><span class="k">${esc(dayLabel(r.on))} &middot; ${esc(r.isin)}</span><span class="v">${fmt(r.qty,0)} share${r.qty>1?'s':''}<br><span class="k" style="font-size:11px">${bonus<=new Date().getFullYear()?'qualifying':'bonus from '+bonus}</span></span></div>`;
+    }).join('')}
+    <p class="note">Ordinary shares only — the portal lists these individually with their registration date, and each valuation multiplies out at &euro;${fmt(AL_PRICE_META.last,2)} exactly. Two full calendar years after registration is the test, so a share registered in December 2025 waits out 2026 and 2027 and qualifies in 2028. That is precisely what the tranche labels say.</p>
+  </div>`; })()}
+
+  ${C?`<div class="card">
+    <h2>Points of attention</h2>
+    <div class="kv"><span class="k">One company, three ways</span><span class="v neg">${pct(C.pctOfNet,1)} of net worth</span></div>
+    <p class="note">Your salary, ${money(C.sgd,0)} of shares, and the ${money((cpfLastContribution()||{}).median||0,0)}/month of CPF that salary generates all depend on Air Liquide. A bad year at one employer would hit income, savings rate and ${pct(C.pctOfNet,1)} of your assets at once. That is the concentration that matters, and no diversification inside the DBS portfolio touches it.</p>
+    <div class="kv"><span class="k">Currency added</span><span class="v">EUR ${money(C.sgd,0)}</span></div>
+    <p class="note">Fortress already scores the DBS book at ${C.dbsUsdPct!=null?pct(C.dbsUsdPct,1):'—'} USD. Adding a EUR single-name position does not offset that; it means your assets now sit in three currencies while every liability and living cost is SGD.</p>
+    <div class="kv"><span class="k">Not collateral</span><span class="v">excluded from margin</span></div>
+    <p class="note">These shares are registered directly with Air Liquide, not pledged to DBS. They cannot be counted towards your lending value and cannot stop a margin call in the hours one would need answering. They are wealth, not headroom — Fortress treats them the same way it treats CPF.</p>
+    <div class="kv"><span class="k">Blocked</span><span class="v neg">${fmt(p.blocked,0)} shares &middot; &euro;${fmt(p.blockedEur,0)}</span></div>
+    <p class="note">Even the sellable ${fmt(p.available,0)} take days to settle and are sold, not drawn.</p>
+  </div>`:''}
+
+${alForms()}
+  <button class="btn" onclick="startImport()">&#10514; Add data — Air Liquide statement or portal screenshot</button>
+  <p class="note" style="text-align:center">Read entirely on this device — nothing is uploaded.</p>`;
+}
+function alForms(){
+  const p = alPosition();
+  return `
+  <div class="card"><h2>Update the holding</h2>
+    <p class="note" style="margin-top:0">The share count is what changes — through attributions, vesting and releases. The price comes from the series Fortress ships; re-import to refresh it.</p>
+    <label class="fld">As at (YYYY-MM-DD)</label><input type="text" id="alDate" value="${new Date().toISOString().slice(0,10)}">
+    ${fld('alTotal','Total shares', p?p.total:null,'1')}
+    ${fld('alBlocked','Of which blocked or pending', p?p.blocked:null,'1')}
+    ${fld('alPrice','Share price (EUR)', p?p.price:null)}
+    <button class="btn" style="margin-top:12px" onclick="saveAl()">Save</button>
+    ${alDates().length?`<div style="margin-top:12px">${alDates().slice().reverse().map(d=>{const A=state.al[d]; const n=(A.lines||[]).reduce((t,l)=>t+l.qty,0)||A.statedTotal||A.total||0;
+      return `<div class="kv"><span class="k">${esc(d)}</span><span class="v">${fmt(n,0)} shares <button class="btn ghost" style="width:auto;padding:2px 8px;font-size:11px;margin-left:8px" onclick="delAl('${esc(d)}')">×</button></span></div>`;}).join('')}</div>`:''}
+  </div>`;
+}
+function setAlChart(v){ state.settings.alChart=v; saveAll(); render(); }
+function saveAl(){
+  const d=(document.getElementById('alDate').value||'').trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(d)){ alert('Date must be YYYY-MM-DD.'); return; }
+  const tot=gv('alTotal'), blk=gv('alBlocked'), px=gv('alPrice');
+  if(tot===null){ alert('Total shares is required.'); return; }
+  const prev=latestAl();
+  state.al=state.al||{};
+  // a hand-entered total replaces the line detail with a single line, and says so
+  state.al[d]={ asOf:d, priceEur:px??(prev?prev.priceEur:null), priceDate:d,
+    lines:[{ isin:'—', bonusYear:new Date().getFullYear(), type:'Total as entered',
+             vintage:new Date().getFullYear(), available:true, qty:tot-(blk||0) },
+           ...((blk||0)>0?[{ isin:'—', bonusYear:new Date().getFullYear(), type:'Total as entered',
+             vintage:new Date().getFullYear(), available:false, qty:blk }]:[])],
+    statedTotal:tot, statedValueEur: px!=null? tot*px : null,
+    source:(window.__rec?.sourceName||'manual entry')+' — totals only, line detail not captured' };
+  saveAll(); closeModal(); go('al');
+}
+/* an imported statement carries its line detail; keep it rather than flattening to a total */
+function saveAlFromReview(){
+  const f=window.__rec?.fields; if(!f){ alert('Nothing to save.'); return; }
+  const d=(document.getElementById('alDate').value||'').trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(d)){ alert('Date must be YYYY-MM-DD.'); return; }
+  const px=gv('alPrice'), tot=gv('alTotal');
+  state.al=state.al||{};
+  state.al[d]={ asOf:d, priceEur:px, priceDate:d,
+    lines: f.lines.length ? f.lines.map(l=>({ isin:l.isin||'—', bonusYear:l.bonusYear||new Date().getFullYear(),
+      type:l.type, vintage:l.vintage, available:l.available, qty:l.qty }))
+      : [{ isin:'—', bonusYear:new Date().getFullYear(), type:'Total as entered',
+           vintage:new Date().getFullYear(), available:true, qty:tot }],
+    statedTotal: f.statedTotal ?? tot, statedValueEur: f.value ?? (px!=null&&tot!=null? tot*px : null),
+    source:(window.__rec?.sourceName||'imported')+(window.__rec?.viaOcr?' (OCR, reviewed)':' (reviewed)') };
+  saveAll(); closeModal(); go('al');
+}
+function delAl(d){ if(confirm('Delete the Air Liquide entry for '+d+'?')){ delete state.al[d]; saveAll(); render(); } }
+
 function viewFX(){
   const snap=latest(), a=agg(snap);
   const ccys=Object.entries(a.pledgedCcy).sort((x,y)=>y[1]-x[1]);
@@ -2231,7 +2940,7 @@ function viewSet(){
   </div>
   <div class="card"><h2>Data</h2>
     <p class="note">Everything is stored only in this browser (localStorage). Use Export in History for a backup before clearing browser data.</p>
-    <button class="btn ghost" style="margin-top:8px" onclick="if(confirm('Delete all snapshots, home-loan entries and settings?')){['fortress.snapshots','fortress.manual','fortress.income','fortress.mrtl','fortress.lv','fortress.reported','fortress.rateChanges','fortress.cpf','fortress.cpfHome','fortress.cpfTxns','fortress.settings'].forEach(k=>localStorage.removeItem(k));location.reload();}">Clear all data</button>
+    <button class="btn ghost" style="margin-top:8px" onclick="if(confirm('Delete all snapshots, home-loan entries and settings?')){['fortress.snapshots','fortress.manual','fortress.income','fortress.mrtl','fortress.lv','fortress.reported','fortress.rateChanges','fortress.cpf','fortress.cpfHome','fortress.cpfTxns','fortress.al','fortress.settings'].forEach(k=>localStorage.removeItem(k));location.reload();}">Clear all data</button>
   </div>
   <div class="card"><h2>About</h2>
     <div class="kv"><span class="k">Version</span><span class="v">${VERSION}</span></div>
@@ -2245,7 +2954,7 @@ function viewSet(){
 function render(){
   renderTabs();
   document.getElementById('stamp').textContent = VERSION;
-  const v={dash:viewDash,prop:viewProp,cpf:viewCpf,trends:viewTrends,fx:viewFX,hist:viewHist,set:viewSet}[state.settings.tab]||viewDash;
+  const v={dash:viewDash,prop:viewProp,cpf:viewCpf,al:viewAl,trends:viewTrends,fx:viewFX,hist:viewHist,set:viewSet}[state.settings.tab]||viewDash;
   document.getElementById('main').innerHTML = v() + `<p class="fine">Monitoring aid only — verify against your official DBS statements. ${VERSION}</p>`;
 }
 
@@ -2324,7 +3033,7 @@ function delSnap(d){
   if(confirm('Delete snapshot '+d+'?')){ delete state.snapshots[d]; saveAll(); render(); }
 }
 function exportData(){
-  const blob=new Blob([JSON.stringify({app:'Fortress',snapshots:state.snapshots,manual:state.manual,income:state.income,mrtl:state.mrtl,lv:state.lv,reported:state.reported,rateChanges:state.rateChanges,cpf:state.cpf,cpfHome:state.cpfHome,cpfTxns:state.cpfTxns,settings:state.settings},null,1)],{type:'application/json'});
+  const blob=new Blob([JSON.stringify({app:'Fortress',snapshots:state.snapshots,manual:state.manual,income:state.income,mrtl:state.mrtl,lv:state.lv,reported:state.reported,rateChanges:state.rateChanges,cpf:state.cpf,cpfHome:state.cpfHome,cpfTxns:state.cpfTxns,al:state.al,settings:state.settings},null,1)],{type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download='fortress-backup-'+new Date().toISOString().slice(0,10)+'.json'; a.click();
 }
@@ -2332,7 +3041,7 @@ function importData(inp){
   const f=inp.files[0]; if(!f) return;
   f.text().then(t=>{ const d=JSON.parse(t);
     if(!d.snapshots) throw new Error('not a Fortress backup');
-    state.snapshots=d.snapshots; if(d.manual) state.manual=d.manual; if(d.income) state.income=d.income; if(d.mrtl) state.mrtl=d.mrtl; if(d.lv) state.lv=d.lv; if(d.reported) state.reported=d.reported; if(d.rateChanges) state.rateChanges=d.rateChanges; if(d.cpf) state.cpf=d.cpf; if(d.cpfHome) state.cpfHome=d.cpfHome; if(d.cpfTxns) state.cpfTxns=d.cpfTxns; if(d.settings) state.settings={...state.settings,...d.settings};
+    state.snapshots=d.snapshots; if(d.manual) state.manual=d.manual; if(d.income) state.income=d.income; if(d.mrtl) state.mrtl=d.mrtl; if(d.lv) state.lv=d.lv; if(d.reported) state.reported=d.reported; if(d.rateChanges) state.rateChanges=d.rateChanges; if(d.cpf) state.cpf=d.cpf; if(d.cpfHome) state.cpfHome=d.cpfHome; if(d.cpfTxns) state.cpfTxns=d.cpfTxns; if(d.al) state.al=d.al; if(d.settings) state.settings={...state.settings,...d.settings};
     saveAll(); render(); alert('Backup restored: '+Object.keys(d.snapshots).length+' snapshot(s).');
   }).catch(e=>alert('Could not restore: '+e.message));
   inp.value='';
@@ -2483,7 +3192,7 @@ function routeText(text, sourceName, viaOcr){
   reviewRecognized(r);
 }
 
-const KINDLABEL={ cpfHistory:'CPF transaction history', cpfBalances:'CPF account balances', cpfHousing:'CPF home-ownership dashboard', uobRateChange:'UOB loan rate-revision letter', dbsPerformance:'DBS Performance summary', dbsMrtl:'DBS MRTL draw-down screen', dbsPortfolioSummary:'DBS Portfolio Summary screen', uobLoanScreen:'UOB home-loan screen', uobStatement:'UOB Statement of Account', generic:'Unrecognised document' };
+const KINDLABEL={ alHolding:'Air Liquide holding', cpfHistory:'CPF transaction history', cpfBalances:'CPF account balances', cpfHousing:'CPF home-ownership dashboard', uobRateChange:'UOB loan rate-revision letter', dbsPerformance:'DBS Performance summary', dbsMrtl:'DBS MRTL draw-down screen', dbsPortfolioSummary:'DBS Portfolio Summary screen', uobLoanScreen:'UOB home-loan screen', uobStatement:'UOB Statement of Account', generic:'Unrecognised document' };
 const fld=(id,label,val,step)=>`<label class="fld">${label}</label><input type="${typeof val==='string'&&!/^-?[\d.]*$/.test(val||'')?'text':'number'}" id="${id}" step="${step||'0.01'}" inputmode="decimal" value="${val==null?'':esc(String(val))}">`;
 
 function reviewRecognized(r){
@@ -2494,6 +3203,25 @@ function reviewRecognized(r){
   ${r.viaOcr?`<div class="warnbox"><b>OCR can misread digits.</b> Compare each number with the screenshot before you save.</div>`:''}
   ${r.warnings.length?`<div class="warnbox"><b>Check these:</b><br>${r.warnings.map(esc).join('<br>')}</div>`:''}`;
 
+  if(r.kind==='alHolding'){
+    const prev=alPosition();
+    showModal(head+`
+    ${f.lines.length?`<div class="kv"><span class="k">Lines read</span><span class="v">${f.lines.length}</span></div>`:''}
+    <div class="kv"><span class="k">Total shares</span><span class="v"><b>${fmt(f.total,0)}</b>${f.statedTotal!=null?` <span class="k" style="font-size:11px">document states ${fmt(f.statedTotal,0)}</span>`:''}</span></div>
+    ${f.reconciles!=null?`<div class="kv"><span class="k">Lines add up to the stated total?</span><span class="v ${f.reconciles?'pos':'neg'}"><b>${f.reconciles?'yes':'NO'}</b></span></div>`:''}
+    ${f.blocked!=null?`<div class="kv"><span class="k">Blocked or pending</span><span class="v neg">${fmt(f.blocked,0)}</span></div>`:''}
+    ${f.price!=null?`<div class="kv"><span class="k">Share price</span><span class="v">&euro;${fmt(f.price,2)}</span></div>`:''}
+    ${(prev&&f.total!=null)?`<div class="kv"><span class="k">Change since ${esc(prev.asOf)}</span><span class="v ${f.total-prev.total>=0?'pos':'neg'}">${f.total-prev.total>=0?'+':''}${fmt(f.total-prev.total,0)} shares</span></div>`:''}
+    ${f.isins.length?`<p class="note">Tranches: ${f.isins.map(esc).join(', ')}.</p>`:''}
+    ${f.reconciles===false?`<div class="warnbox">Do not save this — the lines do not add up to the total the document itself states, so rows were lost in the read.</div>`:''}
+    <label class="fld">As at (YYYY-MM-DD)</label><input type="text" id="alDate" value="${esc(f.asOf||new Date().toISOString().slice(0,10))}">
+    ${fld('alTotal','Total shares',f.total,'1')}
+    ${fld('alBlocked','Of which blocked',f.blocked,'1')}
+    ${fld('alPrice','Share price (EUR)',f.price)}
+    <div class="row2" style="margin-top:12px"><button class="btn ghost" onclick="closeModal()">Cancel</button>
+    <button class="btn"${f.reconciles===false?' disabled':''} onclick="saveAlFromReview()">Save</button></div>`);
+    return;
+  }
   if(r.kind==='cpfHistory'){
     const rws=f.rows||[];
     showModal(head+`

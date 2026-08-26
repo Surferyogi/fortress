@@ -56,6 +56,8 @@ that services it, the balance and instalment-split charts, your property value, 
 monthly-entry form.
 **CPF** — OA / SA / MediSave balances, what they earn under CPF's published rates, and a
 year-by-year projection of today's balances.
+**AL** — the Air Liquide employee shareholding: position, price history, the loyalty-bonus
+clock, and what a single-employer concentration looks like across salary, shares and CPF.
 **Trends** · **FX Risk** · **History** · **Settings** as before.
 
 The dashboard keeps the *consolidated* debt totals (they include the mortgage) — the Property
@@ -160,6 +162,125 @@ spread, currency concentration and the property's share of net worth.
 Each item carries its source and can be dismissed and brought back. The card ends by saying
 plainly that these are prompts and not advice: Fortress does not know your income needs, tax
 position, family or retirement date, and the age-55 choice turns on all four.
+
+## Air Liquide
+
+Both the account statement (PDF) and the shareholder portal import through Add data. The
+parser handles two traps the documents set: "Sub-total" also contains the word *total*, and
+the "Bonus in YYYY" label is printed once per block and vertically centred, so it can appear
+above or below the rows it governs. Rows are therefore read block by block, and an import is
+refused outright if the lines do not add up to the total the document itself states.
+
+The holding is transcribed line by line from the account statement — nineteen lines across
+vintages 2006 to 2025, split between performance shares, employee-savings (ESPP) and ordinary
+shares. Fortress derives the totals rather than trusting the summary, and reconciles them
+against the shareholder portal: all 15 lines of the largest tranche — type, quantity,
+blocked/available status and vintage — match the PDF exactly, and the two different valuations
+on the same day are explained by two different closing prices, both of which appear in the
+price series to the cent.
+
+Prices are **raw, not adjusted for corporate actions**. The 10 June 2026 free-share
+attribution (1 for 10) shows as a step down in the chart, because that is what the quote
+actually did — and the card says so, along with the fact that the multi-year percentages
+therefore understate the true return.
+
+**Performance-share vesting** is recorded from the portal's History: five plans, each vesting
+four years after its late-September attribution, 1,376 shares in total and €203,843.62 of
+"capital gain on acquisition". Every row multiplies out to the stated figure to the cent. The
+card is explicit that this is an acquisition gain — the full value of a free share at vesting,
+the figure tax authorities use — and not a measure of how the shares have done since.
+
+Fortress also **checks the loyalty rule against the share counts themselves**. Two tranches
+vested in 2024 and 2025, too recently to have completed two full calendar years, and after the
+June 2026 attribution they hold exactly ⌊373 × 1.10⌋ = 410 and ⌊407 × 1.10⌋ = 447 — the plain
+entitlement, floored, with no bonus. Older tranches have been through several attributions and
+possibly sales, so they are left out rather than reported as anomalies.
+
+The **loyalty bonus** is +10% on dividends and on free-share attributions, for shares held in
+registered form for more than two full calendar years. The three ISIN lines are exactly that
+clock: one qualifying now, one from 2027, one from 2028. Both future dates are reminders.
+
+**Dividends** are transcribed from all six pages of the payment notices — **2012 to 2026, the
+complete record**, thirty payments. Every one reconciles: coupons × unit amount equals the stated
+gross to the cent. The second payment each year is the loyalty bonus, and across all fifteen years
+its unit is the base amount taken to a tenth and *truncated* to the cent, never rounded up (€2.95 →
+€0.29, €2.55 → €0.25). So the headline "+10%" is really 9.8–10.0%. Fifteen years: **€64,103.10
+gross, €55,283.57 net, €8,819.53 withheld at source** — a blended 13.76%.
+
+**The withholding rate has moved four ways, and it went down as well as up.**
+
+| Years | Rate | Method |
+|---|---|---|
+| 2012–2013 | 9.99% | SUBSIDIARY |
+| 2014–2016 | 29.93–30.00% | SUBSIDIARY |
+| 2017–2019 | 10.00% | BANK TRANSFER |
+| 2020–2026 | 12.80% | BANK TRANSFER → SUBSIDIARY (2021) |
+
+The card groups the years by the rate actually charged rather than averaging rates that were never
+applied together, and it labels a run as a range when its years disagree. **2014** is singled out: at
+29.9268% it does not match the ~30% charged either side of it, and since the coupons and gross
+reconcile exactly there, the difference is in the deduction, not the transcription.
+
+What is sourced: 12.80% is France's domestic withholding rate for non-resident individuals, in force
+for income paid since 1 January 2018 (PwC Worldwide Tax Summaries), and the France–Singapore treaty
+caps portfolio dividends at 15% — *above* it — so the treaty offers nothing to reclaim and the
+current deduction looks correct. What is **not** sourced: Fortress could find no source for the
+pre-2018 French domestic rate for non-residents, so it does not attribute the ~30% years to any rule,
+and it does not guess why 10% applied 2017–2019 and then stopped. The card says so in those words. It
+also states that Fortress has **not** verified the Singapore-side treatment of this income.
+
+The costliest stretch is the current one — 12.80% on €46,525 of dividends is €1,305 more than the
+~10% years, not because the rate is the highest ever charged but because the sums are far larger now.
+The payment route changed twice (2012–2016 subsidiary, 2017–2020 bank transfer, 2021– subsidiary);
+of the two route changes and three rate changes only one coincides, in 2017, so the card concludes
+the route does not determine the rate — and tests that conclusion rather than asserting it.
+
+**The coupon count has not only gone up.** 2021 fell 49 below 2020; 2022 fell 343 — and 505 on the
+bonus line, a larger fall than the base. A second chart plots both series. Fortress records the falls
+and states it does not know the reason. Over fourteen years net income grew 804%, but coupons rose
+507.6% while the per-share amount rose only 48.0% — **2.84% a year**. It is shares, not dividend.
+
+The run-rate applies the 2026 rate to today's holding — about S$17,122 net — and is labelled a
+run-rate, **not a forecast**. The next dividend has not been declared, so Fortress states no rate and
+no date; the reminder notes only that all fifteen payments fell in May, between the 13th and the 30th.
+
+## Cost basis
+
+The portal's Performance-shares detail — **all eight tranches, pages 1–2 of 2** — gives an *adjusted
+vesting price* per tranche: the original vesting price restated for every free-share attribution
+since. **2,164 shares, €254,463.60 of cost, €363,075.92 of value, €108,612.32 unrealised (+42.7%)**,
+a blended €117.59 a share. That is 64.5% of the whole Air Liquide holding, and every line is marked
+available, so none of it is blocked.
+
+Each line reconciles **three** ways: quantity × adjusted price plus the stated unrealised gain equals
+the stated valuation to the cent; the valuation is exactly the quantity at the live quote; and all
+eight lines appear in the account statement with the same quantities — a separately-read document.
+
+**The attributions have cost nothing in basis.** On four of the five tranches with a vesting record,
+quantity × adjusted price still equals the original outlay: 27/09/2012 93×€94.70 → 153×€57.55 (0.022%
+apart), 26/09/2013 137×€109.70 → 227×€66.20, 29/09/2020 373×€175.40 → 410×€159.57, 29/09/2021
+407×€176.30 → 447×€160.52. The count grows by exactly the ratio the price shrinks.
+
+**One tranche does not.** The 25/09/2018 attribution vested as 366 shares at €117.02 — €42,829.32 of
+basis. Its adjusted price is now €96.07, which everywhere else implies the count should have grown to
+about **446**. The portal shows **324**. That is ~122 shares at today's count, roughly 100 of the
+original 366, and **€11,702.64 of cost basis** no longer in the account — about €20,438 at today's
+quote. It is the only tranche out by more than €2, so it is not rounding and not a flaw in the method.
+Fortress says exactly that and no more: a sale, a transfer out, or a plan adjustment all look
+identical from the portal, and it will not guess which. A reminder points out that if it *was* a sale
+there should be a contract note, worth locating before it is needed.
+
+A second reminder states the unrealised gain and says plainly that Fortress does **not** know what tax
+would fall due on a disposal, in France or Singapore, and does not estimate it.
+
+The loyalty clock is read straight off the value codes: 1,307 shares qualify now, 410 from 2027
+(FR001400T5U9), 447 from 2028 (FR0014010OO5) — and those three groups account for every share. The
+oldest line, 66 shares from the 15/06/2009 attribution, has no entry in the vesting History loaded so
+far; the card says so rather than leaving it silently unchecked.
+
+The shares are counted in net worth and **excluded from every margin calculation** — they are
+registered with the company, not pledged to DBS, so they cannot raise a lending value or
+answer a margin call. Same treatment as CPF.
 
 ## Chart scales
 
