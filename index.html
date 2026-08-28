@@ -141,7 +141,7 @@ details.gap[open]>summary::after{content:'  \2212'}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:AUG:28-16:24';
+const VERSION = 'v2026:AUG:28-17:47';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -282,7 +282,8 @@ const AL_DIV_META = { source:'action.airliquide.com \u2014 "Payment of your divi
   payWindow:'Paid in May every year on record, between the 13th and the 30th',
   note:'The per-share amounts are as paid and are not restated for the free-share attributions in between, so the DPS series understates the true growth per original share while the coupon count overstates it.',
   frDomestic:'PwC Worldwide Tax Summaries \u2014 France, Corporate/Withholding taxes: "The rate of WHT under domestic law is set at 12.8% where the beneficiary of the income is an individual. This rate came into force for distributed income paid since 1 January 2018."',
-  frUnknown:'Fortress could not find a source confirming what French domestic rate applied to non-resident individuals BEFORE 2018, so it does not attribute the earlier rates to any rule.',
+  frPre2018:'France\u2019s tax doctrine (BOFiP, BOI-RPPM-RCM-30-30-10-20) documents the pre-2018 regime for non-residents: a 30% default rate from 1 January 2012, with 21% for individuals resident in the EU/EEA. The 29.93\u201330.00% actually charged in 2014\u20132016 matches that 30% default exactly.',
+  frUnknown:'What remains unexplained is the ~10% charged in 2012\u20132013 and again in 2017\u20132019, which matches neither the French domestic rate of the day nor the 15% Singapore treaty cap. Fortress does not know why and will not assert a reason.',
   frSource:'impots.gouv.fr \u2014 "Dividends" (international/individual): the flat-rate levy on dividends paid to non-resident individuals is 12.80%, effective rate on 1 January 2026',
   treatySource:'France\u2013Singapore double tax agreement, in effect since 1 January 2017: dividend withholding capped at 15% for portfolio holders, 5% for a company holding \u226510% (secondary source: corporateservices.com DTAA guide, updated 5 Jan 2026)',
   sgUnverified:'Fortress has NOT verified how Singapore treats this income in your hands. Do not read a conclusion about your Singapore position from this card.' };
@@ -769,7 +770,8 @@ const RETIRE_RULES = {
 
   /* --- retirement sums by cohort, published years only --- */
   brsByYear:{ 2025:106500, 2026:110200, 2027:114100 },
-  ersRule:'From 2025 the ERS is 4 times the BRS (so twice the FRS)',
+  ersRule:'From 2025 the ERS is 4 times the BRS, which is twice the FRS',
+  ersNotCohort:'Unlike the BRS and FRS, the ERS is NOT fixed by your cohort. CPF sets it as twice the CURRENT year\u2019s FRS and it rises every year, including after you turn 55 \u2014 so the top-up ceiling keeps moving up rather than being frozen at the figure that applied on your 55th birthday.',
   ersSource:'CPF Board, "What is the CPF retirement sum?": BRS/FRS/ERS by year of 55th birthday; from 2025 the ERS is 4x the BRS',
 
   /* --- what happens at 55 --- */
@@ -781,6 +783,7 @@ const RETIRE_RULES = {
   minWithdraw:5000,
   minWithdrawRule:'If OA+SA together fall short of the FRS, up to $5,000 may still be set aside in the OA and withdrawn',
   pledgeRule:'A property owner may set aside as little as the Basic Retirement Sum in the Retirement Account, using the property to cover the rest, and withdraw the difference',
+  pledgeCondition:'CPF requires the remaining lease on the property to last the owner to at least age 95. Fortress holds no lease data, so it cannot confirm this is satisfied and does not assume it.',
   pledgeSource:'CPF Board, "Reaching age 55": with a property you may set aside up to half of the FRS using the property and withdraw above the BRS',
 
   /* --- tax relief: the cap that most people get wrong --- */
@@ -802,9 +805,10 @@ const RETIRE_RULES = {
   /* --- schemes with hard eligibility tests Fortress can actually run --- */
   mrss:{ name:'Matched Retirement Savings Scheme', savingsBelow:110200, incomeAtMost:4000,
          avAtMost:21000, propertiesAtMost:1, fromAge:55,
-         source:'CPF Board, "Who is eligible for the Matched Retirement Savings Scheme?": 55 or above, retirement savings below $110,200, average monthly income not more than $4,000, annual value of residence not more than $21,000, and not more than one property' },
+         source:'CPF Board, "Who is eligible for the Matched Retirement Savings Scheme?": 55 or above (or below 55 with disability status verified by MSF), retirement savings below $110,200, average monthly income not more than $4,000, annual value of residence not more than $21,000, and not more than one property' },
   seniorTopUp:{ name:'CPF top-up for seniors (Budget 2026)', paidIn:'December 2026',
-         bands:[{ below:60000, amount:1500 }, { below:110200, amount:1000 }], avAtMost:21000,
+         bands:[{ below:60000, amount:1500 }, { below:110200, amount:1000 }],
+         avAtMost:21000, avUpperTier:31000, avUpperAmount:500,
          source:'CPF Board — Budget 2026: Singaporeans aged 50 and above in 2026 receive up to $1,500 in December 2026, by retirement savings and property annual value' },
   lifecycle:{ name:'CPF Life-Cycle Investment Scheme', from:'first half of 2028', voluntary:true,
          source:'CPF Board — Budget 2026: a voluntary life-cycle investment option with age-based rebalancing and capped all-in fees, launching in the first half of 2028' },
@@ -832,8 +836,13 @@ const RETIRE_RULES = {
   /* --- SRS: not CPF, but the companion lever, and the clock on it is real --- */
   srs:{ capCitizen:15300, capForeigner:35700, reliefCapOverall:80000,
         taxablePct:50, window:10, penaltyPct:5, terminalExempt:400000,
-        ageRule:'Penalty-free withdrawal begins at the statutory retirement age PREVAILING WHEN YOU MAKE YOUR FIRST CONTRIBUTION — it is fixed then and does not follow later increases.',
-        source:'Ministry of Finance — Supplementary Retirement Scheme: $15,300 a year for citizens and PRs, withdrawals penalty-free at or after the retirement age prevailing at the time of the first contribution, 50% of the amount withdrawn taxable, spreadable over 10 years, 5% penalty and full taxation if withdrawn early' }
+        ageRule:'Penalty-free withdrawal begins at the statutory retirement age PREVAILING WHEN YOU MAKE YOUR FIRST CONTRIBUTION \u2014 it is fixed then and does not follow later increases.',
+        /* The detail that is easy to get wrong, and that Fortress got wrong first time. */
+        windowRule:'The 10-year withdrawal period starts on the day you make your FIRST withdrawal at or after that age \u2014 not automatically on your birthday. Delay the first withdrawal and the whole window moves with it.',
+        deemedRule:'At the end of the 10-year period, 50% of whatever is still in the account is treated as withdrawn and taxed in that year, whether you take it out or not.',
+        annuityRule:'Money used to buy a life annuity is the exception: the 10-year limit does not apply, and the 50% concession continues for as long as the annuity pays out.',
+        windowSource:'Ministry of Finance \u2014 SRS booklet (as of 7 Dec 2017): \u201cThe withdrawal period starts when you make your first withdrawal at or after the statutory retirement age that was prevailing when you made your first SRS contribution\u201d, and \u201c50% of the balance remaining in your SRS account at the end of the withdrawal period will be subject to income tax\u201d. The booklet cites the then-prevailing age of 62; the mechanism is unchanged and Fortress looks the age up by date.',
+        source:'Ministry of Finance \u2014 Supplementary Retirement Scheme: $15,300 a year for citizens and PRs, withdrawals penalty-free at or after the retirement age prevailing at the time of the first contribution, 50% of the amount withdrawn taxable, spreadable over 10 years, 5% penalty and full taxation if withdrawn early' }
 };
 
 function cpfAge(){
@@ -1248,11 +1257,20 @@ const BENCH = {
   sgHousehold:{
     label:'Singapore households, aggregate',
     period:'Q1 2026',
-    liabilitiesPctAssets:11,
-    liabilitiesPctDisposableIncome:107.9,
-    netWealthBn:3300, liabilitiesBn:445,
-    mortgageShare:'at least 70% of household liabilities are mortgages',
-    source:'Department of Statistics Singapore, Household Sector Balance Sheet 1Q2026 (reported 8 Jun 2026)'
+    /* WITHDRAWN 28 Aug 2026 after an audit. These figures were attributed to the
+       Department of Statistics but could not be reproduced from a DOS release: the
+       liabilities figure did not reconcile against the ratios shown beside it, and the
+       release date was wrong (DOS published 1Q2026 on 26 May 2026, not 8 Jun). Rather
+       than substitute numbers that have also not been checked against the primary
+       source, the comparison is switched off until it can be re-sourced. */
+    withdrawn:true,
+    liabilitiesPctAssets:null,
+    liabilitiesPctDisposableIncome:null,
+    netWealthBn:null, liabilitiesBn:null,
+    mortgageShare:null,
+    releaseDate:'2026-05-26',
+    withdrawnNote:'The national comparison that stood here was attributed to the Department of Statistics but carried a liabilities figure Fortress could not reproduce from a DOS release, and a release date that was wrong. It has been removed rather than corrected with a second unverified number.',
+    source:'Department of Statistics Singapore, Household Sector Balance Sheet 1Q2026 — released 26 May 2026 (release date verified; the figures previously shown here were not)'
   },
   sp500:[
     { from:'2026-01-01', to:'2026-08-19', priceRet:12.60, totalRet:13.38, sgdTotalRet:12.11,
@@ -1292,7 +1310,7 @@ function fortressStrength(snap,a){
   const cover=intOnly>0?income/intOnly:null, svcCover=fullSvc>0?income/fullSvc:null;
   P.push({k:'Debt service',score:band(cover||0,[[3,4],[2,3],[1.5,2],[1,1],[0,0]]),
     v:fmt(cover,2)+'× interest cover',
-    d:`Income ${money(income,0)}/yr against ${money(intOnly,0)} of interest. Including mortgage principal the cover is ${fmt(svcCover,2)}×, a surplus of ${money(income-fullSvc,0)}/yr — nothing has to be sold to stay current.`});
+    d:`<b>This rests on an income figure Fortress assembled, not one you gave it:</b> ${money(income,0)}/yr is the rent you entered plus DBS portfolio income annualised from a part-year figure. It excludes your salary entirely and knows nothing of your spending, so read it as debt against <em>asset</em> income, not as household affordability. On that basis: ${money(income,0)}/yr against ${money(intOnly,0)} of interest. Including mortgage principal the cover is ${fmt(svcCover,2)}×, a surplus of ${money(income-fullSvc,0)}/yr — nothing has to be sold to stay current.`});
 
   // C — dry powder that is not pledged
   const reserve=(a.unpledgedAssets||0)+(w.uobCash||0);
@@ -1645,8 +1663,14 @@ function fxExposure(){
   /* Build wealth-by-currency so the parts actually sum to net worth. Foreign currencies
      are carried at their asset value; SGD absorbs everything else - the house, CPF, UOB
      cash - less every liability, since every liability is SGD. */
+  /* Currency must come from ALL portfolios, not just the pledged one. Using pledgedCcy
+     alone swept the unpledged portfolio's foreign holdings into the SGD residual - the
+     exact misattribution this function exists to prevent. */
+  const allCcy = {};
+  (latest().portfolios||[]).forEach(pf=>Object.entries(pf.ccyAlloc||{}).forEach(([c,v])=>{
+    allCcy[c] = (allCcy[c]||0) + v; }));
   const wealth = {};
-  Object.keys(pledged).filter(c=>c!=='SGD').forEach(c=>{ wealth[c] = pledged[c]; });
+  Object.keys(allCcy).filter(c=>c!=='SGD').forEach(c=>{ wealth[c] = allCcy[c]; });
   if(alCcy && alSgd) wealth[alCcy] = (wealth[alCcy]||0) + alSgd;
   const nonSgdTotal = Object.keys(wealth).reduce((t,c)=>t+wealth[c],0);
   wealth.SGD = wealthBase - nonSgdTotal;      // the residual, by construction
@@ -1655,6 +1679,7 @@ function fxExposure(){
     ccy:c,
     pledged: pledged[c]||0,
     unpledged: (wealth[c]||0) - (pledged[c]||0),
+    allPortfolios: allCcy[c]||0,
     total: wealth[c]||0,
     pctOfCollateral: a.pledgedAssets ? (pledged[c]||0)/a.pledgedAssets*100 : null,
     pctOfWealth: wealthBase ? (wealth[c]||0)/wealthBase*100 : null,
@@ -1834,7 +1859,12 @@ function srsPosition(){
     withdrawFrom, withdrawYear: withdrawFrom? +withdrawFrom.slice(0,4) : null,
     daysToWithdraw: withdrawFrom? daysUntil(withdrawFrom) : null,
     headroom, uninvested: (S.cashBalance||0) - 0,
-    windowEnds: withdrawFrom ? (+withdrawFrom.slice(0,4)+R.srs.window)+withdrawFrom.slice(4) : null };
+    /* The window is NOT a fixed calendar deadline. It starts on the first withdrawal at
+       or after the locked age, so the only date Fortress can state is the EARLIEST one
+       - the case where he draws on the first day he is allowed to. */
+    earliestWindowStart: withdrawFrom,
+    earliestWindowEnd: withdrawFrom ? (+withdrawFrom.slice(0,4)+R.srs.window)+withdrawFrom.slice(4) : null,
+    windowIsConditional: true };
 }
 
 /* Which levers are actually open. Each returns open/closed with the TEST that decided it,
@@ -1879,7 +1909,7 @@ function retireLevers(){
     const savingsFail = oaSa >= m.savingsBelow;
     const ageFail = A ? A.age < m.fromAge : false;
     push('mrss', m.name, false,
-      `needs OA+SA below ${money(m.savingsBelow,0)}; yours is ${money(oaSa,0)}${ageFail?`, and it starts at ${m.fromAge}`:''}`,
+      `needs OA+SA below ${money(m.savingsBelow,0)}; yours is ${money(oaSa,0)}${ageFail?`, and it starts at ${m.fromAge} unless MSF has verified a disability`:''}`,
       `Closed on the savings test alone — you are ${money(oaSa-m.savingsBelow,0)} above the ceiling${ageFail?`, and you do not reach ${m.fromAge} until ${A.year55}`:''}. It also requires income of no more than ${money(m.incomeAtMost,0)} a month and a residence with an annual value of no more than ${money(m.avAtMost,0)}, neither of which Fortress holds — but neither matters while the savings test fails.`,
       'Nothing to do. Listed so you know it was checked, not overlooked.',
       m.source);
@@ -1888,7 +1918,7 @@ function retireLevers(){
   if(c){ const t = R.seniorTopUp, top = t.bands[t.bands.length-1];
     push('senior-topup', t.name, false,
       `highest band is retirement savings below ${money(top.below,0)}; yours is ${money(oaSa,0)}`,
-      `You are the right age — it covers Singaporeans aged 50 and above in 2026 — but the payment is scaled by retirement savings and the top band published stops at ${money(top.below,0)}. Yours is well above it. It is also subject to a property annual value of no more than ${money(t.avAtMost,0)}, which Fortress does not hold. On the figures it does hold, you fall outside.`,
+      `You are the right age — it covers Singaporeans aged 50 and above in 2026 — but the payment is scaled by retirement savings and the top band published stops at ${money(top.below,0)}. Yours is well above it. It is also scaled by the annual value of your residence — the full amount up to ${money(t.avAtMost,0)}, a reduced ${money(t.avUpperAmount,0)} between that and ${money(t.avUpperTier,0)} — which Fortress does not hold. On the figures it does hold, you fall outside.`,
       `Nothing to do. Paid in ${t.paidIn} if it applies.`,
       t.source);
   }
@@ -1934,13 +1964,13 @@ function retireTimeline(){
   return [
     row(A.age, 'You are here', `Contributions run at the full ${R.contribNow[0].total}% rate (${R.contribNow[0].er}% employer, ${R.contribNow[0].ee}% employee) on wages up to ${money(CPF_RULES.owCeiling,0)} a month. OA earns ${pct(CPF_RULES.oaPct,1)}, SA and MediSave ${pct(CPF_RULES.saPct,1)}, plus extra interest on the first ${money(CPF_RULES.extraBelow55.onFirst,0)} of combined balances.`, R.contribSource),
     row(55, 'The Retirement Account is created and the Special Account closes',
-      `${R.age55Order.join('; ')}. ${F.published?`Your cohort's Full Retirement Sum is ${money(F.value,0)}.`:`<b>Your cohort's Full Retirement Sum has not been published</b> — the series stops at ${CPF_RULES.frsLastPublished}, so Fortress uses ${money(F.value,0)} and says so.`} You may withdraw whatever sits above it, and at least ${money(R.minWithdraw,0)} even if you are short. From this date you may also top up the Retirement Account to the Enhanced Retirement Sum. Contribution rates step down to ${R.contribNow[1].total}%.`,
+      `${R.age55Order.join('; ')}. ${F.published?`Your cohort's Full Retirement Sum is ${money(F.value,0)}.`:`<b>Your cohort's Full Retirement Sum has not been published</b> — the series stops at ${CPF_RULES.frsLastPublished}, so Fortress uses ${money(F.value,0)} and says so.`} You may withdraw whatever sits above it, and at least ${money(R.minWithdraw,0)} even if you are short. From this date you may also top up the Retirement Account to the Enhanced Retirement Sum. Contribution rates step down from ${R.contribNow[0].total}% — <b>to at least ${fmt(R.contrib2027[0].to,1)}%, not the ${R.contribNow[1].total}% shown in today's table</b>, because the senior rates rise on 1 January 2027 and may rise again before you get there.`,
       R.age55Source),
     row(60, 'Contribution rates step down again',
       `Rates fall to ${R.contribNow[2].total}% (${R.contribNow[2].er}% employer, ${R.contribNow[2].ee}% employee) above 60. Note that the senior rates are <em>rising</em>, not falling, on 1 January 2027: ${R.contrib2027.map(x=>`${x.band} from ${x.from}% to ${x.to}%`).join(', ')}.`,
       R.contrib2027Source),
     row(R.retirementAge, 'The statutory retirement age',
-      `Your employer cannot dismiss you on grounds of age before ${R.retirementAge}, and must offer re-employment to ${R.reemploymentAge} if you meet the criteria. Both ages rose on ${dayLabel(R.empAgesFrom)}. This is employment law, not CPF — it does not release any money.`,
+      `Your employer cannot dismiss you on grounds of age before ${R.retirementAge}, and must offer re-employment to ${R.reemploymentAge} if you meet the criteria. Both ages rose on ${dayLabel(R.empAgesFrom)}. <b>Do not read these as settled for your year.</b> The published intention is to reach 65 and 70 by 2030, well before you get here, so the ages on this row are today's law and not a forecast of the law you will meet. This is employment law, not CPF — it does not release any money.`,
       R.empSource),
     row(65, 'CPF LIFE payouts can start, and the MediSave cap stops rising',
       `${R.payoutAge} is the payout eligibility age. Your Basic Healthcare Sum is also fixed for life in the year you turn 65 — until then it rises most years (${money(CPF_RULES.prevBhs,0)} in ${CPF_RULES.prevBhsYear} to ${money(CPF_RULES.bhs,0)} in ${CPF_RULES.bhsYear}), and each rise quietly reopens a little MediSave headroom.`,
@@ -2111,7 +2141,10 @@ function gaps(){
       for(let y=y0, m=m0; y<y1 || (y===y1 && m<=m1); m++){
         if(m>12){ m=1; y++; }
         const k = y+'-'+String(m).padStart(2,'0');
-        if(!state.snapshots[k]) miss.push(k);
+        /* snapshots are keyed by the full statement date, not by month, so a month is
+           present when ANY key starts with it. The old test compared 'YYYY-MM' against
+           'YYYY-MM-DD' and therefore reported every month - including loaded ones - as missing. */
+        if(!ds.some(d=>d.slice(0,7)===k)) miss.push(k);
       }
       if(miss.length) add('hist','medium','The statement series has '+fmt(miss.length,0)+' missing month'+(miss.length>1?'s':''),
         'Between '+esc(ds[0])+' and '+esc(ds[ds.length-1])+' these months have no statement: '+miss.map(esc).join(', ')+'. Every return, every trend line and every month-on-month change steps over those holes without saying so.',
@@ -2266,7 +2299,7 @@ function retirementChecks(){
           if(D.rateChanged) add({ id:'al-withholding-step', cat:'standing', tone:'warn',
             title:'Your dividend withholding rate has moved four ways',
             head:`${D.regimes.map(g=>g.label).reverse().join(' → ')}`,
-            detail:`${D.regimes.slice().reverse().map(g=>`<b>${g.span}</b> ${g.label}`).join(', then ')}. Blended over the whole record: ${pct(D.blendedPct,2)}. The ${D.worst.span} stretch ${D.worstIsCurrent?'has cost':'cost'} <b>&euro;${fmt(D.worstExcess,2)}</b> more than the ${pct(D.bestPct,2)} charged in other years, and any French reclaim window on it is long closed. The current ${fmt(D.regimes[0].mean,2)}% is France's domestic rate for non-resident individuals and the France–Singapore treaty caps at 15%, above it — so there is nothing to reclaim now and the deduction looks correct. Fortress does not know why the earlier rates applied and will not guess. It has <b>not</b> verified how Singapore treats this income in your hands.`,
+            detail:`${D.regimes.slice().reverse().map(g=>`<b>${g.span}</b> ${g.label}`).join(', then ')}. Blended over the whole record: ${pct(D.blendedPct,2)}. The ${D.worst.span} stretch ${D.worstIsCurrent?'has cost':'cost'} <b>&euro;${fmt(D.worstExcess,2)}</b> more than the ${pct(D.bestPct,2)} charged in other years. A French treaty refund can be claimed until 31 December of the second year after payment, so the window is open on the most recent years and shut on the rest — but ${fmt(D.regimes[0].mean,2)}% is below the 15% treaty cap, so there is nothing to recover either way. The current ${fmt(D.regimes[0].mean,2)}% is France's domestic rate for non-resident individuals and the France–Singapore treaty caps at 15%, above it — so there is nothing to reclaim now and the deduction looks correct. Fortress does not know why the earlier rates applied and will not guess. It has <b>not</b> verified how Singapore treats this income in your hands.`,
             source: AL_DIV_META.frDomestic + ' | ' + AL_DIV_META.treatySource + ' | ' + AL_DIV_META.frUnknown });
         }
       }
@@ -2298,7 +2331,9 @@ function retirementChecks(){
       source:`DBS statement ${esc(snap.statementDate)}, currency allocation` });
   }
   { const hv = state.settings.homeValue, nw = netWorth(a);
-    if(hv){ const total = nw.dbsUob + hv + (nw.cpf||0);
+    /* the SAME base the concentration card uses - it must include the Air Liquide shares,
+       or the two cards divide by different totals and neither percentage can be trusted */
+    if(hv){ const total = nw.dbsUob + hv + (nw.cpf||0) + (nw.al||0);
       const share = hv/total*100;
       if(share>50) add({ id:'property-share', cat:'standing', tone:'info',
         title:'Share of net worth in one property', head:`${pct(share,1)}`,
@@ -2495,14 +2530,7 @@ function viewDash(){
       <button class="btn" style="margin-top:8px" onclick="saveQuickHome()">Save property value</button>
     </div>`:`<div class="kv"><span class="k">Property value on file</span><span class="v">${money(hv,0)}
       <button class="btn ghost" style="width:auto;padding:2px 8px;font-size:11px;margin-left:8px" onclick="clearHome()">clear</button></span></div>`}
-    <div class="kv"><span class="k">Singapore households, liabilities ÷ assets</span><span class="v">${pct(B.liabilitiesPctAssets,0)}</span></div>
-    <p class="note"><b>Read this carefully — the two are not like-for-like.</b> The national ${pct(B.liabilitiesPctAssets,0)} counts residential property inside assets; your ${pct(exclP,1)} does not.
-    ${inclP!=null
-      ? `On a comparable basis you are at <b>${pct(inclP,1)}</b> — still roughly ${fmt(inclP/B.liabilitiesPctAssets,1)}× the national figure.`
-      : `Even at a generous property value you would land in the 33–45% range, roughly 3–4× the national figure.`}
-    So: <b>you carry materially more debt than a typical Singaporean household.</b></p>
-    <p class="note">Two things stop that being alarming on its own. The national number averages in every household with no debt at all and every retiree with a paid-off flat, so it is not a "normal person like you" benchmark. And the <em>composition</em> differs: ${esc(B.mortgageShare)}, and yours is a ${latestManual()?.mortgageRatePct?pct(latestManual().mortgageRatePct,2)+' ':''}mortgage on a tenanted property plus a ${a.loans[0]?pct(a.loans[0].ratePct,2)+' ':''}loan against liquid securities — not consumer credit. What matters more than the ratio is whether the assets earn more than the debt costs, and whether you can survive a drawdown without being forced to sell. Both are answered elsewhere on this page.</p>
-    <p class="note">Source: ${esc(B.source)}. National liabilities ${money(B.liabilitiesBn*1e9,0).replace('S$','S$')} against net wealth ${money(B.netWealthBn*1e9,0)}; liabilities were ${pct(B.liabilitiesPctDisposableIncome,1)} of personal disposable income.</p>
+    ${B.withdrawn?`<div class="warnbox"><b>The national comparison has been withdrawn.</b> ${esc(B.withdrawnNote)} Your own ratio above still stands — it is computed from your own statements. What is gone is the benchmark it was being measured against.<br><br>Source note: ${esc(B.source)}.</div>`:''}
   </div>`; })()}
   ${(()=>{ const m=latestMrtl(); const c=mrtlCapacity(m); if(!m||!c||m.amountDrawn==null) return '';
     const util=m.amountDrawn/c.capacity*100;
@@ -2973,7 +3001,9 @@ function viewCpf(){
   </div>
 
   ${A?`<div class="banner ${A.days55<=1095?'b-warn':''}"><span class="ic">&#9200;</span><div><b>${A.age} years old &middot; 55 on ${esc(dayLabel(A.date55))}</b>${A.days55>0?`That is <b>${fmt(A.days55,0)} days</b> — ${fmt(A.days55/365.25,1)} years. On that date the Special Account closes, ${money(frsFor(A.year55).value,0)} moves to a Retirement Account and the rest of it drops from ${pct(CPF_RULES.saPct,1)} to ${pct(CPF_RULES.oaPct,1)} in the OA. Your SA is ${money(latestCpf().sa,0)} today, so most of the excess is already built.`:'You have passed 55; the projection below uses the post-55 rules.'} MediSave's Basic Healthcare Sum stops rising for you at 65, in ${esc(String(A.year65))}.</div></div>`:''}
-  ${atBhs?`<div class="banner b-good"><span class="ic">&#9679;</span><div><b>MediSave is full</b>It sits exactly at the ${R.bhsYear} Basic Healthcare Sum of ${money(R.bhs,0)}. Interest it earns, and any future contribution, overflows into your Special Account instead — which earns the same ${pct(R.saPct,1)}, so nothing is lost. ${esc(R.bhsSource)}.</div></div>`:''}
+  ${atBhs?`<div class="banner b-good"><span class="ic">&#9679;</span><div><b>MediSave is full</b>It sits exactly at the ${R.bhsYear} Basic Healthcare Sum of ${money(R.bhs,0)}. Interest it earns, and any future contribution, overflows out of MediSave — ${(()=>{ const c=latestCpf(), over = c && c.sa > R.frs;
+    return over ? `and because your Special Account is already above the Full Retirement Sum (${money(c.sa,0)} against ${money(R.frs,0)}), it goes to your <b>Ordinary Account at ${pct(R.oaPct,1)}</b>, not the Special Account at ${pct(R.saPct,1)}. <b>That is a real loss of ${pct(R.saPct-R.oaPct,1)} a year</b> on everything that overflows, and your own ledger below proves it is what happens.`
+                : `into your Special Account at ${pct(R.saPct,1)}, the same rate, so nothing is lost.`; })()} ${esc(R.overflowSource)}.</div></div>`:''}
 
   <div class="card">
     <h2>What it earns<span class="pill">CPF published rates</span></h2>
@@ -3018,7 +3048,7 @@ function viewCpf(){
       const d = ignoring[years].total - last.total;
       if(Math.abs(d) < 1) return '';
       return `<p class="note">Ignoring the age-55 transition would put this at ${money(ignoring[years].total,0)} &mdash; <b class="neg">${money(d,0)} too high</b>. The money is not lost; ${money(last.oa - ignoring[years].oa,0)} of it simply sits in the OA at ${pct(CPF_RULES.oaPct,1)} instead of earning ${pct(CPF_RULES.saPct,1)}.</p>`; })()}
-    ${turn?`<div class="banner ${turn.event.frsPublished?'b-good':'b-warn'}" style="margin:12px 0"><span class="ic">&#9673;</span><div><b>At 55, in ${esc(String(turn.year))}</b>The Special Account closes. ${money(turn.event.frs,0)} moves into a new Retirement Account — SA first, then OA — and whatever is left stays in the Ordinary Account at ${pct(CPF_RULES.oaPct,1)} instead of ${pct(CPF_RULES.saPct,1)}. On this path that leaves <b>${money(turn.event.oa,0)}</b> in the OA the moment it happens. ${turn.event.frsPublished?`The ${money(turn.event.frs,0)} Full Retirement Sum for that cohort is published.`:`<b>CPF has not yet announced the Full Retirement Sum for that cohort</b> — Fortress is using the latest published figure (${money(CPF_RULES.frs,0)}, for those turning 55 in ${CPF_RULES.sumsYear}), which will be too low. Treat the years after ${esc(String(turn.year))} as indicative only.`} Contributions are stopped at 55 in this projection, because the rates and the allocation both change and your payslips can no longer stand in for them.</div></div>`:''}
+    ${turn?`<div class="banner ${turn.event.frsPublished?'b-good':'b-warn'}" style="margin:12px 0"><span class="ic">&#9673;</span><div><b>At 55, in ${esc(String(turn.year))}</b>The Special Account closes. ${money(turn.event.frs,0)} moves into a new Retirement Account — SA first, then OA — and whatever is left stays in the Ordinary Account at ${pct(CPF_RULES.oaPct,1)} instead of ${pct(CPF_RULES.saPct,1)}. On this path that leaves <b>${money(turn.event.oa,0)}</b> in the OA the moment it happens. ${turn.event.frsPublished?`The ${money(turn.event.frs,0)} Full Retirement Sum for that cohort is published.`:`<b>CPF has not yet announced the Full Retirement Sum for that cohort</b> — Fortress is using ${money(turn.event.frs,0)}, the last published figure (for those turning 55 in ${CPF_RULES.frsLastPublished}), which will be too low. Treat the years after ${esc(String(turn.year))} as indicative only.`} Contributions are stopped at 55 in this projection, because the rates and the allocation both change and your payslips can no longer stand in for them.</div></div>`:''}
     <div class="warnbox"><b>What this projection does not do.</b> ${withC?`It carries your contributions forward at today's rate for the whole horizon &mdash; that holds only while you stay employed at or above the ${money(CPF_RULES.owCeiling,0)} wage ceiling, and contribution rates step down once you pass 55.`:'It adds no salary contributions, no top-ups and no withdrawals &mdash; it grows only what is there today.'} It holds MediSave at the ${R.bhsYear} Basic Healthcare Sum, though CPF raises that figure most years. It ${y55?`models age 55 using the Full Retirement Sum published for that cohort where CPF has announced one, and the latest published figure where it has not.`:`<b>does not model age 55</b>, when the Special Account closes and a Retirement Account is created at the Full Retirement Sum then in force (${money(R.frs,0)} for those turning 55 in ${R.sumsYear}); after that, savings above the sum sit in the OA at ${pct(R.oaPct,1)} rather than ${pct(R.saPct,1)}, which bends this curve down. Set the year above and Fortress will model it.`} Your contribution split matches CPF's <b>above 50 to 55</b> allocation band exactly, so that year is close — this is not a distant technicality.</div>
   </div>
 
@@ -3239,7 +3269,7 @@ function viewAl(){
       <div style="margin-top:8px">${D.regimes.map(g=>`<div class="kv"><span class="k">${g.span}<br><span style="font-size:11px">${g.years.length} year${g.years.length>1?'s':''} &middot; &euro;${fmt(g.gross,2)} gross</span></span><span class="v${g.mean>D.bestPct+0.01?' neg':''}">${g.label}<br><span class="k" style="font-size:11px">&euro;${fmt(g.withheld,2)} withheld${g.exact?'':' &middot; not identical across the run'}</span></span></div>`).join('')}</div>
       <p style="margin:8px 0 0">Over the whole record the blended rate is <b>${pct(D.blendedPct,2)}</b>. The current ${fmt(D.regimes[0].mean,2)}% is ${fmt(D.stepPp,2)}pp above the ${fmt(D.prevRegime.mean,2)}% that ran ${D.prevRegime.span}, which has cost <b>&euro;${fmt(D.stepCost,2)}</b> since ${D.regimes[0].from}. The costliest stretch ${D.worstIsCurrent?'is the current one':'was'} <b>${D.worst.span}</b>: ${D.worst.label} on &euro;${fmt(D.worst.gross,2)}, which is <b>&euro;${fmt(D.worstExcess,2)}</b> more than the ${pct(D.bestPct,2)} you were charged in other years&mdash;${D.worstIsCurrent?'not because the rate is the highest you have paid, but because the sums it applies to now are far larger':'the highest rate on the record'}.</p>
       <p style="margin:8px 0 0"><b>What is sourced:</b> ${fmt(D.regimes[0].mean,2)}% is France's domestic withholding rate for non-resident individuals, in force for income paid since 1 January 2018, and the France&ndash;Singapore treaty caps portfolio dividends at 15% &mdash; above it &mdash; so the treaty gives you nothing to reclaim and the current deduction looks correct.
-      <b>What is not:</b> Fortress could find no source for the French domestic rate applying to non-resident individuals <em>before</em> 2018, so it does not attribute the ${D.regimes[2]?D.regimes[2].label:''} years to any rule. Nor does it know why ${fmt(D.prevRegime.mean,2)}% applied ${D.prevRegime.span} and then stopped &mdash; that is neither the domestic rate nor the Singapore cap, and most likely turns on your tax residence or a treaty claim in those years. <b>Fortress will not invent a reason.</b> Any French reclaim window on the ${D.worst.span} payments is in any case long closed.</p>
+      <b>What is now explained:</b> ${esc(M.frPre2018)} <b>What is not:</b> ${esc(M.frUnknown)} On the older payments any French reclaim window has expired; on the recent ones it has <b>not</b> — France allows a treaty refund claim until 31 December of the second year after the year of payment — but since ${fmt(D.regimes[0].mean,2)}% is already below the 15% treaty cap there is nothing a claim could recover.</p>
       ${D.odd.length?`<p style="margin:8px 0 0">${D.odd.length===1?'One year does':fmt(D.odd.length,0)+' years do'} not even match ${D.odd.length===1?'its own':'their own'} run: ${D.odd.map(o=>`<b>${o.year}</b> came out at ${fmt(o.pct,4)}% against the ${fmt(o.headline,2)}% charged elsewhere in ${o.span}, ${fmt(o.shortfall,2)} euro less than that rate would have taken`).join('; ')}. The coupon count and the gross reconcile exactly there, so the difference is in the deduction, not the transcription. Fortress reports the effective rate as computed and does not round it into a story.</p>`:''}
       <p style="margin:8px 0 0"><b>${esc(M.sgUnverified)}</b></p></div>`:`
     <div class="kv"><span class="k">Withholding, every year on record</span><span class="v neg">${pct(L.withheldPct,2)}</span></div>`}
@@ -3402,7 +3432,10 @@ function viewFX(){
   const snap=latest(), a=agg(snap);
   const ccys=Object.entries(a.pledgedCcy).sort((x,y)=>y[1]-x[1]);
   const palette=['var(--s1)','var(--s2)','var(--s3)','var(--s4)','var(--muted)','var(--axis)'];
-  const items=ccys.map(([c,v],i)=>({label:c,v,pct:v/a.assets*100,color:palette[Math.min(i,palette.length-1)]}));
+  /* these amounts are the PLEDGED allocation, so they must be divided by pledged assets;
+     dividing by total assets made the bars sum to 98.5% and disagreed with every other
+     collateral percentage on the tab */
+  const items=ccys.map(([c,v],i)=>({label:c,v,pct:v/a.pledgedAssets*100,color:palette[Math.min(i,palette.length-1)]}));
   const loanCcy={}; a.loans.forEach(l=>{loanCcy[l.ccy]=(loanCcy[l.ccy]||0)+Math.abs(l.principal);});
   const rates=snap.fxRates||{};
   const shocks=[-10,-5,5,10];
@@ -3467,7 +3500,7 @@ function viewFX(){
     <div class="kv"><span class="k"><b>Total ${esc(X.alCcy)} you actually own</b></span><span class="v"><b>${money(E.total,0)}</b><br><span class="k" style="font-size:11px">${pct(E.pctOfWealth,1)} of everything you own</span></span></div>
 
     <div class="warnbox" style="margin-top:10px"><b>The FX tab has been understating your euro exposure by a factor of ${fmt(X.eurMultiple,0)}.</b>
-      Every stress table below is built on <em>collateral</em>, because collateral is the only thing that can answer a margin call — and on that measure ${esc(X.alCcy)} is a rounding error at ${pct(E.pctOfCollateral,2)}. But you own ${money(X.alSgd,0)} of Air Liquide shares priced in ${esc(X.alCcy)}, which is ${fmt(X.eurMultiple,0)}&times; the ${money(E.pledged,0)} sitting at DBS. A ${esc(X.alCcy)} fall does not touch your LTV; it takes ${money(Math.abs(m10.onWealth),0)} off your net worth for every 10% it moves, against ${money(Math.abs(m10.onCollateral),0)} of collateral damage.
+      Every stress table below is built on <em>collateral</em>, because collateral is the only thing that can answer a margin call — and on that measure ${esc(X.alCcy)} is a rounding error at ${pct(E.pctOfCollateral,2)}. But you own ${money(X.alSgd,0)} of Air Liquide shares priced in ${esc(X.alCcy)}, which on its own is ${fmt(X.alSgd/E.pledged,0)}&times; the ${money(E.pledged,0)} sitting at DBS, and takes your total ${esc(X.alCcy)} to ${fmt(X.eurMultiple,1)}&times; the pledged amount. A ${esc(X.alCcy)} fall does not touch your LTV; it takes ${money(Math.abs(m10.onWealth),0)} off your net worth for every 10% it moves, against ${money(Math.abs(m10.onCollateral),0)} of collateral damage.
       <br><br><b>Both statements are true and they are not in conflict.</b> ${esc(X.alCcy)} is a wealth risk, not a margin risk. Fortress keeps the two apart deliberately: folding the shares into the collateral figures would flatter your borrowing capacity with assets DBS cannot lend against, and that is a worse error than understating the currency.</div>
 
     <div style="margin-top:12px"><b style="font-size:13px">Everything you own, by currency</b></div>
@@ -3535,7 +3568,7 @@ function viewRetire(){
     <h2>What happens, and when<span class="pill">your dates</span></h2>
     ${T.map(r=>`
     <div class="kv" style="${r.past?'opacity:.5':r.now?'background:color-mix(in srgb,var(--s1) 8%,transparent);border-radius:8px;padding-left:6px;padding-right:6px':''}">
-      <span class="k"><b>${r.age===A.age?'Now':'Age '+r.age}</b> &middot; ${r.year}${r.past?'':r.days!=null?` <span style="font-size:11px">(${fmt(r.days,0)} days)</span>`:''}<br><span style="font-size:11px">${esc(r.title)}</span></span>
+      <span class="k"><b>${r.now?'Now':'Age '+r.age}</b> &middot; ${r.now?new Date().getFullYear():r.year}${(r.past||r.now||r.days==null||r.days<0)?'':` <span style="font-size:11px">(${fmt(r.days,0)} days)</span>`}<br><span style="font-size:11px">${esc(r.title)}</span></span>
       <span class="v" style="font-weight:400;font-size:11.5px;text-align:right">${r.past?'passed':esc(dayLabel(r.date))}</span></div>
     <p class="note" style="margin:2px 0 10px">${r.what}<br><span style="font-size:10.5px">Source: ${esc(r.source)}</span></p>`).join('')}
   </div>
@@ -3549,7 +3582,8 @@ function viewRetire(){
 
     <div class="kv"><span class="k">Your cohort's Full Retirement Sum (${Rt.A.year55})</span><span class="v">${money(Rt.F.value,0)}${Rt.F.published?'':`<br><span class="k" style="font-size:11px">not published — using ${Rt.F.fallbackYear}</span>`}</span></div>
     <div class="kv"><span class="k">Basic Retirement Sum</span><span class="v">${money(Rt.B.value,0)}${Rt.B.published?'':`<br><span class="k" style="font-size:11px">not published — using ${Rt.B.fallbackYear}</span>`}</span></div>
-    <div class="kv"><span class="k">Enhanced Retirement Sum <span style="font-size:11px">(4&times; the BRS)</span></span><span class="v">${money(Rt.ersRule,0)}</span></div>
+    <div class="kv"><span class="k">Enhanced Retirement Sum <span style="font-size:11px">(4&times; the BRS \u2014 <b>not</b> fixed by cohort)</span></span><span class="v">${money(Rt.ersRule,0)}<br><span class="k" style="font-size:11px">on ${CPF_RULES.frsLastPublished} figures; it rises yearly</span></span></div>
+    <p class="note" style="margin:2px 0 8px">${esc(RETIRE_RULES.ersNotCohort)}</p>
 
     ${Rt.saAlreadyOverFrs?`<div class="warnbox" style="margin-top:10px"><b>Your Special Account alone already covers the Full Retirement Sum.</b> ${money(Rt.sa,0)} against ${money(Rt.F.value,0)}. So at 55 the Retirement Account fills entirely from the SA, none of your Ordinary Account is touched, and the SA remainder of ${money(Math.max(0,Rt.sa-Rt.F.value),0)} joins the OA. On today's balances that leaves <b>${money(Rt.now.oaAfter,0)}</b> sitting in the Ordinary Account — <b>all of it withdrawable in cash.</b></div>`:''}
 
@@ -3561,10 +3595,10 @@ function viewRetire(){
     <div class="kv"><span class="k">Left in the Ordinary Account<br><span style="font-size:11px">earns ${pct(oa.rate,1)} &mdash; ${money(oa.base,0)}/yr, ${money(oa.monthly,0)}/mo, <b>if you leave it there</b></span></span><span class="v pos">${money(Rt.at55.oaAfter,0)}<br><span class="k" style="font-size:11px">withdrawable from 55</span></span></div>
     <div class="kv"><span class="k">The cost of withdrawing it all</span><span class="v neg">${money(oa.base,0)}/yr<br><span class="k" style="font-size:11px">${money(oa.over10,0)} over ten years</span></span></div>
     <p class="note">Rates are the published floors: OA ${pct(ra.rate===oa.rate?oa.rate:CPF_RULES.oaPct,1)}, RA ${pct(CPF_RULES.raPct,1)}, ${esc(oa.extraNote)}. At ${pct(CPF_RULES.oaPct,1)} money doubles in about ${fmt(oa.doubles,0)} years; at ${pct(CPF_RULES.raPct,1)}, about ${fmt(ra.doubles,0)}. Source: ${esc(oa.source)}.</p>`; })()}
-    <p class="note">These come from the same projection the CPF tab runs, at the published floor rates and with contributions continuing until 55. They are a projection, not a promise: the rates are reviewed quarterly and your contributions depend on a salary Fortress does not know.</p>`:''}
+    <p class="note">These use the same projection engine as the CPF tab but <b>not the same settings</b>: this one runs <em>with</em> contributions continuing to 55, while the CPF tab's own age-55 banner runs with contributions <em>off</em>. That is why the CPF tab shows a smaller Ordinary Account at 55 than this card does — the difference is the contributions, not a disagreement. Neither is a promise: the rates are reviewed quarterly and your contributions depend on a salary Fortress does not know.</p>`:''}
 
     <div class="warnbox" style="margin-top:10px"><b>Lever 1 — pledge the property and set aside only the Basic Retirement Sum.</b>
-      You own a property, so you may set aside as little as the BRS rather than the FRS, with the property covering the difference. Because the FRS is exactly twice the BRS, that frees <b>${money(Rt.freed,0)}</b> more into your Ordinary Account, withdrawable in cash.
+      You own a property, so you <em>may be able to</em> set aside as little as the BRS rather than the FRS, with the property covering the difference. <b>One condition Fortress cannot check:</b> ${esc(RETIRE_RULES.pledgeCondition)} Confirm it before counting on this lever at all. Because the FRS is exactly twice the BRS, that frees <b>${money(Rt.freed,0)}</b> more into your Ordinary Account, withdrawable in cash.
       <br><br>Fortress will not tell you to do it. That ${money(Rt.freed,0)} stops earning ${pct(CPF_RULES.raPct,1)} for life and stops producing a monthly payout; you are converting a guaranteed lifelong income into a lump sum today. It only makes sense if you have a better use for the money than a risk-free ${pct(CPF_RULES.raPct,1)} — and "better" has to beat it <em>after</em> tax and risk, not before.</div>
 
     <div class="warnbox"><b>Lever 2 — go the other way, and top up to the Enhanced Retirement Sum.</b>
@@ -3625,7 +3659,11 @@ function viewRetire(){
     <div class="kv"><span class="k">First contribution</span><span class="v">${esc(dayLabel(S.firstContribution))}</span></div>
     <div class="kv"><span class="k">Contributed to date</span><span class="v">${money(S.totalContributed,2)}</span></div>
     <div class="kv"><span class="k">Penalty-free from age ${S.lockedAge}</span><span class="v">${esc(dayLabel(S.withdrawFrom))}<br><span class="k" style="font-size:11px">in ${fmt(S.daysToWithdraw/365.25,1)} years</span></span></div>
-    <div class="kv"><span class="k">Ten-year withdrawal window ends</span><span class="v">${esc(dayLabel(S.windowEnds))}</span></div>
+    <div class="kv"><span class="k">Ten-year window, <b>if</b> you draw on day one<br><span style="font-size:11px">${esc(dayLabel(S.earliestWindowStart))} &rarr; ${esc(dayLabel(S.earliestWindowEnd))}</span></span><span class="v" style="font-size:12px">earliest case only</span></div>
+
+    <div class="warnbox"><b>The ten-year clock is not a calendar deadline.</b> ${esc(srs.windowRule)} If you take nothing until 68, the window runs from 68 to 78. So <b>${esc(dayLabel(S.earliestWindowEnd))} is only the date it would end if you withdrew on the very first day you were allowed to</b> &mdash; Fortress shows it as the earliest case, not as a deadline, because treating it as one would push you into drawing money earlier than you need to.
+      <br><br><b>What the end of the window actually does:</b> ${esc(srs.deemedRule)} That is the reason to spread withdrawals across the ten years rather than leave a balance to the end &mdash; not the date itself, but the fact that the concession stops sheltering what is left.
+      <br><br><b>One exception:</b> ${esc(srs.annuityRule)}</div>
 
     <div class="kv" style="margin-top:10px"><span class="k"><b>${S.capYear} allowance still unused</b><br><span style="font-size:11px">does not carry forward — gone on 31 Dec</span></span><span class="v pos"><b>${money(S.headroom,0)}</b><br><span class="k" style="font-size:11px">of a ${money(S.yearCap,0)} cap</span></span></div>
 
@@ -3635,7 +3673,7 @@ function viewRetire(){
 
     <p class="note"><b>The rule, stated exactly:</b> ${esc(srs.ageRule)}</p>
     <p class="note">Early withdrawal — before ${S.lockedAge} — costs a ${srs.penaltyPct}% penalty <em>and</em> the whole amount is taxable, not half. Cap is ${money(srs.capCitizen,0)} a year for citizens and PRs.</p>
-    <p class="note">Sources: ${esc(S.source)}. ${esc(srs.source)}. ${esc(R.retirementAgeHistorySource)}.</p>
+    <p class="note">Sources: ${esc(S.source)}. ${esc(srs.source)}. ${esc(srs.windowSource)} ${esc(R.retirementAgeHistorySource)}.</p>
   </div>`; })()}
 
   <div class="card">

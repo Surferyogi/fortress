@@ -373,6 +373,17 @@ returns nothing rather than a guess. The card notes that a S$1.00 contribution a
 is the known way to start the clock — and then says plainly that it cannot tell whether the timing was
 deliberate, because intent is not something a bank statement records.
 
+**A correction, made after CK asked what the window date meant.** Fortress originally printed
+"Ten-year withdrawal window ends 27 Aug 2046" as though it were a deadline. It is not. The MOF
+booklet is explicit: *"The withdrawal period starts when you make your first withdrawal at or after
+the statutory retirement age that was prevailing when you made your first SRS contribution."* The
+clock starts on the **first withdrawal**, not on the birthday — draw nothing until 68 and the window
+runs 68 to 78. The card now shows 2036→2046 labelled **"earliest case only"** and explains that
+treating it as a deadline would push a member into drawing money earlier than they need to. It also
+adds the two rules that actually matter at the end of the window: 50% of any remaining balance is
+deemed withdrawn and taxed in that year, and money used to buy a life annuity is exempt from the
+10-year limit entirely.
+
 It also states the S$15,299 of 2026 allowance still unused and that it does not carry forward, and
 then refuses to compute the tax saving: that depends on a marginal rate Fortress does not hold. The
 uninvested balance gets a note that is honest about its own irrelevance at S$1.00 and about why it
