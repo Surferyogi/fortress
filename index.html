@@ -141,7 +141,7 @@ details.gap[open]>summary::after{content:'  \2212'}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:AUG:28-17:47';
+const VERSION = 'v2026:AUG:28-23:02';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -1753,12 +1753,12 @@ function retireAt55(){
   /* (a) what the split would look like on TODAY's balances - no growth assumed */
   const now = age55Split(oa, sa, F.value);
 
-  /* (b) what it looks like on the projection. Rather than re-deriving the split,
-         reuse cpfProject's own age-55 event, so there is one implementation of the
-         rule in the app and not two that can drift apart. */
+  /* (b) what it looks like on the projection. This READS the shared CPF plan and does
+         not build its own: the settings that drive it - the year 55 falls in, and
+         whether contributions continue - live on the CPF tab and are obeyed here. */
+  const P = (typeof cpfPlan==='function') ? cpfPlan() : null;
   const yrs = Math.max(0, A.year55 - new Date().getFullYear());
-  const rows = (typeof cpfProject==='function' && yrs>0) ? cpfProject(yrs+1, true, A.year55) : null;
-  const ev = rows ? (rows.find(r=>r.event && r.event.turns55)||{}).event || null : null;
+  const ev = P ? P.at55 : null;
   const at55 = ev ? { ra:ev.ra, oaAfter:ev.oa, withdrawable: ev.ra >= F.value ? ev.oa
                        : Math.min(ev.oa, R.minWithdraw), shortOfFrs: ev.ra < F.value } : null;
 
@@ -1777,8 +1777,8 @@ function retireAt55(){
   const ersFundable = Math.min(ersHeadroom, oaFrs);
   const rateGap = (CPF_RULES.raPct - CPF_RULES.oaPct)/100;
 
-  return { A, F, B, ersRule, sumsPublished: B.published && F.published,
-    oa, sa, now, at55, pledged, freed, extraIfPledged, yrs, rows, ev,
+  return { A, F, B, ersRule, sumsPublished: B.published && F.published, plan:P,
+    oa, sa, now, at55, pledged, freed, extraIfPledged, yrs, rows:(P?P.rows:null), ev,
     raFrs, oaFrs, ersHeadroom, ersFundable, ersYearlyGain: ersFundable * rateGap, rateGap,
     reliefOnErs: 0,                                // relief stops at the FRS - verified
     saAlreadyOverFrs: sa > F.value };
@@ -2031,6 +2031,16 @@ function gaps(){
     'OA at '+pct(R.oaPct,1)+' and SA at '+pct(R.saPct,1)+' are statutory floors, reviewed quarterly. A long projection compounds whatever rate it is given, so a change of a quarter-point moves the 55 figure materially.',
     'Re-check the rates each quarter; the CPF tab records when they were last verified ('+esc(R.checkedOn)+').',
     'CPF Board publishes interest rates quarterly');
+
+  /* ---------- CPF: the override that can silently beat the date of birth ---------- */
+  if(A && state.settings.cpfAge55Year && state.settings.cpfAge55Year !== A.year55){
+    const ov = state.settings.cpfAge55Year;
+    ['cpf','retire'].forEach(tab => add(tab,'high',
+      'The CPF projection is set to age 55 in '+ov+', but your date of birth says '+A.year55,
+      'Every figure that depends on the age-55 transition is being computed for the wrong year on the CPF tab \u2014 the Special Account closure, the amount that lands in the Retirement Account, and the balance left withdrawable. The Retire tab derives the year from your date of birth, so the two tabs currently disagree by '+Math.abs(ov-A.year55)+' year(s).',
+      'On the CPF tab, set \u201cYear you turn 55\u201d back to your date of birth ('+A.year55+'). There is a one-tap button on that card.',
+      'your date of birth, '+dayLabel(A.birthDate)+', gives 55 on '+dayLabel(A.date55)));
+  }
 
   /* ---------- Retire ---------- */
   if(A){ const RR=RETIRE_RULES, F=frsFor(A.year55), B=brsFor(A.year55);
@@ -2957,6 +2967,50 @@ function savePropertyValue(){
   saveAll(); render(); window.scrollTo(0,0);
 }
 
+/* ================= the CPF forward path =================
+   THE single source of truth for everything that depends on the age-55 transition.
+   Both the CPF tab and the Retire tab read this; neither derives it again. All the
+   settings it obeys live on the CPF tab, so there is one place to change them and
+   one answer everywhere. This function exists because there used to be two
+   projections with different settings, and the two tabs disagreed about the most
+   important date in the app without either of them saying so. */
+function cpfPlan(){
+  const c = latestCpf(); if(!c) return null;
+  const A = cpfAge();
+  const startYear = +(c.asOf||'').slice(0,4) || new Date().getFullYear();
+
+  /* the year 55 falls in, and where that year came from */
+  const override = state.settings.cpfAge55Year || null;
+  const y55 = override || (A ? A.year55 : null);
+  const y55Source = override ? (A && override!==A.year55 ? 'override-conflict' : 'override')
+                             : (A ? 'birthdate' : 'unset');
+  const y55Mismatch = y55Source === 'override-conflict';
+
+  /* Contributions ON is the headline: he is working and contributing. The OFF case is
+     a stress case, computed here too so the CPF tab can show it as one rather than as
+     a rival headline. */
+  const withContrib = state.settings.cpfContrib !== false;
+  const years = state.settings.cpfYears || 10;
+
+  /* the horizon must always reach 55, or the Retire tab has no transition to read */
+  const need = y55 ? Math.max(years, y55 - startYear + 1) : years;
+  const rows  = cpfProject(need, withContrib, y55);
+  const other = cpfProject(need, !withContrib, y55);
+
+  const at55      = rows.find(r=>r.event && r.event.turns55) || null;
+  const at55Other = other.find(r=>r.event && r.event.turns55) || null;
+
+  return { c, A, startYear, y55, y55Source, y55Mismatch, override,
+    withContrib, years, need, rows, other,
+    shown: rows.slice(0, years+1),
+    at55: at55 ? at55.event : null,
+    at55Other: at55Other ? at55Other.event : null,
+    /* the gap the two settings produce, so it can be named instead of hidden */
+    contribGap: (at55 && at55Other) ? Math.abs(at55.event.oa - at55Other.event.oa) : null,
+    last: rows[Math.min(years, rows.length-1)],
+    settingsTab:'cpf' };
+}
+
 /* ================= CPF tab ================= */
 function viewCpf(){
   const c = latestCpf();
@@ -2966,16 +3020,17 @@ function viewCpf(){
   const atBhs = Math.abs((c.ma||0) - R.bhs) < 0.01;
   const yr = cpfYearInterest(c.oa||0, c.sa||0, c.ma||0, false);
   const blended = tot>0 ? yr.total/tot*100 : null;
-  const years = state.settings.cpfYears || 10;
-  const withC = !!state.settings.cpfContrib;
+  const P = cpfPlan();
+  const years = P.years, withC = P.withContrib;
   const con = cpfLastContribution();
   const overflowToOa = cpfSaOverFrs();
   const ev = cpfOverflowEvidence();
   const A = cpfAge();
-  const y55 = state.settings.cpfAge55Year || (A ? A.year55 : null);
-  const proj = cpfProject(years, withC, y55);
-  const turn = proj.find(r=>r.event && r.event.turns55);
-  const last = proj[proj.length-1];
+  const y55 = P.y55, y55Override = P.override, y55Mismatch = P.y55Mismatch;
+  const proj = P.shown;
+  const turn = P.rows.find(r=>r.event && r.event.turns55) || null;
+  const turnBeyond = !!(turn && turn.y > years);   // 55 falls outside the chosen horizon
+  const last = P.last;
   const hc = cpfHomeClaim();
 
   const hasRa = proj.some(r=>r.ra>0);
@@ -3018,6 +3073,7 @@ function viewCpf(){
 
   <div class="card">
     <h2>Projection<span class="pill">${years} years, ${withC?'with contributions':'no contributions'}</span></h2>
+    <p class="note" style="margin-top:0"><b>These settings are the app's, not this tab's.</b> The year you turn 55, the contributions switch and the horizon all drive the <b>Retire</b> tab as well — there is one projection in Fortress and this is where it is configured.</p>
     <div class="legend">${series.map(s=>`<span><span class="sw" style="background:${s.color}"></span>${esc(s.name)}</span>`).join('')}</div>
     ${lineChart(series,{yFmt:v=>fmt(v/1000,0)+'k', zero:false})}
     ${con?`<label class="fld"><input type="checkbox" ${withC?'checked':''} onchange="setCpfContrib(this.checked)" style="width:auto;margin-right:6px">Include contributions at ${money(con.median,2)}/month — the figure your own payslips have produced in ${con.count-1} of the last ${con.count} months</label>`:''}
@@ -3030,7 +3086,10 @@ function viewCpf(){
         <input type="number" id="frsOv" step="100" inputmode="decimal" value="${state.settings.frsOverride??''}" placeholder="using ${fmt(F.value,0)} — the ${esc(String(F.fallbackYear||''))} figure, which is too low">
         <button class="btn ghost" style="margin-top:8px" onclick="saveFrsOverride()">Use this figure</button>
         <p class="note" style="margin-top:6px">${F.chosen?`Currently using <b>${money(F.value,0)}</b>, your figure.`:`Currently using <b>${money(F.value,0)}</b>, the last published cohort — the real number will be higher, so the projection understates how much gets locked into the RA and overstates what stays liquid in the OA.`}</p></div>`; })()}
-    <label class="fld">Year you turn 55${A?' — from your date of birth':' — optional, but it is the biggest single thing this projection turns on'}</label>
+    <label class="fld">Year you turn 55${y55Mismatch?' — <b style="color:var(--serious)">manually overridden, and it disagrees with your date of birth</b>':A?(y55Override?' — manually set to your date-of-birth year':' — from your date of birth'):' — optional, but it is the biggest single thing this projection turns on'}</label>
+    ${y55Mismatch?`<div class="warnbox" style="margin:6px 0 8px"><b>This projection is not using your date of birth.</b>
+      You were born ${esc(dayLabel(A.birthDate))}, so you turn 55 on <b>${esc(dayLabel(A.date55))}</b> &mdash; in <b>${A.year55}</b>. This card has been manually set to <b>${y55Override}</b>, ${fmt(Math.abs(y55Override-A.year55),0)} year${Math.abs(y55Override-A.year55)===1?'':'s'} ${y55Override>A.year55?'later':'earlier'}, so every figure below moves the Special Account closure and the withdrawable balance to the wrong year. The Retire tab always derives the year from your date of birth, which is why the two tabs disagree.
+      <br><br><button class="btn" style="margin-top:6px" onclick="setCpf55('')">Use my date of birth (${A.year55})</button></div>`:''}
     <select id="cpf55" onchange="setCpf55(this.value)" style="width:100%;background:var(--page);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:10px;font:inherit;font-size:14px">
       <option value=""${!y55?' selected':''}>${A?`${A.year55} — from your date of birth`:'not set — the transition is not modelled'}</option>
       ${Array.from({length:12},(_,i)=>2026+i).map(yy=>`<option value="${yy}"${yy===y55?' selected':''}>${yy}${CPF_RULES.frsByYear[yy]?' · FRS '+money(CPF_RULES.frsByYear[yy],0)+' (published)':' · FRS not yet announced'}</option>`).join('')}
@@ -3040,7 +3099,7 @@ function viewCpf(){
       ${[5,10,15,20,25].map(y=>`<option value="${y}"${y===years?' selected':''}>${y} years</option>`).join('')}
     </select>
     <div style="margin-top:12px">
-      ${shown.map(r=>`<div class="kv"><span class="k">${r.y===0?'today':esc(String(r.year))+' &middot; +'+r.y+'y'}${r.event&&r.event.turns55?' <span class="pill">turns 55</span>':''}</span><span class="v">${money(r.total,0)}${r.y?` <span class="k" style="font-size:11px">OA ${money(r.oa,0)} &middot; ${r.ra>0?'RA '+money(r.ra,0):'SA '+money(r.sa,0)} &middot; MA ${money(r.ma,0)}</span>`:''}</span></div>`).join('')}
+      ${shown.map(r=>`<div class="kv"><span class="k">${r.y===0?'today':esc(String(r.year))+' &middot; +'+r.y+'y'}${r.event&&r.event.turns55?` <span class="pill">turns 55${A&&r.year===A.year55?' &middot; '+esc(dayLabel(A.date55)):''}</span>`:''}</span><span class="v">${money(r.total,0)}${r.y?` <span class="k" style="font-size:11px">OA ${money(r.oa,0)} &middot; ${r.ra>0?'RA '+money(r.ra,0):'SA '+money(r.sa,0)} &middot; MA ${money(r.ma,0)}</span>`:''}</span></div>`).join('')}
     </div>
     <p class="note"><b>${money(last.total - proj[0].total - (withC? last.contrib*years : 0),0)}</b> of compounding over ${years} years${withC?', on top of '+money(proj.slice(1).reduce((a,r)=>a+r.contrib,0),0)+' contributed':''} &mdash; ${pct((last.total/proj[0].total-1)*100,1)} on today's balances.</p>
     ${(()=>{ if(!y55) return '';
@@ -3048,7 +3107,8 @@ function viewCpf(){
       const d = ignoring[years].total - last.total;
       if(Math.abs(d) < 1) return '';
       return `<p class="note">Ignoring the age-55 transition would put this at ${money(ignoring[years].total,0)} &mdash; <b class="neg">${money(d,0)} too high</b>. The money is not lost; ${money(last.oa - ignoring[years].oa,0)} of it simply sits in the OA at ${pct(CPF_RULES.oaPct,1)} instead of earning ${pct(CPF_RULES.saPct,1)}.</p>`; })()}
-    ${turn?`<div class="banner ${turn.event.frsPublished?'b-good':'b-warn'}" style="margin:12px 0"><span class="ic">&#9673;</span><div><b>At 55, in ${esc(String(turn.year))}</b>The Special Account closes. ${money(turn.event.frs,0)} moves into a new Retirement Account — SA first, then OA — and whatever is left stays in the Ordinary Account at ${pct(CPF_RULES.oaPct,1)} instead of ${pct(CPF_RULES.saPct,1)}. On this path that leaves <b>${money(turn.event.oa,0)}</b> in the OA the moment it happens. ${turn.event.frsPublished?`The ${money(turn.event.frs,0)} Full Retirement Sum for that cohort is published.`:`<b>CPF has not yet announced the Full Retirement Sum for that cohort</b> — Fortress is using ${money(turn.event.frs,0)}, the last published figure (for those turning 55 in ${CPF_RULES.frsLastPublished}), which will be too low. Treat the years after ${esc(String(turn.year))} as indicative only.`} Contributions are stopped at 55 in this projection, because the rates and the allocation both change and your payslips can no longer stand in for them.</div></div>`:''}
+    ${turnBeyond?`<p class="note"><b>Your 55th birthday is outside this ${years}-year window</b> — it falls in ${turn.year}. The banner below still describes it, computed on the full path; lengthen the horizon to see the years in between.</p>`:''}
+    ${turn?`<div class="banner ${turn.event.frsPublished?'b-good':'b-warn'}" style="margin:12px 0"><span class="ic">&#9673;</span><div><b>At 55${A&&turn.year===A.year55?', on '+esc(dayLabel(A.date55)):', in '+esc(String(turn.year))}</b>The Special Account closes. ${money(turn.event.frs,0)} moves into a new Retirement Account — SA first, then OA — and whatever is left stays in the Ordinary Account at ${pct(CPF_RULES.oaPct,1)} instead of ${pct(CPF_RULES.saPct,1)}. On this path that leaves <b>${money(turn.event.oa,0)}</b> in the OA the moment it happens.${P.at55Other&&P.contribGap?` ${withC?'Switch contributions off':'Switch contributions on'} and that becomes <b>${money(P.at55Other.oa,0)}</b> — a ${money(P.contribGap,0)} swing, which is the size of the assumption you are making about working to 55.`:''} ${turn.event.frsPublished?`The ${money(turn.event.frs,0)} Full Retirement Sum for that cohort is published.`:`<b>CPF has not yet announced the Full Retirement Sum for that cohort</b> — Fortress is using ${money(turn.event.frs,0)}, the last published figure (for those turning 55 in ${CPF_RULES.frsLastPublished}), which will be too low. Treat the years after ${esc(String(turn.year))} as indicative only.`} Contributions are stopped at 55 in this projection, because the rates and the allocation both change and your payslips can no longer stand in for them.</div></div>`:''}
     <div class="warnbox"><b>What this projection does not do.</b> ${withC?`It carries your contributions forward at today's rate for the whole horizon &mdash; that holds only while you stay employed at or above the ${money(CPF_RULES.owCeiling,0)} wage ceiling, and contribution rates step down once you pass 55.`:'It adds no salary contributions, no top-ups and no withdrawals &mdash; it grows only what is there today.'} It holds MediSave at the ${R.bhsYear} Basic Healthcare Sum, though CPF raises that figure most years. It ${y55?`models age 55 using the Full Retirement Sum published for that cohort where CPF has announced one, and the latest published figure where it has not.`:`<b>does not model age 55</b>, when the Special Account closes and a Retirement Account is created at the Full Retirement Sum then in force (${money(R.frs,0)} for those turning 55 in ${R.sumsYear}); after that, savings above the sum sit in the OA at ${pct(R.oaPct,1)} rather than ${pct(R.saPct,1)}, which bends this curve down. Set the year above and Fortress will model it.`} Your contribution split matches CPF's <b>above 50 to 55</b> allocation band exactly, so that year is close — this is not a distant technicality.</div>
   </div>
 
@@ -3595,7 +3655,8 @@ function viewRetire(){
     <div class="kv"><span class="k">Left in the Ordinary Account<br><span style="font-size:11px">earns ${pct(oa.rate,1)} &mdash; ${money(oa.base,0)}/yr, ${money(oa.monthly,0)}/mo, <b>if you leave it there</b></span></span><span class="v pos">${money(Rt.at55.oaAfter,0)}<br><span class="k" style="font-size:11px">withdrawable from 55</span></span></div>
     <div class="kv"><span class="k">The cost of withdrawing it all</span><span class="v neg">${money(oa.base,0)}/yr<br><span class="k" style="font-size:11px">${money(oa.over10,0)} over ten years</span></span></div>
     <p class="note">Rates are the published floors: OA ${pct(ra.rate===oa.rate?oa.rate:CPF_RULES.oaPct,1)}, RA ${pct(CPF_RULES.raPct,1)}, ${esc(oa.extraNote)}. At ${pct(CPF_RULES.oaPct,1)} money doubles in about ${fmt(oa.doubles,0)} years; at ${pct(CPF_RULES.raPct,1)}, about ${fmt(ra.doubles,0)}. Source: ${esc(oa.source)}.</p>`; })()}
-    <p class="note">These use the same projection engine as the CPF tab but <b>not the same settings</b>: this one runs <em>with</em> contributions continuing to 55, while the CPF tab's own age-55 banner runs with contributions <em>off</em>. That is why the CPF tab shows a smaller Ordinary Account at 55 than this card does — the difference is the contributions, not a disagreement. Neither is a promise: the rates are reviewed quarterly and your contributions depend on a salary Fortress does not know.</p>`:''}
+    <p class="note">${(()=>{ const P=Rt.plan; if(!P) return '';
+      return `These are <b>the CPF tab's projection</b>, not a second one — same engine, same settings, so the two tabs cannot disagree. It is currently running <b>${P.withContrib?'with':'without'}</b> contributions${P.withContrib&&cpfLastContribution()?` at ${money(cpfLastContribution().median,2)}/month`:''}, and treating your 55th birthday as falling in <b>${P.y55}</b> ${P.y55Source==='birthdate'?'(from your date of birth)':P.y55Source==='override-conflict'?'<b style="color:var(--serious)">(a manual override that disagrees with your date of birth — fix it on the CPF tab)</b>':'(manually set)'}.${P.contribGap?` Turning contributions off would leave ${money(P.contribGap,0)} less in the Ordinary Account at 55; the CPF tab shows that as a stress case.`:''} <b>Change either setting on the CPF tab</b> and this card follows. Neither setting makes it a promise: the rates are reviewed quarterly and your contributions depend on a salary Fortress does not know.`; })()}</p>`:''}
 
     <div class="warnbox" style="margin-top:10px"><b>Lever 1 — pledge the property and set aside only the Basic Retirement Sum.</b>
       You own a property, so you <em>may be able to</em> set aside as little as the BRS rather than the FRS, with the property covering the difference. <b>One condition Fortress cannot check:</b> ${esc(RETIRE_RULES.pledgeCondition)} Confirm it before counting on this lever at all. Because the FRS is exactly twice the BRS, that frees <b>${money(Rt.freed,0)}</b> more into your Ordinary Account, withdrawable in cash.

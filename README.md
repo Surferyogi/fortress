@@ -282,6 +282,41 @@ The shares are counted in net worth and **excluded from every margin calculation
 registered with the company, not pledged to DBS, so they cannot raise a lending value or
 answer a margin call. Same treatment as CPF.
 
+## One projection, two tabs
+
+The CPF tab and the Retire tab both depend on the age-55 transition. They used to compute it
+**separately**, and drifted: the CPF tab honoured a manual year-55 override while the Retire tab always
+derived the year from the date of birth, so the two tabs could disagree about the most important date
+in the app (2030 vs 2028) without either of them noticing. They also ran the projection with different
+contribution settings, producing two "Ordinary Account at 55" figures — S$195,678 and S$267,772 — each
+presented as the answer.
+
+`cpfPlan()` is now the single source. It resolves the year 55 falls in (and records **where that came
+from**: date of birth, a matching override, or a conflicting one), the contributions switch, and the
+horizon — then returns the path, the age-55 event, and the same event computed on the *opposite*
+contributions setting so the difference can be named rather than hidden.
+
+The boundary between the tabs is now principled rather than institutional:
+
+- **CPF owns what you have, and every input.** Balances, rates, ledger, housing claim — plus the year-55
+  selector, the contributions switch and the horizon. The card says so out loud: *"These settings are the
+  app's, not this tab's."*
+- **Retire owns what you do about it.** Timeline, the age-55 decision, levers, payouts, SRS. It **reads**
+  the plan and offers no projection controls of its own; where a setting matters it names the CPF tab and
+  states which setting is currently in force.
+
+Contributions now default to **on** — he is working and contributing S$2,960/month — with the off case
+shown on the CPF tab as a stress case (*"switch contributions off and that becomes S$195,678, a S$72,094
+swing, which is the size of the assumption you are making about working to 55"*) rather than as a rival
+headline. The display horizon and the computed path were also separated: a 5-year horizon still computes
+the age-55 event for the Retire tab, and the CPF table says when 55 falls outside the window shown.
+
+`agreetest.js` enforces it. It drives **18 combinations** of contributions × horizon × override and
+asserts the two tabs land on identical RA and OA figures every time, that the horizon never hides the
+transition, that the contributions switch moves both tabs together, that an override still moves both
+while remaining flagged as conflicting with the date of birth, and that the Retire tab contains no
+`<select>` or checkbox of its own.
+
 ## Retire
 
 A tab built on the Singapore CPF framework, with every rule read from a primary source on
