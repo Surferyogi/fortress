@@ -141,7 +141,7 @@ details.gap[open]>summary::after{content:'  \2212'}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:AUG:28-23:02';
+const VERSION = 'v2026:AUG:28-23:14';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -476,7 +476,7 @@ if(!state.al){ state.al = AL_SEED; store.set('fortress.al', state.al); }
    readings needs those to reach devices that already installed an older build,
    WITHOUT touching anything the user entered. Each migration is additive and
    idempotent: it fills gaps and repairs missing fields, and never deletes.  */
-const SEED_VERSION = 10;
+const SEED_VERSION = 11;
 function runSeedMigrations(){
   const from = store.get('fortress.seedVersion', 0);
   if(from >= SEED_VERSION) return 0;
@@ -533,6 +533,12 @@ function runSeedMigrations(){
   // v8 — the Air Liquide shareholding
   state.al = state.al || {};
   Object.keys(AL_SEED).forEach(d=>{ if(!state.al[d]){ state.al[d]={...AL_SEED[d], seeded:true}; changed++; } });
+
+  // v11 — the year-55 selector was removed. A stored override is now dead weight at best
+  //        and a wrong answer at worst, so clear it once a date of birth exists.
+  if(state.settings.birthDate && state.settings.cpfAge55Year != null){
+    state.settings.cpfAge55Year = null; changed++;
+  }
 
   // v10 — the SRS account, transcribed from his DBS screen. Additive and idempotent:
   //       only seeded when absent, so a later edit is never overwritten.
@@ -2032,16 +2038,6 @@ function gaps(){
     'Re-check the rates each quarter; the CPF tab records when they were last verified ('+esc(R.checkedOn)+').',
     'CPF Board publishes interest rates quarterly');
 
-  /* ---------- CPF: the override that can silently beat the date of birth ---------- */
-  if(A && state.settings.cpfAge55Year && state.settings.cpfAge55Year !== A.year55){
-    const ov = state.settings.cpfAge55Year;
-    ['cpf','retire'].forEach(tab => add(tab,'high',
-      'The CPF projection is set to age 55 in '+ov+', but your date of birth says '+A.year55,
-      'Every figure that depends on the age-55 transition is being computed for the wrong year on the CPF tab \u2014 the Special Account closure, the amount that lands in the Retirement Account, and the balance left withdrawable. The Retire tab derives the year from your date of birth, so the two tabs currently disagree by '+Math.abs(ov-A.year55)+' year(s).',
-      'On the CPF tab, set \u201cYear you turn 55\u201d back to your date of birth ('+A.year55+'). There is a one-tap button on that card.',
-      'your date of birth, '+dayLabel(A.birthDate)+', gives 55 on '+dayLabel(A.date55)));
-  }
-
   /* ---------- Retire ---------- */
   if(A){ const RR=RETIRE_RULES, F=frsFor(A.year55), B=brsFor(A.year55);
     if(!F.published || !B.published)
@@ -2979,12 +2975,15 @@ function cpfPlan(){
   const A = cpfAge();
   const startYear = +(c.asOf||'').slice(0,4) || new Date().getFullYear();
 
-  /* the year 55 falls in, and where that year came from */
+  /* The year you turn 55 is arithmetic on your date of birth, not a preference. When a
+     date of birth is known it wins outright and the stored override is ignored - a value
+     that can only ever be set WRONG should not be settable. The override survives solely
+     as a fallback for a member who has not given a date of birth. */
   const override = state.settings.cpfAge55Year || null;
-  const y55 = override || (A ? A.year55 : null);
-  const y55Source = override ? (A && override!==A.year55 ? 'override-conflict' : 'override')
-                             : (A ? 'birthdate' : 'unset');
-  const y55Mismatch = y55Source === 'override-conflict';
+  const y55 = A ? A.year55 : override;
+  const y55Source = A ? 'birthdate' : (override ? 'override' : 'unset');
+  const y55Mismatch = false;                       // no longer reachable: the DOB decides
+  const staleOverride = !!(A && override && override !== A.year55);
 
   /* Contributions ON is the headline: he is working and contributing. The OFF case is
      a stress case, computed here too so the CPF tab can show it as one rather than as
@@ -3000,7 +2999,8 @@ function cpfPlan(){
   const at55      = rows.find(r=>r.event && r.event.turns55) || null;
   const at55Other = other.find(r=>r.event && r.event.turns55) || null;
 
-  return { c, A, startYear, y55, y55Source, y55Mismatch, override,
+  return { c, A, startYear, y55, y55Source, y55Mismatch, override, staleOverride,
+    date55: A ? A.date55 : null,
     withContrib, years, need, rows, other,
     shown: rows.slice(0, years+1),
     at55: at55 ? at55.event : null,
@@ -3086,14 +3086,17 @@ function viewCpf(){
         <input type="number" id="frsOv" step="100" inputmode="decimal" value="${state.settings.frsOverride??''}" placeholder="using ${fmt(F.value,0)} — the ${esc(String(F.fallbackYear||''))} figure, which is too low">
         <button class="btn ghost" style="margin-top:8px" onclick="saveFrsOverride()">Use this figure</button>
         <p class="note" style="margin-top:6px">${F.chosen?`Currently using <b>${money(F.value,0)}</b>, your figure.`:`Currently using <b>${money(F.value,0)}</b>, the last published cohort — the real number will be higher, so the projection understates how much gets locked into the RA and overstates what stays liquid in the OA.`}</p></div>`; })()}
-    <label class="fld">Year you turn 55${y55Mismatch?' — <b style="color:var(--serious)">manually overridden, and it disagrees with your date of birth</b>':A?(y55Override?' — manually set to your date-of-birth year':' — from your date of birth'):' — optional, but it is the biggest single thing this projection turns on'}</label>
-    ${y55Mismatch?`<div class="warnbox" style="margin:6px 0 8px"><b>This projection is not using your date of birth.</b>
-      You were born ${esc(dayLabel(A.birthDate))}, so you turn 55 on <b>${esc(dayLabel(A.date55))}</b> &mdash; in <b>${A.year55}</b>. This card has been manually set to <b>${y55Override}</b>, ${fmt(Math.abs(y55Override-A.year55),0)} year${Math.abs(y55Override-A.year55)===1?'':'s'} ${y55Override>A.year55?'later':'earlier'}, so every figure below moves the Special Account closure and the withdrawable balance to the wrong year. The Retire tab always derives the year from your date of birth, which is why the two tabs disagree.
-      <br><br><button class="btn" style="margin-top:6px" onclick="setCpf55('')">Use my date of birth (${A.year55})</button></div>`:''}
+    ${A?`
+    <div class="kv" style="margin:4px 0"><span class="k">You turn 55 on<br><span style="font-size:11px">arithmetic on your date of birth &mdash; not a setting</span></span><span class="v">${esc(dayLabel(A.date55))}<br><span class="k" style="font-size:11px">${A.days55>0?fmt(A.days55,0)+' days away':'passed'}</span></span></div>
+    <label class="fld">Date of birth &mdash; change this and the year follows</label>
+    <input type="date" id="cpfDob" value="${esc(A.birthDate)}" onchange="setBirthDate(this.value)" style="width:100%;background:var(--page);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:10px;font:inherit;font-size:14px">
+    <p class="note" style="margin-top:4px">There used to be a dropdown here for picking the year you turn 55. It has been removed: the year is derived from the date above, so the only thing a selector could do was disagree with your own birthday. Edit the date instead${P.staleOverride?` &mdash; and a stored selection of <b>${P.override}</b> has been discarded`:''}.</p>`:`
+    <label class="fld">Year you turn 55 &mdash; no date of birth on file, so this stands in for one</label>
     <select id="cpf55" onchange="setCpf55(this.value)" style="width:100%;background:var(--page);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:10px;font:inherit;font-size:14px">
-      <option value=""${!y55?' selected':''}>${A?`${A.year55} — from your date of birth`:'not set — the transition is not modelled'}</option>
-      ${Array.from({length:12},(_,i)=>2026+i).map(yy=>`<option value="${yy}"${yy===y55?' selected':''}>${yy}${CPF_RULES.frsByYear[yy]?' · FRS '+money(CPF_RULES.frsByYear[yy],0)+' (published)':' · FRS not yet announced'}</option>`).join('')}
+      <option value=""${!y55?' selected':''}>not set &mdash; the transition is not modelled</option>
+      ${Array.from({length:12},(_,i)=>2026+i).map(yy=>`<option value="${yy}"${yy===y55?' selected':''}>${yy}${CPF_RULES.frsByYear[yy]?' &middot; FRS '+money(CPF_RULES.frsByYear[yy],0)+' (published)':' &middot; FRS not yet announced'}</option>`).join('')}
     </select>
+    <p class="note" style="margin-top:4px">Enter a date of birth and this selector disappears &mdash; the year is then arithmetic rather than a choice.</p>`}
     <label class="fld">Horizon (years)</label>
     <select id="cpfYears" onchange="setCpfYears(this.value)" style="width:100%;background:var(--page);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:10px;font:inherit;font-size:14px">
       ${[5,10,15,20,25].map(y=>`<option value="${y}"${y===years?' selected':''}>${y} years</option>`).join('')}
@@ -3189,6 +3192,14 @@ function cpfForms(){
 function setCpfYears(v){ state.settings.cpfYears = +v||10; saveAll(); render(); }
 function setCpfContrib(on){ state.settings.cpfContrib = !!on; saveAll(); render(); }
 function setCpf55(v){ state.settings.cpfAge55Year = v===''?null:+v; saveAll(); render(); }
+function setBirthDate(v){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(v)){ alert('Date of birth must be a real date.'); return; }
+  const y = +v.slice(0,4), now = new Date().getFullYear();
+  if(y < 1900 || y > now){ alert('That date of birth looks wrong.'); return; }
+  state.settings.birthDate = v;
+  state.settings.cpfAge55Year = null;   // the derived year is the only truth from here
+  saveAll(); render();
+}
 function saveFrsOverride(){
   const el=document.getElementById('frsOv'); if(!el) return;
   const v = el.value===''?null:+el.value;

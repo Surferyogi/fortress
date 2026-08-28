@@ -282,6 +282,31 @@ The shares are counted in net worth and **excluded from every margin calculation
 registered with the company, not pledged to DBS, so they cannot raise a lending value or
 answer a margin call. Same treatment as CPF.
 
+## The year you turn 55 is not a setting
+
+Fortress used to offer a dropdown for "Year you turn 55". It shipped with a stored value of 2030
+against a date of birth of 27 Aug 1973, which gives 2028 — so the projection moved the Special Account
+closure two years late, and every figure downstream of it was wrong.
+
+The first fix was a warning banner and a one-tap correction. That was treating the symptom. **A value
+that is arithmetic on a date you already hold should not be settable at all** — the only thing the
+selector could ever do was disagree with your own birthday.
+
+The selector is gone. In its place:
+
+- the derived fact, stated as a **date** rather than a year: *"You turn 55 on 27 Aug 2028 — arithmetic
+  on your date of birth, not a setting"*, with the countdown beside it;
+- an editable **date of birth**, which is the actual input and previously had no UI at all;
+- a note explaining why the dropdown disappeared.
+
+`cpfPlan()` now ignores any stored override outright whenever a date of birth exists, a seed migration
+(v11) discards a stale one rather than leaving the user to clear it, and `staleOverride` records that it
+did. The selector survives only for a member with no date of birth on file, and says it will vanish once
+one is entered.
+
+The gap and the warning banner that policed the mismatch are both deleted — the condition they warned
+about can no longer occur.
+
 ## One projection, two tabs
 
 The CPF tab and the Retire tab both depend on the age-55 transition. They used to compute it
