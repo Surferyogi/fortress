@@ -141,7 +141,7 @@ details.gap[open]>summary::after{content:'  \2212'}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:AUG:28-13:37';
+const VERSION = 'v2026:AUG:28-16:24';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -475,7 +475,7 @@ if(!state.al){ state.al = AL_SEED; store.set('fortress.al', state.al); }
    readings needs those to reach devices that already installed an older build,
    WITHOUT touching anything the user entered. Each migration is additive and
    idempotent: it fills gaps and repairs missing fields, and never deletes.  */
-const SEED_VERSION = 9;
+const SEED_VERSION = 10;
 function runSeedMigrations(){
   const from = store.get('fortress.seedVersion', 0);
   if(from >= SEED_VERSION) return 0;
@@ -532,6 +532,10 @@ function runSeedMigrations(){
   // v8 — the Air Liquide shareholding
   state.al = state.al || {};
   Object.keys(AL_SEED).forEach(d=>{ if(!state.al[d]){ state.al[d]={...AL_SEED[d], seeded:true}; changed++; } });
+
+  // v10 — the SRS account, transcribed from his DBS screen. Additive and idempotent:
+  //       only seeded when absent, so a later edit is never overwritten.
+  if(!state.settings.srs){ state.settings.srs = { ...SRS_SEED }; changed++; }
 
   // v9 — plain-English mode arrived; existing installs default to ON, and the choice
   //      is remembered from then on because it is only set when it is undefined.
@@ -741,6 +745,16 @@ function cpfYearInterest(oa, sa, ma, from55){
    depends on something Fortress does not hold about CK - his property's annual value,
    whether he has an SRS account - the rule is stated and the test is left OPEN rather
    than guessed either way. */
+/* CK's SRS account, transcribed from the DBS SRS account screen of 28 Aug 2026, 16:15.
+   The first-contribution DATE is the load-bearing fact here, not the balance. */
+const SRS_SEED = {
+  bank:'DBS', account:'0120-362854-5-223',
+  firstContribution:'2026-06-29', totalContributed:1.00, cashBalance:1.00, invested:0,
+  yearCap:15300, usedThisYear:1.00, remainingThisYear:15299.00, capYear:2026,
+  asOf:'2026-08-28',
+  source:'DBS internet banking — SRS Account details, transaction history and account summary, as at 28 Aug 2026 16:15'
+};
+
 const RETIRE_RULES = {
   checkedOn:'2026-08-26',
 
@@ -794,6 +808,26 @@ const RETIRE_RULES = {
          source:'CPF Board — Budget 2026: Singaporeans aged 50 and above in 2026 receive up to $1,500 in December 2026, by retirement savings and property annual value' },
   lifecycle:{ name:'CPF Life-Cycle Investment Scheme', from:'first half of 2028', voluntary:true,
          source:'CPF Board — Budget 2026: a voluntary life-cycle investment option with age-based rebalancing and capped all-in fees, launching in the first half of 2028' },
+
+  /* --- CPF's OWN published payout illustration ---
+     This is the only payout data Fortress holds. It is CPF's table, for ONE cohort,
+     on ONE plan. Everything the app derives from it is labelled as derived. */
+  payoutTable:{
+    cohort55:2025, cohort65:2035, computedIn:2025, plan:'CPF LIFE Standard Plan',
+    rows:[ {set:60000,  lo:540,  hi:570},
+           {set:106500, lo:860,  hi:930},    // the 2025 BRS
+           {set:150000, lo:1170, hi:1250},
+           {set:213000, lo:1610, hi:1730},   // the 2025 FRS
+           {set:426000, lo:3100, hi:3330} ], // the 2025 ERS
+    assumption:'assumes the 4% floor on Retirement Account savings compounding from 55 to 65',
+    caveat:'CPF states payouts may be adjusted for long-term changes in interest rates or life expectancy',
+    source:'CPF Board — "CPF LIFE Payout Examples": estimated monthly payouts on the CPF LIFE Standard Plan for members turning 65 in 2035, computed as of 2025'
+  },
+
+  /* --- the retirement-age history, because the SRS lock depends on the DATE --- */
+  retirementAgeHistory:[ {from:'2022-07-01', to:'2026-06-30', age:63},
+                         {from:'2026-07-01', to:null,        age:64} ],
+  retirementAgeHistorySource:'L&E Global / MOM — before 1 July 2026 the retirement age was 63 and the re-employment age 68; from 1 July 2026 they are 64 and 69',
 
   /* --- SRS: not CPF, but the companion lever, and the clock on it is real --- */
   srs:{ capCitizen:15300, capForeigner:35700, reliefCapOverall:80000,
@@ -1725,6 +1759,84 @@ function retireAt55(){
     saAlreadyOverFrs: sa > F.value };
 }
 
+/* ---- CPF LIFE payouts, derived ONLY from CPF's published illustration ----------
+   Fortress holds exactly one payout dataset: CPF's own worked table for the members
+   who turn 65 in 2035, on the Standard Plan. It interpolates BETWEEN those published
+   points and says so; above the top point it extrapolates and says THAT, loudly.
+   It never invents a rate, and it never presents the result as CPF's own figure for
+   CK, because his cohort's table has not been published. */
+function cpfLifeEstimate(amount){
+  const P = RETIRE_RULES.payoutTable, T = P.rows;
+  if(amount==null || !(amount>0)) return null;
+  const mk = (lo,hi,basis,how) => ({ amount, lo, hi, basis, how,
+    perLakhLo: lo/amount*100000, perLakhHi: hi/amount*100000,
+    interpolated: how==='interpolated', extrapolated: how==='extrapolated',
+    plan:P.plan, cohort55:P.cohort55, cohort65:P.cohort65 });
+  if(amount <= T[0].set){
+    const f = amount/T[0].set;
+    return mk(T[0].lo*f, T[0].hi*f, `scaled down from the lowest published point (${fmt(T[0].set,0)})`, 'extrapolated');
+  }
+  for(let i=1;i<T.length;i++){
+    if(amount <= T[i].set){
+      const a=T[i-1], b=T[i], f=(amount-a.set)/(b.set-a.set);
+      return mk(a.lo+f*(b.lo-a.lo), a.hi+f*(b.hi-a.hi),
+        `between CPF's published ${fmt(a.set,0)} and ${fmt(b.set,0)} points`, 'interpolated');
+    }
+  }
+  const a=T[T.length-2], b=T[T.length-1], f=(amount-a.set)/(b.set-a.set);
+  return mk(a.lo+f*(b.lo-a.lo), a.hi+f*(b.hi-a.hi),
+    `ABOVE CPF's highest published point (${fmt(b.set,0)})`, 'extrapolated');
+}
+
+/* ---- what an untouched balance earns, at the published rates ----------------------
+   Every balance the Retire tab shows is money that keeps earning if it is left alone.
+   This states the rate, the yearly interest, and - where it applies - the extra
+   interest tiers, so "withdrawable" is never quoted without its opportunity cost. */
+function cpfEarns(amount, account, age){
+  if(amount==null) return null;
+  const R = CPF_RULES;
+  const rate = account==='OA' ? R.oaPct : R.saPct;   // SA, MA and RA all pay the same floor
+  const base = amount * rate/100;
+  /* extra interest is on COMBINED balances, so it is shown as the tier structure
+     rather than silently added to one account's number */
+  const from55 = age!=null && age>=55;
+  const tiers = from55 ? R.extraFrom55.tiers : [{pct:R.extraBelow55.pct, upTo:R.extraBelow55.onFirst}];
+  return { amount, account, rate, base, monthly:base/12,
+    over10: amount*Math.pow(1+rate/100,10) - amount,
+    doubles: Math.log(2)/Math.log(1+rate/100),
+    from55, tiers,
+    extraNote: from55
+      ? `plus ${pct(R.extraFrom55.tiers[0].pct,0)} on the first ${money(R.extraFrom55.tiers[0].upTo,0)} of combined balances and ${pct(R.extraFrom55.tiers[1].pct,0)} on the next ${money(R.extraFrom55.tiers[1].upTo-R.extraFrom55.tiers[0].upTo,0)}, at most ${money(R.extraFrom55.oaCap,0)} of it from the OA`
+      : `plus ${pct(R.extraBelow55.pct,0)} on the first ${money(R.extraBelow55.onFirst,0)} of combined balances, at most ${money(R.extraBelow55.oaCap,0)} of it from the OA`,
+    source: R.ratesSource };
+}
+
+/* ---- SRS, and the two days that mattered ---------------------------------------- */
+function srsPosition(){
+  const S = state.settings.srs || SRS_SEED; if(!S || !S.firstContribution) return null;
+  const R = RETIRE_RULES, A = cpfAge();
+  /* the withdrawal age is the statutory retirement age in force ON THE DAY of the
+     first contribution - so the date is looked up against the history, not assumed */
+  const era = R.retirementAgeHistory.find(h =>
+    S.firstContribution >= h.from && (h.to===null || S.firstContribution <= h.to));
+  const lockedAge = era ? era.age : null;
+  const current = R.retirementAgeHistory[R.retirementAgeHistory.length-1].age;
+  const beat = lockedAge!=null && lockedAge < current;
+  const nextEra = beat ? R.retirementAgeHistory.find(h=>h.age===current) : null;
+  const daysSpare = (beat && nextEra) ? Math.round(
+      (new Date(nextEra.from) - new Date(S.firstContribution)) / 86400000) : null;
+
+  const withdrawFrom = (A && lockedAge!=null)
+    ? (+A.birthDate.slice(0,4)+lockedAge)+A.birthDate.slice(4) : null;
+  const headroom = (S.yearCap!=null && S.usedThisYear!=null) ? S.yearCap - S.usedThisYear : null;
+
+  return { ...S, era, lockedAge, currentAge:current, beat, daysSpare, nextEraFrom: nextEra?nextEra.from:null,
+    withdrawFrom, withdrawYear: withdrawFrom? +withdrawFrom.slice(0,4) : null,
+    daysToWithdraw: withdrawFrom? daysUntil(withdrawFrom) : null,
+    headroom, uninvested: (S.cashBalance||0) - 0,
+    windowEnds: withdrawFrom ? (+withdrawFrom.slice(0,4)+R.srs.window)+withdrawFrom.slice(4) : null };
+}
+
 /* Which levers are actually open. Each returns open/closed with the TEST that decided it,
    so a "no" is auditable rather than an opinion. */
 function retireLevers(){
@@ -1790,13 +1902,20 @@ function retireLevers(){
       openNow?'Decide before the money is swept, not after.':`Decide before ${A?dayLabel(A.date55):'55'}, not on the day.`,
       R.reliefSource);
   }
-  /* 7. SRS — the one with a clock on it, and the one Fortress cannot verify */
-  { const srs = R.srs;
-    push('srs', 'Supplementary Retirement Scheme', true,
-      'open to any citizen or PR; Fortress does not know whether you already have an account',
-      `Not CPF, but the companion to it: up to ${money(srs.capCitizen,0)} a year, every dollar deductible, and only ${srs.taxablePct}% of what you withdraw is taxable if you withdraw at or after the retirement age. <b>The timing detail that matters:</b> your penalty-free withdrawal age is fixed at the statutory retirement age <em>prevailing when you make your first contribution</em> — it does not follow later increases. That age rose to <b>${R.retirementAge}</b> on ${dayLabel(R.empAgesFrom)}. A first contribution made while it is ${R.retirementAge} locks ${R.retirementAge} for life; if it rises again, anyone contributing for the first time after that is locked to the higher age.`,
-      `If you have never contributed, opening an account and contributing even a token amount fixes the age at ${R.retirementAge}. Fortress does not know whether you have — tell it, or check with your bank.`,
-      srs.source, true);
+  /* 7. SRS — no longer a guess: his own account statement answers it */
+  { const srs = R.srs, S = srsPosition();
+    if(!S){
+      push('srs','Supplementary Retirement Scheme', true,
+        'Fortress holds no SRS account for you',
+        `Up to ${money(srs.capCitizen,0)} a year, deductible, with only ${srs.taxablePct}% of withdrawals taxable at or after your retirement age. Your penalty-free age is fixed at the statutory retirement age <em>prevailing when you make your first contribution</em>.`,
+        'Tell Fortress whether an account exists and when it was first funded.', srs.source, true);
+    } else {
+      push('srs','Supplementary Retirement Scheme — this year\'s allowance', S.headroom>0,
+        `${money(S.yearCap,0)} cap for ${S.capYear} less ${money(S.usedThisYear,0)} used = ${money(S.headroom,0)}`,
+        `You have <b>${money(S.headroom,0)}</b> of ${S.capYear} allowance left, and the yearly cap does not carry forward — unused room is gone on 31 December. Every dollar contributed is deducted from your assessable income. <b>Fortress does not know your marginal tax rate</b>, so it states the deduction and refuses to compute the tax saved.`,
+        `Decide before 31 December ${S.capYear}. Contributing early in a year also gives the money longer to work.`,
+        srs.source);
+    }
   }
   return out;
 }
@@ -1890,17 +2009,29 @@ function gaps(){
         'Both the Full and the Basic Retirement Sum for your cohort are unknown, so the split at 55, the amount withdrawable, and the size of the property-pledge lever are all computed on the last published year and are therefore too low.',
         'Enter them on the CPF tab as soon as CPF announces your cohort.',
         'CPF publishes retirement sums a few years ahead; the series stops at '+CPF_RULES.frsLastPublished);
-    add('retire','high','Fortress does not know whether you have an SRS account',
-      'The penalty-free withdrawal age is fixed at the statutory retirement age prevailing when you make your FIRST contribution — it does not follow later increases. That age is '+RR.retirementAge+' today. Fortress cannot tell you whether that clock has already been started for you, so it cannot say whether waiting costs you anything.',
-      'Check with your bank whether an SRS account exists and whether anything has ever been paid into it.',
-      RR.srs.source);
+    { const S=(typeof srsPosition==='function')?srsPosition():null;
+      if(!S) add('retire','high','Fortress does not know whether you have an SRS account',
+        'The penalty-free withdrawal age is fixed at the statutory retirement age prevailing when you make your FIRST contribution. Fortress cannot say whether that clock has been started for you.',
+        'Check with your bank whether an SRS account exists and when it was first funded.', RR.srs.source);
+      else {
+        if(S.headroom>0) add('retire','medium',money(S.headroom,0)+' of '+S.capYear+' SRS allowance is unused and does not carry forward',
+          'Fortress can state the deduction available but not what it is worth, because it does not hold your marginal tax rate. So it cannot tell you whether using the room beats leaving the cash elsewhere.',
+          'Decide before 31 December '+S.capYear+'. Give Fortress your marginal rate if you want the trade priced.',
+          S.source);
+        add('retire','medium','Your marginal income tax rate is not recorded',
+          'It is the missing term in every tax-relief decision on this tab — the SRS deduction, and top-ups for loved ones. Without it Fortress states the deduction and stops, rather than computing a saving it cannot stand behind.',
+          'Add it, or your assessable income, if you want these levers priced rather than described.');
+        if((S.cashBalance||0) > 0 && !S.invested) add('retire','low','The SRS balance is uninvested',
+          money(S.cashBalance,2)+' sits in cash. Immaterial at this size, but it would not be if the '+money(S.headroom,0)+' of room were used and left the same way.',
+          'Nothing to do yet. Worth revisiting the moment the balance is meaningful.', S.source);
+      } }
     add('retire','high','Nothing is known about what your retirement will cost',
       'Every figure on the Retire tab is a balance or a rule. Whether the money lasts depends on spending, which Fortress does not hold — so it can describe the machinery of CPF precisely and still not answer whether you can afford to stop working.',
       'A single annual spending figure would let Fortress test the balances against something.');
-    add('retire','medium','Your monthly CPF LIFE payout cannot be computed here',
-      'Payouts depend on the plan chosen, the cohort mortality tables and the balance at the time. Fortress holds none of those, so it prints no payout figure at all.',
-      "Use CPF's own retirement payout planner; Fortress will not reproduce the result as if it were its own.",
-      RR.deferSource);
+    add('retire','medium','The payout range is derived from another cohort\u2019s published table',
+      'CPF has published a payout illustration only for members turning 55 in '+RR.payoutTable.cohort55+', on the '+RR.payoutTable.plan+'. Yours is '+A.year55+'. Fortress interpolates within CPF\u2019s points and flags where it extrapolates, but the result is an order of magnitude, not your payout — and the Basic and Escalating plans are not covered at all.',
+      'Run CPF\u2019s own planner for a figure to rely on, and enter your cohort\u2019s sums here when published.',
+      RR.payoutTable.source);
     add('retire','medium','The property annual value is not recorded',
       'Two schemes on this tab — the Matched Retirement Savings Scheme and the Budget 2026 senior top-up — test the annual value of your residence. Both already fail on your savings, so it does not change the answer today, but it would if your balances ever fell.',
       'Add it from your property tax notice if you want those tests complete.');
@@ -3424,8 +3555,12 @@ function viewRetire(){
 
     ${Rt.at55?`
     <div style="margin-top:12px"><b style="font-size:13px">Projected to ${Rt.A.year55}</b></div>
-    <div class="kv"><span class="k">Into the Retirement Account</span><span class="v">${money(Rt.at55.ra,0)}</span></div>
-    <div class="kv"><span class="k">Left in the Ordinary Account</span><span class="v pos">${money(Rt.at55.oaAfter,0)}<br><span class="k" style="font-size:11px">withdrawable from 55</span></span></div>
+    ${(()=>{ const ra=cpfEarns(Rt.at55.ra,'RA',55), oa=cpfEarns(Rt.at55.oaAfter,'OA',55);
+      return `
+    <div class="kv"><span class="k">Into the Retirement Account<br><span style="font-size:11px">earns ${pct(ra.rate,1)} &mdash; ${money(ra.base,0)}/yr, ${money(ra.monthly,0)}/mo</span></span><span class="v">${money(Rt.at55.ra,0)}</span></div>
+    <div class="kv"><span class="k">Left in the Ordinary Account<br><span style="font-size:11px">earns ${pct(oa.rate,1)} &mdash; ${money(oa.base,0)}/yr, ${money(oa.monthly,0)}/mo, <b>if you leave it there</b></span></span><span class="v pos">${money(Rt.at55.oaAfter,0)}<br><span class="k" style="font-size:11px">withdrawable from 55</span></span></div>
+    <div class="kv"><span class="k">The cost of withdrawing it all</span><span class="v neg">${money(oa.base,0)}/yr<br><span class="k" style="font-size:11px">${money(oa.over10,0)} over ten years</span></span></div>
+    <p class="note">Rates are the published floors: OA ${pct(ra.rate===oa.rate?oa.rate:CPF_RULES.oaPct,1)}, RA ${pct(CPF_RULES.raPct,1)}, ${esc(oa.extraNote)}. At ${pct(CPF_RULES.oaPct,1)} money doubles in about ${fmt(oa.doubles,0)} years; at ${pct(CPF_RULES.raPct,1)}, about ${fmt(ra.doubles,0)}. Source: ${esc(oa.source)}.</p>`; })()}
     <p class="note">These come from the same projection the CPF tab runs, at the published floor rates and with contributions continuing until 55. They are a projection, not a promise: the rates are reviewed quarterly and your contributions depend on a salary Fortress does not know.</p>`:''}
 
     <div class="warnbox" style="margin-top:10px"><b>Lever 1 — pledge the property and set aside only the Basic Retirement Sum.</b>
@@ -3440,6 +3575,31 @@ function viewRetire(){
     <p class="note">Sources: ${esc(R.age55Source)}; ${esc(R.pledgeSource)}; ${esc(R.ersSource)}.</p>
   </div>`:''}
 
+  ${(()=>{ const Rt2=retireAt55(); if(!Rt2) return '';
+    const P=RETIRE_RULES.payoutTable;
+    const opts=[
+      { k:'Pledge the property — set aside the BRS', amt:Rt2.B.value, note:'smallest lifelong payout, most cash now' },
+      { k:'Do nothing — the FRS is set aside', amt:Rt2.F.value, note:'the default if you never act' },
+      { k:'Top up to the ERS', amt:Rt2.ersRule, note:'largest lifelong payout, no cash out' }
+    ].map(o=>({ ...o, e:cpfLifeEstimate(o.amt) }));
+    const anyExtrap = opts.some(o=>o.e.extrapolated);
+    return `
+  <div class="card">
+    <h2>What the monthly payout could be<span class="pill">derived, not CPF's figure for you</span></h2>
+    <div class="warnbox" style="margin-bottom:10px"><b>Read this before the numbers.</b> CPF has published a payout illustration for <b>one</b> cohort — members turning 55 in ${P.cohort55} and 65 in ${P.cohort65} — on the <b>${esc(P.plan)}</b> only. You turn 55 in ${Rt2.A.year55} and 65 in ${Rt2.A.year55+10}. <b>Your cohort's table does not exist yet.</b> What follows is Fortress interpolating within CPF's published points and labelling every step. It is an <em>order of magnitude</em>, not your payout.</div>
+
+    ${opts.map(o=>`
+    <div class="kv"><span class="k">${esc(o.k)}<br><span style="font-size:11px">set aside ${money(o.amt,0)} &middot; ${esc(o.note)}</span></span><span class="v">${money(o.e.lo,0)}&ndash;${money(o.e.hi,0)}<br><span class="k" style="font-size:11px">a month, from 65</span></span></div>
+    <p class="note" style="margin:2px 0 8px">${o.e.extrapolated?'<b style="color:var(--serious)">Extrapolated</b>':'Interpolated'} ${esc(o.e.basis)}. That works out at ${money(o.e.perLakhLo,0)}&ndash;${money(o.e.perLakhHi,0)} a month per ${money(100000,0)} set aside.</p>`).join('')}
+
+    <p class="note"><b>The rate per dollar falls as the sum rises.</b> CPF's own table pays ${money(P.rows[0].lo/P.rows[0].set*100000,0)}&ndash;${money(P.rows[0].hi/P.rows[0].set*100000,0)} a month per ${money(100000,0)} at the ${money(P.rows[0].set,0)} point but only ${money(P.rows[P.rows.length-1].lo/P.rows[P.rows.length-1].set*100000,0)}&ndash;${money(P.rows[P.rows.length-1].hi/P.rows[P.rows.length-1].set*100000,0)} at the ${money(P.rows[P.rows.length-1].set,0)} point. So scaling one published figure up or down in a straight line gives the wrong answer, and Fortress interpolates between the points instead.</p>
+
+    ${anyExtrap?`<div class="warnbox"><b>One of these is beyond CPF's published range.</b> ${money(Rt2.ersRule,0)} sits above CPF's highest published point of ${money(P.rows[P.rows.length-1].set,0)}, so that row is an extrapolation of the last segment rather than an interpolation between two known points. Treat it as the weakest number on this page.</div>`:''}
+
+    <p class="note"><b>What would move these.</b> ${esc(P.caveat)}. The table ${esc(P.assumption)}. The Basic and Escalating plans pay differently and Fortress holds no table for either. And your ${Rt2.A.year55} retirement sums are themselves unpublished, so the amounts feeding this are the ${Rt2.F.published?'published':'last published'} figures.</p>
+    <p class="note"><b>For a real number, use CPF's own planner.</b> It knows your cohort, your plan and your actual balance. Fortress will not reproduce its output as if it were its own.<br>Source: ${esc(P.source)}.</p>
+  </div>`; })()}
+
   <div class="card">
     <h2>What you can do now<span class="pill">${L.filter(x=>x.open).length} of ${L.length} open</span></h2>
     <p class="note" style="margin-top:0">Each lever below is tested against your own balances every time this page renders. A "closed" here is a computation, not an opinion — and it reopens itself the moment the numbers change.</p>
@@ -3450,9 +3610,37 @@ function viewRetire(){
     <p class="note" style="margin:0 0 12px"><b>Action:</b> ${esc(x.action)}<br><span style="font-size:10.5px">Source: ${esc(x.source)}</span></p>`).join('')}
   </div>
 
+  ${(()=>{ const S=srsPosition(); if(!S) return '';
+    const R=RETIRE_RULES, srs=R.srs;
+    return `
+  <div class="card">
+    <h2>SRS<span class="pill">${esc(S.bank)} &middot; locked at ${S.lockedAge}</span></h2>
+    ${S.beat?`
+    <div class="warnbox" style="margin-bottom:10px"><b>You beat the change by ${fmt(S.daysSpare,0)} days.</b>
+      Your first contribution was <b>${esc(dayLabel(S.firstContribution))}</b>. The statutory retirement age rose from <b>${S.lockedAge}</b> to <b>${S.currentAge}</b> on <b>${esc(dayLabel(S.nextEraFrom))}</b> — ${fmt(S.daysSpare,0)} days later. Because the SRS withdrawal age is fixed at the retirement age <em>prevailing on the day of your first contribution</em>, yours is locked at <b>${S.lockedAge}</b> for life. Anyone opening an account today is locked at ${S.currentAge}.
+      <br><br>That is a whole year of earlier penalty-free access, bought with a ${money(S.totalContributed,2)} contribution. Fortress cannot tell you whether the timing was deliberate — a ${money(S.totalContributed,2)} contribution against a ${money(S.yearCap,0)} cap is the known way to start the clock, but intent is not something a bank statement records.</div>`:`
+    <div class="kv"><span class="k">Withdrawal age, locked at first contribution</span><span class="v">${S.lockedAge}</span></div>`}
+
+    <div class="kv"><span class="k">Account</span><span class="v" style="font-size:12px">${esc(S.bank)} ${esc(S.account)}</span></div>
+    <div class="kv"><span class="k">First contribution</span><span class="v">${esc(dayLabel(S.firstContribution))}</span></div>
+    <div class="kv"><span class="k">Contributed to date</span><span class="v">${money(S.totalContributed,2)}</span></div>
+    <div class="kv"><span class="k">Penalty-free from age ${S.lockedAge}</span><span class="v">${esc(dayLabel(S.withdrawFrom))}<br><span class="k" style="font-size:11px">in ${fmt(S.daysToWithdraw/365.25,1)} years</span></span></div>
+    <div class="kv"><span class="k">Ten-year withdrawal window ends</span><span class="v">${esc(dayLabel(S.windowEnds))}</span></div>
+
+    <div class="kv" style="margin-top:10px"><span class="k"><b>${S.capYear} allowance still unused</b><br><span style="font-size:11px">does not carry forward — gone on 31 Dec</span></span><span class="v pos"><b>${money(S.headroom,0)}</b><br><span class="k" style="font-size:11px">of a ${money(S.yearCap,0)} cap</span></span></div>
+
+    <div class="warnbox"><b>What Fortress will not compute: your tax saving.</b> An SRS contribution is deducted from your assessable income, so what it is worth depends entirely on your marginal rate — which Fortress does not hold and will not guess. It can tell you the deduction is up to ${money(S.headroom,0)} this year; it cannot tell you what that is worth to you. On withdrawal only ${srs.taxablePct}% of what you take out is taxable, spread over up to ${srs.window} years, which is the other half of the arithmetic and equally dependent on your rate then.</div>
+
+    ${S.cashBalance!=null && S.invested===0 ? `<div class="warnbox"><b>The balance is sitting in cash.</b> ${money(S.cashBalance,2)} uninvested. On ${money(S.cashBalance,2)} that is immaterial — but if you use the ${money(S.headroom,0)} of ${S.capYear} room, uninvested SRS cash earns a token deposit rate while your CPF pays ${pct(CPF_RULES.oaPct,1)}&ndash;${pct(CPF_RULES.saPct,1)}. Contributing for the deduction and then leaving it in cash is a common and expensive habit. What to invest it in is not something Fortress advises on.</div>`:''}
+
+    <p class="note"><b>The rule, stated exactly:</b> ${esc(srs.ageRule)}</p>
+    <p class="note">Early withdrawal — before ${S.lockedAge} — costs a ${srs.penaltyPct}% penalty <em>and</em> the whole amount is taxable, not half. Cap is ${money(srs.capCitizen,0)} a year for citizens and PRs.</p>
+    <p class="note">Sources: ${esc(S.source)}. ${esc(srs.source)}. ${esc(R.retirementAgeHistorySource)}.</p>
+  </div>`; })()}
+
   <div class="card">
     <h2>What Fortress will not tell you</h2>
-    <p class="note" style="margin-top:0"><b>Your monthly payout.</b> CPF LIFE payouts depend on your plan, your cohort's mortality tables and the exact balance at the time — none of which Fortress holds. It will not print a monthly figure, because a wrong one here would be worse than none. Use CPF's own retirement payout planner for that number, and enter the result nowhere but your own head.</p>
+    <p class="note" style="margin-top:0"><b>Your actual monthly payout.</b> The card above gives a range derived from CPF's published illustration for a <em>different</em> cohort on one plan, and labels every interpolation. It is not your payout and Fortress does not pretend otherwise: your cohort's table has not been published, the Basic and Escalating plans differ, and CPF says payouts may be adjusted for interest rates and life expectancy. Use CPF's own planner for a figure to rely on.</p>
     <p class="note"><b>Whether you can afford to retire.</b> That is income against spending over thirty years. Fortress measures balance sheets. It does not know your salary, your expenses, or what you intend your retirement to cost — so it cannot answer the only question that really matters here.</p>
     <p class="note"><b>What inflation does to any of this.</b> Every figure on this tab is in today's dollars. The retirement sums rise each year (roughly ${pct(frsTrend().avg,1)} a year across the published series), which is partly why they rise — but Fortress does not deflate anything, and you should read every long-dated number as nominal.</p>
     <p class="note"><b>Anything about tax.</b> Neither the tax on a CPF withdrawal, nor on an SRS withdrawal, nor on the Air Liquide shares. Fortress holds no tax rules for you and states none.</p>
@@ -3617,7 +3805,12 @@ function plainSummary(tab){
         (()=>{ const shut=LL.filter(x=>!x.open&&!x.unknown);
           const byAge=shut.filter(x=>/age/i.test(x.test)).length, bySavings=shut.length-byAge;
           return `<b>Most of the usual retirement tips do not apply to you</b> — ${fmt(shut.length,0)} of the ${fmt(LL.length,0)} levers are shut: ${fmt(bySavings,0)} because you have already saved more than the schemes are built for, ${byAge?`and ${fmt(byAge,0)} because you are not 55 yet`:''}. Fortress tests each one against your own balances instead of repeating advice written for someone else.`; })(),
-        `<b>Not known:</b> what your monthly payout will be. That depends on CPF's own tables, and Fortress refuses to print a made-up number.`
+        (()=>{ const e=(typeof cpfLifeEstimate==='function'&&Rt)?cpfLifeEstimate(Rt.F.value):null;
+          return e?`<b>Roughly ${M(e.lo)}–${M(e.hi)} a month</b> from 65 if you do nothing and the Full Retirement Sum is set aside. That is worked out from CPF's own published example for people a few years older than you — <b>it is a ballpark, not your number</b>, and CPF's own planner is the place to get the real one.`:null; })(),
+        (()=>{ const S=(typeof srsPosition==='function')?srsPosition():null;
+          return (S&&S.beat)?`<b>You got lucky, or you were sharp.</b> You put ${M(S.totalContributed)} into an SRS account on ${esc(dayLabel(S.firstContribution))} — ${fmt(S.daysSpare,0)} days before the retirement age went from ${S.lockedAge} to ${S.currentAge}. That fixes your SRS withdrawal age at <b>${S.lockedAge}</b> for life. A year of earlier access, for one dollar.`:null; })(),
+        (()=>{ const S=(typeof srsPosition==='function')?srsPosition():null;
+          return (S&&S.headroom>0)?`You have <b>${M(S.headroom)}</b> of this year's SRS allowance left. It does not roll over — unused room disappears on 31 December. Every dollar comes off your taxable income, though Fortress does not know your tax rate so it cannot say what that is worth.`:null; })()
       ]}; })(),
     al: {
       lead:p?`You own <b>${fmt(p.total,0)}</b> Air Liquide shares worth <b>${M(p.sgd)}</b>. They came from working there, not from buying them.`:'No Air Liquide holding is loaded.',

@@ -322,6 +322,62 @@ and a wrong figure there would be worse than none. It states that it cannot answ
 afford to retire, because that is income against spending and it measures balance sheets. It warns
 that every long-dated figure is nominal. And it states no tax rules at all.
 
+### Payout estimates — derived, and labelled as such
+
+CPF publishes a payout illustration for exactly **one** cohort (turning 55 in 2025, 65 in 2035) on
+the **Standard Plan** only: five points from S$60,000 to S$426,000. That is the only payout data
+Fortress holds, and it is the only thing it will compute from.
+
+The card interpolates *between* CPF's published points and says which two. Above the highest point it
+**extrapolates and says so in red**. Below the lowest it flags the same. On CK's figures:
+
+| Choice | Set aside | Estimated monthly from 65 | Basis |
+|---|---|---|---|
+| Pledge the property (BRS) | S$114,100 | S$914–986 | interpolated |
+| Do nothing (FRS) | S$228,200 | S$1,716–1,844 | interpolated |
+| Top up to the ERS | S$456,400 | S$3,313–3,558 | **extrapolated** |
+
+The card also explains *why it cannot simply scale one figure*: CPF's own table pays S$900–950 a month
+per S$100,000 at the S$60,000 point but only S$728–782 at the S$426,000 point. The rate per dollar
+falls as the sum rises, so a straight-line scaling from any single published figure is wrong.
+
+Every caveat travels with the numbers: CK's cohort is 2028 (not 2025), his cohort's retirement sums
+are themselves unpublished, the Basic and Escalating plans are not covered at all, and CPF states
+payouts may be adjusted for interest rates and life expectancy. The card ends by pointing at CPF's own
+planner and says Fortress will not reproduce its output as if it were its own. A test asserts that a
+published point reproduces CPF's figures exactly, that estimates rise monotonically, and that the
+per-$100k rate falls with size.
+
+### What an untouched balance earns
+
+Every balance the tab shows now carries the published rate beside it, the yearly and monthly interest,
+the ten-year compounded total, and the doubling time. The projected S$267,772 left in the Ordinary
+Account is annotated **"earns 2.5% — S$6,694/yr, S$558/mo, if you leave it there"**, followed by a
+line stating the cost of withdrawing all of it: S$6,694 a year, S$74,999 over ten. The extra-interest
+tiers switch automatically at 55 (+2% on the first S$30,000 and +1% on the next, rather than +1% on
+the first S$60,000). Compounding is compounded, not multiplied — the test checks that too.
+
+### SRS — the two days that mattered
+
+CK's DBS SRS account is now in Fortress, and the load-bearing fact is not the balance. It is the date.
+
+His **first contribution was 29 June 2026**. The statutory retirement age rose from **63 to 64 on
+1 July 2026** — two days later. Because the SRS penalty-free withdrawal age is fixed at the retirement
+age *prevailing on the day of the first contribution* and does not follow later increases, his is
+**locked at 63 for life**. Penalty-free from 27 August 2036, with the ten-year window running to 2046.
+Anyone opening an account today is locked at 64.
+
+Fortress looks the age up against a dated history rather than assuming the current one, and a test
+proves a contribution one day later would have locked 64, and that a date before the recorded history
+returns nothing rather than a guess. The card notes that a S$1.00 contribution against a S$15,300 cap
+is the known way to start the clock — and then says plainly that it cannot tell whether the timing was
+deliberate, because intent is not something a bank statement records.
+
+It also states the S$15,299 of 2026 allowance still unused and that it does not carry forward, and
+then refuses to compute the tax saving: that depends on a marginal rate Fortress does not hold. The
+uninvested balance gets a note that is honest about its own irrelevance at S$1.00 and about why it
+would stop being irrelevant if the room were used.
+
 ### A bug the tests caught
 
 The age-55 split originally computed the $5,000 minimum withdrawal as `min(oaAfter, 5000)` — which
