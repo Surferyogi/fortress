@@ -141,7 +141,7 @@ details.gap[open]>summary::after{content:'  \2212'}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:AUG:26-21:44';
+const VERSION = 'v2026:AUG:28-13:37';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -735,6 +735,73 @@ function cpfYearInterest(oa, sa, ma, from55){
 }
 
 /* ---- age, and the dates CPF cares about ---- */
+/* ================= retirement rules =================
+   Every figure below was read from the primary source named beside it on 26 Aug 2026.
+   Nothing here is remembered, inferred or rounded into a nicer number. Where a rule
+   depends on something Fortress does not hold about CK - his property's annual value,
+   whether he has an SRS account - the rule is stated and the test is left OPEN rather
+   than guessed either way. */
+const RETIRE_RULES = {
+  checkedOn:'2026-08-26',
+
+  /* --- the two ages that actually gate things --- */
+  raAge:55, payoutAge:65, payoutLatest:70,
+  deferMaxPct:7,
+  deferSource:'CPF Board, "What is the CPF LIFE payout age?": payouts may start from 65, must start by 70, and rise by up to 7% for each year deferred',
+
+  /* --- statutory employment ages (MOM, not CPF) --- */
+  retirementAge:64, reemploymentAge:69, empAgesFrom:'2026-07-01',
+  empSource:'Ministry of Manpower — the minimum retirement age is 64 and the re-employment age 69, both from 1 July 2026',
+
+  /* --- retirement sums by cohort, published years only --- */
+  brsByYear:{ 2025:106500, 2026:110200, 2027:114100 },
+  ersRule:'From 2025 the ERS is 4 times the BRS (so twice the FRS)',
+  ersSource:'CPF Board, "What is the CPF retirement sum?": BRS/FRS/ERS by year of 55th birthday; from 2025 the ERS is 4x the BRS',
+
+  /* --- what happens at 55 --- */
+  age55Source:'CPF Board, "Reaching age 55": the Retirement Account is created on the 55th birthday, the Special Account is closed, and savings transfer SA-first then OA up to the Full Retirement Sum',
+  age55Order:['Special Account savings move to the new Retirement Account first, up to the Full Retirement Sum',
+              'Ordinary Account savings follow if the FRS is not yet met',
+              'whatever is left in the Special Account moves to the Ordinary Account',
+              'anything above the FRS stays in the Ordinary Account and is withdrawable'],
+  minWithdraw:5000,
+  minWithdrawRule:'If OA+SA together fall short of the FRS, up to $5,000 may still be set aside in the OA and withdrawn',
+  pledgeRule:'A property owner may set aside as little as the Basic Retirement Sum in the Retirement Account, using the property to cover the rest, and withdraw the difference',
+  pledgeSource:'CPF Board, "Reaching age 55": with a property you may set aside up to half of the FRS using the property and withdraw above the BRS',
+
+  /* --- tax relief: the cap that most people get wrong --- */
+  reliefSelf:8000, reliefLovedOnes:8000,
+  reliefCeiling:'the prevailing Full Retirement Sum',
+  reliefRule:'Relief is given on cash top-ups only up to the prevailing FRS. Once the recipient has reached the FRS the relief on a further top-up is $0 — so topping up from the FRS towards the ERS earns NO tax relief.',
+  reliefSource:'CPF Board, "How is tax relief computed for my cash top-ups to Special Account / Retirement Account": $8,000 for yourself and $8,000 for loved ones, up to the prevailing FRS; where the recipient has reached the FRS the estimated relief is $0',
+
+  /* --- contribution rates by age, and the announced increase --- */
+  contribNow:[ {band:'55 and below', er:17, ee:20, total:37},
+               {band:'above 55 to 60', er:16, ee:18, total:34},
+               {band:'above 60 to 65', er:12.5, ee:12.5, total:25},
+               {band:'above 65 to 70', er:9, ee:7.5, total:16.5},
+               {band:'above 70', er:7.5, ee:5, total:12.5} ],
+  contribSource:'CPF Board — CPF contribution rates from 1 January 2026 for Singapore Citizens and SPRs from the third year, on monthly wages above $750',
+  contrib2027:[ {band:'above 55 to 60', from:34, to:35.5}, {band:'above 60 to 65', from:25, to:26} ],
+  contrib2027Source:'CPF Board — Budget 2026: senior worker contribution rates rise on 1 January 2027 for employees earning monthly wages above $750',
+
+  /* --- schemes with hard eligibility tests Fortress can actually run --- */
+  mrss:{ name:'Matched Retirement Savings Scheme', savingsBelow:110200, incomeAtMost:4000,
+         avAtMost:21000, propertiesAtMost:1, fromAge:55,
+         source:'CPF Board, "Who is eligible for the Matched Retirement Savings Scheme?": 55 or above, retirement savings below $110,200, average monthly income not more than $4,000, annual value of residence not more than $21,000, and not more than one property' },
+  seniorTopUp:{ name:'CPF top-up for seniors (Budget 2026)', paidIn:'December 2026',
+         bands:[{ below:60000, amount:1500 }, { below:110200, amount:1000 }], avAtMost:21000,
+         source:'CPF Board — Budget 2026: Singaporeans aged 50 and above in 2026 receive up to $1,500 in December 2026, by retirement savings and property annual value' },
+  lifecycle:{ name:'CPF Life-Cycle Investment Scheme', from:'first half of 2028', voluntary:true,
+         source:'CPF Board — Budget 2026: a voluntary life-cycle investment option with age-based rebalancing and capped all-in fees, launching in the first half of 2028' },
+
+  /* --- SRS: not CPF, but the companion lever, and the clock on it is real --- */
+  srs:{ capCitizen:15300, capForeigner:35700, reliefCapOverall:80000,
+        taxablePct:50, window:10, penaltyPct:5, terminalExempt:400000,
+        ageRule:'Penalty-free withdrawal begins at the statutory retirement age PREVAILING WHEN YOU MAKE YOUR FIRST CONTRIBUTION — it is fixed then and does not follow later increases.',
+        source:'Ministry of Finance — Supplementary Retirement Scheme: $15,300 a year for citizens and PRs, withdrawals penalty-free at or after the retirement age prevailing at the time of the first contribution, 50% of the amount withdrawn taxable, spreadable over 10 years, 5% penalty and full taxation if withdrawn early' }
+};
+
 function cpfAge(){
   const b = state.settings.birthDate; if(!b) return null;
   const [by,bm,bd] = b.split('-').map(Number);
@@ -1583,6 +1650,189 @@ function alConcentration(){
              return t? t[1]/a.pledgedAssets*100 : null; })() };
 }
 
+/* ================= retirement engine =================
+   Three questions, answered from CK's own balances and the rules above:
+   what happens at each age, what the age-55 choice is actually worth, and which
+   levers are open to him TODAY. Every eligibility test is recomputed on every
+   render, so a scheme that is shut today reopens itself the moment it applies. */
+
+function brsFor(year){
+  const B = RETIRE_RULES.brsByYear;
+  if(B[year] != null) return { value:B[year], published:true };
+  const last = Math.max(...Object.keys(B).map(Number));
+  return { value:B[last], published:false, fallbackYear:last };
+}
+
+/* The age-55 split, run on his actual OA and SA. This is arithmetic on published
+   rules, not a projection: given a balance and an FRS, the allocation is determined. */
+function age55Split(oa, sa, frs){
+  const min = RETIRE_RULES.minWithdraw;
+  const combined = oa + sa;
+  /* If OA and SA together fall short of the FRS, CPF still leaves up to $5,000 in the
+     Ordinary Account rather than sweeping every cent into the Retirement Account. The
+     $5,000 is HELD BACK from the transfer - it is not taken out of an OA that may
+     already be empty, which is the trap this used to fall into. */
+  const target = combined < frs ? Math.max(0, combined - min) : frs;
+  let ra = 0, remSa = sa, remOa = oa;
+  const fromSa = Math.min(remSa, target);         // Special Account goes first
+  ra += fromSa; remSa -= fromSa;
+  const fromOa = Math.min(remOa, target - ra);    // then the Ordinary Account
+  ra += fromOa; remOa -= fromOa;
+  const oaAfter = remOa + remSa;                  // whatever is left of the SA joins the OA
+  return { ra, fromSa, fromOa, oaAfter, target,
+           shortOfFrs: combined < frs,
+           withdrawable: oaAfter };               // everything left in the OA is withdrawable
+}
+
+function retireAt55(){
+  const A = cpfAge(), c = latestCpf(); if(!A || !c) return null;
+  const R = RETIRE_RULES;
+  const F = frsFor(A.year55), B = brsFor(A.year55);
+  const ersRule = B.value * 4;                    // from 2025 the ERS is 4x the BRS
+  const oa = c.oa||0, sa = c.sa||0;
+
+  /* (a) what the split would look like on TODAY's balances - no growth assumed */
+  const now = age55Split(oa, sa, F.value);
+
+  /* (b) what it looks like on the projection. Rather than re-deriving the split,
+         reuse cpfProject's own age-55 event, so there is one implementation of the
+         rule in the app and not two that can drift apart. */
+  const yrs = Math.max(0, A.year55 - new Date().getFullYear());
+  const rows = (typeof cpfProject==='function' && yrs>0) ? cpfProject(yrs+1, true, A.year55) : null;
+  const ev = rows ? (rows.find(r=>r.event && r.event.turns55)||{}).event || null : null;
+  const at55 = ev ? { ra:ev.ra, oaAfter:ev.oa, withdrawable: ev.ra >= F.value ? ev.oa
+                       : Math.min(ev.oa, R.minWithdraw), shortOfFrs: ev.ra < F.value } : null;
+
+  /* (c) the property-pledge alternative. With a property you may set aside as little as
+         the BRS. Since the FRS is exactly twice the BRS, pledging frees precisely
+         (FRS - BRS) = one BRS more into the OA - but ONLY if the RA would otherwise
+         have reached the full FRS. If it would not, there is less to free. */
+  const raFrs = at55 ? at55.ra : now.ra;
+  const oaFrs = at55 ? at55.oaAfter : now.oaAfter;
+  const freed = Math.max(0, Math.min(F.value, raFrs) - B.value);
+  const pledged = { ra: raFrs - freed, oaAfter: oaFrs + freed, withdrawable: oaFrs + freed };
+  const extraIfPledged = freed;
+
+  /* (d) the ERS lever: moving OA into the RA swaps the OA rate for the RA rate */
+  const ersHeadroom = Math.max(0, ersRule - F.value);
+  const ersFundable = Math.min(ersHeadroom, oaFrs);
+  const rateGap = (CPF_RULES.raPct - CPF_RULES.oaPct)/100;
+
+  return { A, F, B, ersRule, sumsPublished: B.published && F.published,
+    oa, sa, now, at55, pledged, freed, extraIfPledged, yrs, rows, ev,
+    raFrs, oaFrs, ersHeadroom, ersFundable, ersYearlyGain: ersFundable * rateGap, rateGap,
+    reliefOnErs: 0,                                // relief stops at the FRS - verified
+    saAlreadyOverFrs: sa > F.value };
+}
+
+/* Which levers are actually open. Each returns open/closed with the TEST that decided it,
+   so a "no" is auditable rather than an opinion. */
+function retireLevers(){
+  const R = RETIRE_RULES, c = latestCpf(), A = cpfAge();
+  const out = [];
+  const total = c ? cpfTotal(c) : null;
+  const oaSa = c ? (c.oa||0)+(c.sa||0) : null;
+  const F = A ? frsFor(A.year55) : null;
+
+  const push = (id,name,open,test,detail,action,source,unknown) =>
+    out.push({ id, name, open, unknown:!!unknown, test, detail, action, source });
+
+  /* 1. cash top-up to his own SA — already known closed, restated here in one place */
+  if(c && F){
+    const room = CPF_RULES.frs - (c.sa||0);
+    push('sa-topup','Cash top-up to your own CPF', room>0,
+      `cap is the prevailing FRS (${money(CPF_RULES.frs,0)}) less your SA (${money(c.sa,0)}) = ${money(room,0)}`,
+      room>0 ? `There is ${money(room,0)} of room, and up to ${money(R.reliefSelf,0)} of tax relief a year.`
+             : `Your Special Account is already above the Full Retirement Sum, so the room is ${money(room,0)}. The standard advice to "top up your SA for the 4% and the tax relief" does not apply to you, and will not until the FRS overtakes your SA.`,
+      room>0?'Top up early in the year so it earns interest for the full year.':'Nothing to do. This test re-runs on every render.',
+      CPF_RULES.frsSource);
+  }
+  /* 2. top-ups for other people — the one relief route still open */
+  push('loved-ones','Cash top-up for a parent, spouse or sibling', true,
+    'a separate allowance from your own, with its own relief cap',
+    `Your own route is shut but this one is not: up to ${money(R.reliefLovedOnes,0)} of relief a year for top-ups to someone else's CPF, subject to their own FRS cap. Whether it is worth doing depends on who you would top up and your marginal tax rate — neither of which Fortress knows.`,
+    'Worth pricing against your tax bracket before year end.',
+    R.reliefSource);
+  /* 3. voluntary MediSave contribution */
+  if(c){ const room = CPF_RULES.bhs - (c.ma||0);
+    push('ma-vc','Voluntary MediSave contribution', room>0.005,
+      `${CPF_RULES.bhsYear} BHS (${money(CPF_RULES.bhs,0)}) less your MediSave (${money(c.ma,0)}) = ${money(room,0)}`,
+      room>0.005 ? `${money(room,0)} still fits, at ${pct(CPF_RULES.maPct,1)}.`
+                 : `MediSave is exactly at the ${CPF_RULES.bhsYear} Basic Healthcare Sum. Nothing more fits until the BHS rises in January — it went ${money(CPF_RULES.prevBhs,0)} to ${money(CPF_RULES.bhs,0)} this year.`,
+      room>0.005?'Contribute before year end for the relief.':'Re-check each January when the BHS is raised.',
+      CPF_RULES.bhsSource);
+  }
+  /* 4. MRSS — testable on his own balances */
+  if(c){ const m = R.mrss;
+    const savingsFail = oaSa >= m.savingsBelow;
+    const ageFail = A ? A.age < m.fromAge : false;
+    push('mrss', m.name, false,
+      `needs OA+SA below ${money(m.savingsBelow,0)}; yours is ${money(oaSa,0)}${ageFail?`, and it starts at ${m.fromAge}`:''}`,
+      `Closed on the savings test alone — you are ${money(oaSa-m.savingsBelow,0)} above the ceiling${ageFail?`, and you do not reach ${m.fromAge} until ${A.year55}`:''}. It also requires income of no more than ${money(m.incomeAtMost,0)} a month and a residence with an annual value of no more than ${money(m.avAtMost,0)}, neither of which Fortress holds — but neither matters while the savings test fails.`,
+      'Nothing to do. Listed so you know it was checked, not overlooked.',
+      m.source);
+  }
+  /* 5. Budget 2026 senior top-up — same shape */
+  if(c){ const t = R.seniorTopUp, top = t.bands[t.bands.length-1];
+    push('senior-topup', t.name, false,
+      `highest band is retirement savings below ${money(top.below,0)}; yours is ${money(oaSa,0)}`,
+      `You are the right age — it covers Singaporeans aged 50 and above in 2026 — but the payment is scaled by retirement savings and the top band published stops at ${money(top.below,0)}. Yours is well above it. It is also subject to a property annual value of no more than ${money(t.avAtMost,0)}, which Fortress does not hold. On the figures it does hold, you fall outside.`,
+      `Nothing to do. Paid in ${t.paidIn} if it applies.`,
+      t.source);
+  }
+  /* 6. the ERS transfer — open only from 55 */
+  { const Rt = retireAt55();
+    const openNow = A ? A.age >= R.raAge : false;
+    push('ers', 'Transfer OA into the Retirement Account, up to the ERS', openNow,
+      `only available from age ${R.raAge}${A?`; you are ${A.age}`:''}`,
+      Rt ? `From ${A?dayLabel(A.date55):'55'} you may move Ordinary Account money into the Retirement Account up to the Enhanced Retirement Sum — ${Rt.B.published?money(Rt.ersRule,0):'4x the Basic Retirement Sum, which is not published for your cohort yet'}. That swaps ${pct(CPF_RULES.oaPct,1)} for ${pct(CPF_RULES.raPct,1)} on the amount moved and buys a larger lifelong payout. <b>It carries no tax relief</b> — relief stops at the FRS. And it is one-way: the money is committed to payouts.`
+         : 'Available from 55.',
+      openNow?'Decide before the money is swept, not after.':`Decide before ${A?dayLabel(A.date55):'55'}, not on the day.`,
+      R.reliefSource);
+  }
+  /* 7. SRS — the one with a clock on it, and the one Fortress cannot verify */
+  { const srs = R.srs;
+    push('srs', 'Supplementary Retirement Scheme', true,
+      'open to any citizen or PR; Fortress does not know whether you already have an account',
+      `Not CPF, but the companion to it: up to ${money(srs.capCitizen,0)} a year, every dollar deductible, and only ${srs.taxablePct}% of what you withdraw is taxable if you withdraw at or after the retirement age. <b>The timing detail that matters:</b> your penalty-free withdrawal age is fixed at the statutory retirement age <em>prevailing when you make your first contribution</em> — it does not follow later increases. That age rose to <b>${R.retirementAge}</b> on ${dayLabel(R.empAgesFrom)}. A first contribution made while it is ${R.retirementAge} locks ${R.retirementAge} for life; if it rises again, anyone contributing for the first time after that is locked to the higher age.`,
+      `If you have never contributed, opening an account and contributing even a token amount fixes the age at ${R.retirementAge}. Fortress does not know whether you have — tell it, or check with your bank.`,
+      srs.source, true);
+  }
+  return out;
+}
+
+/* The age-by-age map. Dates come from his birth date; every rule is sourced. */
+function retireTimeline(){
+  const A = cpfAge(); if(!A) return null;
+  const R = RETIRE_RULES, c = latestCpf();
+  const yearAt = n => A.year55 - 55 + n;
+  const dateAt = n => { const [ , bm, bd ] = A.birthDate.split('-'); return yearAt(n)+'-'+bm+'-'+bd; };
+  const row = (age, title, what, source) => ({
+    age, year: yearAt(age), date: dateAt(age), days: daysUntil(dateAt(age)),
+    past: age < A.age, now: age === A.age, title, what, source });
+
+  const F = frsFor(A.year55), B = brsFor(A.year55);
+  return [
+    row(A.age, 'You are here', `Contributions run at the full ${R.contribNow[0].total}% rate (${R.contribNow[0].er}% employer, ${R.contribNow[0].ee}% employee) on wages up to ${money(CPF_RULES.owCeiling,0)} a month. OA earns ${pct(CPF_RULES.oaPct,1)}, SA and MediSave ${pct(CPF_RULES.saPct,1)}, plus extra interest on the first ${money(CPF_RULES.extraBelow55.onFirst,0)} of combined balances.`, R.contribSource),
+    row(55, 'The Retirement Account is created and the Special Account closes',
+      `${R.age55Order.join('; ')}. ${F.published?`Your cohort's Full Retirement Sum is ${money(F.value,0)}.`:`<b>Your cohort's Full Retirement Sum has not been published</b> — the series stops at ${CPF_RULES.frsLastPublished}, so Fortress uses ${money(F.value,0)} and says so.`} You may withdraw whatever sits above it, and at least ${money(R.minWithdraw,0)} even if you are short. From this date you may also top up the Retirement Account to the Enhanced Retirement Sum. Contribution rates step down to ${R.contribNow[1].total}%.`,
+      R.age55Source),
+    row(60, 'Contribution rates step down again',
+      `Rates fall to ${R.contribNow[2].total}% (${R.contribNow[2].er}% employer, ${R.contribNow[2].ee}% employee) above 60. Note that the senior rates are <em>rising</em>, not falling, on 1 January 2027: ${R.contrib2027.map(x=>`${x.band} from ${x.from}% to ${x.to}%`).join(', ')}.`,
+      R.contrib2027Source),
+    row(R.retirementAge, 'The statutory retirement age',
+      `Your employer cannot dismiss you on grounds of age before ${R.retirementAge}, and must offer re-employment to ${R.reemploymentAge} if you meet the criteria. Both ages rose on ${dayLabel(R.empAgesFrom)}. This is employment law, not CPF — it does not release any money.`,
+      R.empSource),
+    row(65, 'CPF LIFE payouts can start, and the MediSave cap stops rising',
+      `${R.payoutAge} is the payout eligibility age. Your Basic Healthcare Sum is also fixed for life in the year you turn 65 — until then it rises most years (${money(CPF_RULES.prevBhs,0)} in ${CPF_RULES.prevBhsYear} to ${money(CPF_RULES.bhs,0)} in ${CPF_RULES.bhsYear}), and each rise quietly reopens a little MediSave headroom.`,
+      R.deferSource),
+    row(R.reemploymentAge, 'Re-employment protection ends', `Beyond ${R.reemploymentAge} there is no statutory obligation on an employer to re-employ you.`, R.empSource),
+    row(70, 'Payouts start whether you ask or not',
+      `If you have given no instruction by ${R.payoutLatest}, payouts begin automatically on the CPF LIFE Standard Plan. Every year you defer between ${R.payoutAge} and ${R.payoutLatest} raises the payout by up to ${R.deferMaxPct}% — but you draw nothing in the meantime, so deferring is a bet on your own longevity, not free money.`,
+      R.deferSource)
+  ];
+}
+
 /* ================= gaps =================
    What Fortress does NOT know, tab by tab. Every entry is a real hole in the data it
    holds - not a hypothetical - and each one is recomputed, so an item disappears the
@@ -1632,6 +1882,32 @@ function gaps(){
     'OA at '+pct(R.oaPct,1)+' and SA at '+pct(R.saPct,1)+' are statutory floors, reviewed quarterly. A long projection compounds whatever rate it is given, so a change of a quarter-point moves the 55 figure materially.',
     'Re-check the rates each quarter; the CPF tab records when they were last verified ('+esc(R.checkedOn)+').',
     'CPF Board publishes interest rates quarterly');
+
+  /* ---------- Retire ---------- */
+  if(A){ const RR=RETIRE_RULES, F=frsFor(A.year55), B=brsFor(A.year55);
+    if(!F.published || !B.published)
+      add('retire','high','The '+A.year55+' retirement sums have not been published',
+        'Both the Full and the Basic Retirement Sum for your cohort are unknown, so the split at 55, the amount withdrawable, and the size of the property-pledge lever are all computed on the last published year and are therefore too low.',
+        'Enter them on the CPF tab as soon as CPF announces your cohort.',
+        'CPF publishes retirement sums a few years ahead; the series stops at '+CPF_RULES.frsLastPublished);
+    add('retire','high','Fortress does not know whether you have an SRS account',
+      'The penalty-free withdrawal age is fixed at the statutory retirement age prevailing when you make your FIRST contribution — it does not follow later increases. That age is '+RR.retirementAge+' today. Fortress cannot tell you whether that clock has already been started for you, so it cannot say whether waiting costs you anything.',
+      'Check with your bank whether an SRS account exists and whether anything has ever been paid into it.',
+      RR.srs.source);
+    add('retire','high','Nothing is known about what your retirement will cost',
+      'Every figure on the Retire tab is a balance or a rule. Whether the money lasts depends on spending, which Fortress does not hold — so it can describe the machinery of CPF precisely and still not answer whether you can afford to stop working.',
+      'A single annual spending figure would let Fortress test the balances against something.');
+    add('retire','medium','Your monthly CPF LIFE payout cannot be computed here',
+      'Payouts depend on the plan chosen, the cohort mortality tables and the balance at the time. Fortress holds none of those, so it prints no payout figure at all.',
+      "Use CPF's own retirement payout planner; Fortress will not reproduce the result as if it were its own.",
+      RR.deferSource);
+    add('retire','medium','The property annual value is not recorded',
+      'Two schemes on this tab — the Matched Retirement Savings Scheme and the Budget 2026 senior top-up — test the annual value of your residence. Both already fail on your savings, so it does not change the answer today, but it would if your balances ever fell.',
+      'Add it from your property tax notice if you want those tests complete.');
+    add('retire','medium','Contributions after 55 are not modelled',
+      'The projection stops contributions at 55, because both the rates and the allocation change then and your recent payslips can no longer stand in for them. If you keep working past 55 the projection understates your balances.',
+      'Tell Fortress your expected salary and how long you intend to work.',
+      RR.contribSource); }
 
   /* ---------- Air Liquide ---------- */
   if(p){
@@ -1921,6 +2197,7 @@ const TABS=[
   {id:'dash', label:'Summary', icon:'<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>'},
   {id:'prop', label:'Property', icon:'<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.8V21h14V9.8"/><path d="M10 21v-6h4v6"/>'},
   {id:'cpf', label:'CPF', icon:'<path d="M4 8h16v11H4z"/><path d="M4 8l8-5 8 5"/><path d="M9 19v-5h6v5"/><circle cx="12" cy="11" r="1.2"/>'},
+  {id:'retire', label:'Retire', icon:'<path d="M12 3v9"/><path d="M8.5 6.5 12 3l3.5 3.5"/><circle cx="12" cy="16.5" r="4.5"/><path d="M12 14.6v1.9l1.4 1"/>'},
   {id:'al', label:'AL', icon:'<path d="M4 19h16"/><path d="M6 19V9l6-5 6 5v10"/><path d="M10 19v-5h4v5"/>'},
   {id:'trends', label:'Trends', icon:'<polyline points="3,17 9,11 13,14 21,6"/><polyline points="15,6 21,6 21,12"/>'},
   {id:'fx', label:'FX', icon:'<circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/>'},
@@ -3107,6 +3384,81 @@ function viewFX(){
   </div>`;
 }
 
+function viewRetire(){
+  const A = cpfAge(), c = latestCpf();
+  if(!A || !c) return `<div class="card"><h2>Retirement</h2><p class="note">This tab needs your date of birth and a CPF balance. Add both on the CPF tab and it fills itself in.</p></div>`;
+  const R = RETIRE_RULES, T = retireTimeline(), Rt = retireAt55(), L = retireLevers();
+  const yrsTo55 = A.date55 ? (A.days55/365.25) : null;
+  const yrsTo65 = daysUntil(A.date65)/365.25;
+
+  return `
+  <div class="card">
+    <div class="hero">${fmt(A.age,0)}</div>
+    <div class="hero-sub">years old &middot; born ${esc(dayLabel(A.birthDate))} &middot; you turn <b>55 on ${esc(dayLabel(A.date55))}</b>${A.days55>0?`, in ${fmt(A.days55,0)} days`:''}</div>
+    <div class="kv" style="margin-top:12px"><span class="k">CPF today</span><span class="v">${money(cpfTotal(c),0)}<br><span class="k" style="font-size:11px">OA ${money(c.oa,0)} &middot; SA ${money(c.sa,0)} &middot; MA ${money(c.ma,0)}</span></span></div>
+    <div class="kv"><span class="k">Years to 55 &middot; to ${R.payoutAge}</span><span class="v">${fmt(yrsTo55,1)} &middot; ${fmt(yrsTo65,1)}</span></div>
+    <p class="note">Two ages decide almost everything: <b>55</b>, when the accounts are restructured and some money becomes withdrawable, and <b>${R.payoutAge}</b>, when monthly payouts can begin. Everything else on this tab hangs off those two dates. Rules read from source on ${esc(R.checkedOn)}.</p>
+  </div>
+
+  <div class="card">
+    <h2>What happens, and when<span class="pill">your dates</span></h2>
+    ${T.map(r=>`
+    <div class="kv" style="${r.past?'opacity:.5':r.now?'background:color-mix(in srgb,var(--s1) 8%,transparent);border-radius:8px;padding-left:6px;padding-right:6px':''}">
+      <span class="k"><b>${r.age===A.age?'Now':'Age '+r.age}</b> &middot; ${r.year}${r.past?'':r.days!=null?` <span style="font-size:11px">(${fmt(r.days,0)} days)</span>`:''}<br><span style="font-size:11px">${esc(r.title)}</span></span>
+      <span class="v" style="font-weight:400;font-size:11.5px;text-align:right">${r.past?'passed':esc(dayLabel(r.date))}</span></div>
+    <p class="note" style="margin:2px 0 10px">${r.what}<br><span style="font-size:10.5px">Source: ${esc(r.source)}</span></p>`).join('')}
+  </div>
+
+  ${Rt?`
+  <div class="card">
+    <h2>The decision at 55<span class="pill">${Rt.F.published?'published':'FRS not published'}</span></h2>
+    <p class="note" style="margin-top:0">At 55 a Retirement Account is created and your Special Account closes, in this order:</p>
+    <ol class="note" style="margin:4px 0 8px;padding-left:20px">${R.age55Order.map(x=>`<li style="margin:3px 0">${esc(x)}</li>`).join('')}</ol>
+    <p class="note" style="margin:0">That is the default and it happens whether you act or not. You then have two levers, and both are one-way.</p>
+
+    <div class="kv"><span class="k">Your cohort's Full Retirement Sum (${Rt.A.year55})</span><span class="v">${money(Rt.F.value,0)}${Rt.F.published?'':`<br><span class="k" style="font-size:11px">not published — using ${Rt.F.fallbackYear}</span>`}</span></div>
+    <div class="kv"><span class="k">Basic Retirement Sum</span><span class="v">${money(Rt.B.value,0)}${Rt.B.published?'':`<br><span class="k" style="font-size:11px">not published — using ${Rt.B.fallbackYear}</span>`}</span></div>
+    <div class="kv"><span class="k">Enhanced Retirement Sum <span style="font-size:11px">(4&times; the BRS)</span></span><span class="v">${money(Rt.ersRule,0)}</span></div>
+
+    ${Rt.saAlreadyOverFrs?`<div class="warnbox" style="margin-top:10px"><b>Your Special Account alone already covers the Full Retirement Sum.</b> ${money(Rt.sa,0)} against ${money(Rt.F.value,0)}. So at 55 the Retirement Account fills entirely from the SA, none of your Ordinary Account is touched, and the SA remainder of ${money(Math.max(0,Rt.sa-Rt.F.value),0)} joins the OA. On today's balances that leaves <b>${money(Rt.now.oaAfter,0)}</b> sitting in the Ordinary Account — <b>all of it withdrawable in cash.</b></div>`:''}
+
+    ${Rt.at55?`
+    <div style="margin-top:12px"><b style="font-size:13px">Projected to ${Rt.A.year55}</b></div>
+    <div class="kv"><span class="k">Into the Retirement Account</span><span class="v">${money(Rt.at55.ra,0)}</span></div>
+    <div class="kv"><span class="k">Left in the Ordinary Account</span><span class="v pos">${money(Rt.at55.oaAfter,0)}<br><span class="k" style="font-size:11px">withdrawable from 55</span></span></div>
+    <p class="note">These come from the same projection the CPF tab runs, at the published floor rates and with contributions continuing until 55. They are a projection, not a promise: the rates are reviewed quarterly and your contributions depend on a salary Fortress does not know.</p>`:''}
+
+    <div class="warnbox" style="margin-top:10px"><b>Lever 1 — pledge the property and set aside only the Basic Retirement Sum.</b>
+      You own a property, so you may set aside as little as the BRS rather than the FRS, with the property covering the difference. Because the FRS is exactly twice the BRS, that frees <b>${money(Rt.freed,0)}</b> more into your Ordinary Account, withdrawable in cash.
+      <br><br>Fortress will not tell you to do it. That ${money(Rt.freed,0)} stops earning ${pct(CPF_RULES.raPct,1)} for life and stops producing a monthly payout; you are converting a guaranteed lifelong income into a lump sum today. It only makes sense if you have a better use for the money than a risk-free ${pct(CPF_RULES.raPct,1)} — and "better" has to beat it <em>after</em> tax and risk, not before.</div>
+
+    <div class="warnbox"><b>Lever 2 — go the other way, and top up to the Enhanced Retirement Sum.</b>
+      From 55 you may move Ordinary Account savings into the Retirement Account up to ${money(Rt.ersRule,0)}. That is up to <b>${money(Rt.ersHeadroom,0)}</b> of headroom above the FRS${Rt.oaFrs!=null?`, of which your projected OA could fund <b>${money(Rt.ersFundable,0)}</b>`:''}. Money moved swaps ${pct(CPF_RULES.oaPct,1)} for ${pct(CPF_RULES.raPct,1)} — about <b>${money(Rt.ersYearlyGain,0)} a year</b> of rate difference on that amount — and buys a larger lifelong payout.
+      <br><br><b>It earns you no tax relief.</b> That is the part most write-ups get wrong: relief on cash top-ups stops at the prevailing Full Retirement Sum, and CPF's own worked example shows the relief as $0 once the recipient has reached it. Do this for the payout and the rate, never for the deduction.</div>
+
+    <p class="note">The two levers point in opposite directions and you can only pick one. Pledging trades lifelong income for cash now; topping up to the ERS trades cash now for lifelong income. Fortress deliberately does not recommend either, because the right answer depends on your health, your other income and how much you value certainty — none of which it holds.</p>
+    <p class="note">Sources: ${esc(R.age55Source)}; ${esc(R.pledgeSource)}; ${esc(R.ersSource)}.</p>
+  </div>`:''}
+
+  <div class="card">
+    <h2>What you can do now<span class="pill">${L.filter(x=>x.open).length} of ${L.length} open</span></h2>
+    <p class="note" style="margin-top:0">Each lever below is tested against your own balances every time this page renders. A "closed" here is a computation, not an opinion — and it reopens itself the moment the numbers change.</p>
+    ${L.map(x=>`
+    <div class="kv"><span class="k">${esc(x.name)}</span><span class="v ${x.open?'pos':''}" style="font-size:12px">${x.unknown?'needs a fact Fortress lacks':x.open?'OPEN':'closed'}</span></div>
+    <p class="note" style="margin:2px 0 4px"><b>Test:</b> ${esc(x.test)}</p>
+    <p class="note" style="margin:0 0 4px">${x.detail}</p>
+    <p class="note" style="margin:0 0 12px"><b>Action:</b> ${esc(x.action)}<br><span style="font-size:10.5px">Source: ${esc(x.source)}</span></p>`).join('')}
+  </div>
+
+  <div class="card">
+    <h2>What Fortress will not tell you</h2>
+    <p class="note" style="margin-top:0"><b>Your monthly payout.</b> CPF LIFE payouts depend on your plan, your cohort's mortality tables and the exact balance at the time — none of which Fortress holds. It will not print a monthly figure, because a wrong one here would be worse than none. Use CPF's own retirement payout planner for that number, and enter the result nowhere but your own head.</p>
+    <p class="note"><b>Whether you can afford to retire.</b> That is income against spending over thirty years. Fortress measures balance sheets. It does not know your salary, your expenses, or what you intend your retirement to cost — so it cannot answer the only question that really matters here.</p>
+    <p class="note"><b>What inflation does to any of this.</b> Every figure on this tab is in today's dollars. The retirement sums rise each year (roughly ${pct(frsTrend().avg,1)} a year across the published series), which is partly why they rise — but Fortress does not deflate anything, and you should read every long-dated number as nominal.</p>
+    <p class="note"><b>Anything about tax.</b> Neither the tax on a CPF withdrawal, nor on an SRS withdrawal, nor on the Air Liquide shares. Fortress holds no tax rules for you and states none.</p>
+  </div>`;
+}
+
 function viewHist(){
   const ds=dates().slice().reverse();
   return `
@@ -3251,6 +3603,22 @@ function plainSummary(tab){
         (typeof cpfSaOverFrs==='function'&&cpfSaOverFrs())?`Your Special Account is already above the current Full Retirement Sum, so the usual advice to "top up your SA for the tax relief" is <b>closed to you</b>. Fortress checks this every time it loads.`:null,
         `<b>Not known:</b> the retirement sum for your year. CPF has not published it yet, so the projection uses the last published figure and is therefore a little optimistic about how much stays liquid.`
       ]:[]},
+    retire: (()=>{ const Rt=(typeof retireAt55==='function')?retireAt55():null;
+      const RR=RETIRE_RULES, LL=(typeof retireLevers==='function')?retireLevers():[];
+      if(!A||!c) return { lead:'Add your date of birth and a CPF balance and this fills itself in.', points:[] };
+      return {
+      lead:`You are <b>${fmt(A.age,0)}</b>. The next big date is your <b>55th birthday on ${esc(dayLabel(A.date55))}</b> — that is when CPF rearranges your accounts and some of the money becomes yours to take out.`,
+      points:[
+        `<b>At 55</b> a new Retirement Account is made. Money moves into it from your Special Account first, then your Ordinary Account, until it holds the Full Retirement Sum. Everything above that stays in your Ordinary Account and you can withdraw it.`,
+        Rt&&Rt.saAlreadyOverFrs?`Your Special Account on its own is already bigger than the Full Retirement Sum. So none of your Ordinary Account gets pulled in, and roughly <b>${M(Rt.now.oaAfter)}</b> would be withdrawable on today's balances.`:null,
+        `<b>At ${RR.payoutAge}</b> the monthly payments can start. You can put them off to ${RR.payoutLatest} and each year of waiting adds up to ${RR.deferMaxPct}% — but you get nothing while you wait, so it is a bet on living long, not free money.`,
+        `<b>You own a property</b>, which lets you keep only the smaller Basic Retirement Sum in CPF and take about <b>${Rt?M(Rt.freed):'—'}</b> more in cash. The catch: that money stops earning ${pct(CPF_RULES.raPct,1)} for life and stops paying you monthly, forever.`,
+        `<b>A myth worth killing:</b> topping up to the Enhanced Retirement Sum does <em>not</em> get you a tax deduction. The relief stops at the Full Retirement Sum. Do it for the bigger payout, never for the tax.`,
+        (()=>{ const shut=LL.filter(x=>!x.open&&!x.unknown);
+          const byAge=shut.filter(x=>/age/i.test(x.test)).length, bySavings=shut.length-byAge;
+          return `<b>Most of the usual retirement tips do not apply to you</b> — ${fmt(shut.length,0)} of the ${fmt(LL.length,0)} levers are shut: ${fmt(bySavings,0)} because you have already saved more than the schemes are built for, ${byAge?`and ${fmt(byAge,0)} because you are not 55 yet`:''}. Fortress tests each one against your own balances instead of repeating advice written for someone else.`; })(),
+        `<b>Not known:</b> what your monthly payout will be. That depends on CPF's own tables, and Fortress refuses to print a made-up number.`
+      ]}; })(),
     al: {
       lead:p?`You own <b>${fmt(p.total,0)}</b> Air Liquide shares worth <b>${M(p.sgd)}</b>. They came from working there, not from buying them.`:'No Air Liquide holding is loaded.',
       points:p?[
@@ -3365,7 +3733,7 @@ function gapsCard(tab){
 function render(){
   renderTabs();
   document.getElementById('stamp').textContent = VERSION;
-  const v={dash:viewDash,prop:viewProp,cpf:viewCpf,al:viewAl,trends:viewTrends,fx:viewFX,hist:viewHist,set:viewSet}[state.settings.tab]||viewDash;
+  const v={dash:viewDash,prop:viewProp,cpf:viewCpf,retire:viewRetire,al:viewAl,trends:viewTrends,fx:viewFX,hist:viewHist,set:viewSet}[state.settings.tab]||viewDash;
   const tab = state.settings.tab;
   document.getElementById('main').innerHTML = plainCard(tab) + v() + gapsCard(tab)
     + `<p class="fine">Monitoring aid only — verify against your official DBS statements. ${VERSION}</p>`;

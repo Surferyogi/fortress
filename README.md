@@ -282,6 +282,55 @@ The shares are counted in net worth and **excluded from every margin calculation
 registered with the company, not pledged to DBS, so they cannot raise a lending value or
 answer a margin call. Same treatment as CPF.
 
+## Retire
+
+A tab built on the Singapore CPF framework, with every rule read from a primary source on
+26 Aug 2026 and pinned by tests that fail loudly if CPF moves a number.
+
+**The timeline** runs off CK's own birth date: now, 55, 60, the statutory retirement age, 65, the
+re-employment age, 70 — each with the exact date, a countdown, what actually changes, and its source.
+
+**The decision at 55** is the heart of it. The Retirement Account is created, the Special Account
+closes, and savings transfer SA-first then OA up to the Full Retirement Sum. Because CK's SA alone
+(S$310,602) already exceeds his cohort's FRS, none of his Ordinary Account is touched and the SA
+remainder joins it. Two levers follow, and they point in opposite directions:
+
+- **Pledge the property** and set aside only the Basic Retirement Sum. Since the FRS is exactly twice
+  the BRS, this frees precisely one BRS more into the OA as cash — and permanently gives up 4% for
+  life and the monthly payout on that money.
+- **Top up to the Enhanced Retirement Sum** (4× the BRS from 2025), swapping 2.5% for 4%. The card
+  states plainly that **this earns no tax relief** — relief on cash top-ups stops at the prevailing
+  FRS, and CPF's own worked example shows $0 relief once the FRS is reached. Most write-ups get this
+  wrong.
+
+Fortress recommends neither, because the answer turns on health, other income and how much certainty
+is worth — none of which it holds.
+
+**What you can do now** tests seven levers against CK's live balances. Five are shut: four because he
+has already saved more than the schemes are built for (own-CPF top-up, MediSave VC, the Matched
+Retirement Savings Scheme, the Budget 2026 senior top-up) and one because he is not yet 55. Each
+"closed" prints the computation that closed it, so it is auditable rather than an opinion, and each
+reopens itself if the numbers change. Two remain open: top-ups for loved ones, and **SRS** — where
+the penalty-free withdrawal age is fixed at the statutory retirement age *prevailing at the first
+contribution* and does not follow later increases. That age rose to 64 on 1 July 2026, so a first
+contribution now fixes 64 for life. Fortress does not know whether CK has ever contributed, and says
+so rather than assuming either way.
+
+**What Fortress will not tell you** is its own card. It refuses to print a monthly CPF LIFE payout —
+that depends on plan, cohort mortality tables and the balance at the time, none of which it holds,
+and a wrong figure there would be worse than none. It states that it cannot answer whether he can
+afford to retire, because that is income against spending and it measures balance sheets. It warns
+that every long-dated figure is nominal. And it states no tax rules at all.
+
+### A bug the tests caught
+
+The age-55 split originally computed the $5,000 minimum withdrawal as `min(oaAfter, 5000)` — which
+returns nothing when the Ordinary Account is empty. The rule is that the $5,000 is **held back from
+the transfer**, not taken from whatever the OA happens to hold. A member with S$50,000 total should
+see S$45,000 swept into the RA and S$5,000 left withdrawable; the old code left them S$0. Fixed, with
+edge cases for a balance under S$5,000 and a zero balance, plus a conservation check proving the
+split neither creates nor destroys money.
+
 ## Plain English
 
 A **Plain English** toggle sits in the header and is **on by default**. It does two things.
