@@ -282,6 +282,75 @@ The shares are counted in net worth and **excluded from every margin calculation
 registered with the company, not pledged to DBS, so they cannot raise a lending value or
 answer a margin call. Same treatment as CPF.
 
+## The property reference is the last equivalent transaction
+
+The home is carried at **S$2,450,000** — the price a 915 sqft unit in the same project actually sold for
+in **Mar 2026**, the same floor area as his. It holds until a newer sale meeting the same test replaces
+it: *same project, same floor area*. Nothing else moves the headline.
+
+**It carries no range, and the card says why:** one sale is one sale. That is a property of the method,
+not a claim of precision — a single trade says what one buyer paid for one unit on one day, and knows
+nothing of floor, facing or condition. Manufacturing a confidence interval around it would be inventing
+precision that the evidence does not contain.
+
+The portal's automated estimate (S$2,390,000, Aug 2026, ±10%) is kept as a **cross-check rather than the
+headline**. It reads **−2.4%** against the reference, and the card explains the disagreement instead of
+hiding it: an algorithm blending five transactions across two floor areas will land under a same-size
+trade when the smaller units fetch a lower psf, which is exactly what they do here.
+
+The five transactions span S$2,523–2,718 psf, which on 915 sqft is S$2,308,486–2,486,869. The card shows
+that spread as **what the market shows, explicitly not a confidence interval**.
+
+A form on the Property tab takes the next sale — month, floor area, price. It becomes the reference only
+if the area matches and the date is newer; anything else is stored as a comparable and says so rather than
+silently moving net worth. A gap tracks the reference's age and escalates to high severity past twelve
+months.
+
+### Another dead assertion found
+
+`proptest` had a `hero` pattern matching text that only appears when no property value is set. It had been
+printing `false` for weeks inside a `console.log` that could not fail. That block now uses real assertions
+and exits non-zero — the same fix `cpfuitest` needed.
+
+## Should the Air Liquide shares move to DBS?
+
+A decision card on the AL tab, computed live from the holding so it stays current as the position grows.
+
+The loyalty bonus is **+10% on dividends and +10% on free-share attributions**, and it requires shares held
+in registered form for more than two full calendar years. **Bearer shares do not qualify at all.** A transfer
+into a broker's custody normally converts registered shares to bearer, so the question is a permanent
+recurring income loss weighed against collateral capacity.
+
+| | Per year |
+|---|---|
+| Dividend loyalty line | S$1,598 |
+| Free-share loyalty (34 shares per attribution) | S$4,210 |
+| **Forgone by transferring** | **S$5,809 — 0.70% of the position, every year** |
+
+Over 12 years to 65, with **no growth assumed in price or dividend** — a deliberate floor, not a forecast —
+the gap is **S$113,298**: 330 fewer shares and €21,383 less income. It compounds, because the extra free
+shares themselves earn dividends and further attributions.
+
+Against that, the collateral gain is worth little to *this* holder: S$672,886 of capacity is already undrawn
+at 45.7% utilisation. The card shows advance ratios of 40–70% as a **sensitivity and says so** — Fortress
+does not know DBS's ratio for this name and refuses to quote one.
+
+The card's strongest argument is not financial. Pledging employer stock creates a **correlation trap**: a
+margin call arrives when markets fall, and Air Liquide falls hardest in the scenarios that also threaten the
+salary and the CPF contributions it generates. Unpledged, the shares are ring-fenced — and the card says that
+the first half of Fortress's own line *"cannot be seized in a margin call, but cannot help you survive one"*
+**is a feature**.
+
+It also refuses to close the question, because one fact decides it and Fortress cannot know it: Air Liquide
+allows **nominatif administré** — registered in your name but administered by your own institution — which
+would keep the bonus. Whether DBS supports it is unanswered, so the card carries the exact wording to put to
+DBS (including whether they would take a *pledge* over shares that stay in nominatif pur, the outcome worth
+chasing) and to Air Liquide, plus a high-severity gap recording that a S$5,809/yr question is open.
+
+Two constraints it names rather than glosses: 405 shares are blocked under ESPP lock-ups and cannot move at
+all, and **transferring is not required in order to sell** — so trimming the 18.1% concentration is a separate
+decision that should not be bundled with this one.
+
 ## The year you turn 55 is not a setting
 
 Fortress used to offer a dropdown for "Year you turn 55". It shipped with a stored value of 2030

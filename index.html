@@ -141,7 +141,7 @@ details.gap[open]>summary::after{content:'  \2212'}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:AUG:28-23:14';
+const VERSION = 'v2026:AUG:31-13:30';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -156,6 +156,8 @@ const monthLabel = iso=>{ const [y,m]=iso.split('-'); return new Date(+y,+m-1,1)
 const daysUntil = iso=>{ if(!iso) return null; return Math.ceil((new Date(iso+'T00:00:00')-new Date())/86400000); };
 const addMonths = (iso,n)=>{ const [y,m]=iso.split('-').map(Number); const d=new Date(y,m-1+n,1);
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); };
+const dayMonthLabel = ym=>{ if(!ym) return '\u2014'; const [y,m]=ym.split('-');
+  return new Date(+y,+m-1,1).toLocaleString('en',{month:'short'})+' '+y; };
 const dayLabel = iso=>{ if(!iso) return '—'; const [y,m,d]=iso.split('-'); return (+d)+' '+new Date(+y,+m-1,1).toLocaleString('en',{month:'short'})+' '+y; };
 
 /* ================= storage (guarded — works without localStorage) ================= */
@@ -312,6 +314,36 @@ const AL_BASIS = [
 const AL_BASIS_META = { source:'action.airliquide.com \u2014 Performance shares detail, pages 1\u20132 of 2 \u2014 the complete list, read 25 Aug 2026',
   priceNote:'\u201cAdjusted vesting price\u201d is the vesting price restated for the free-share attributions since, so it is a cost basis, not a market price. Every line is marked \u201cAvailable shares\u201d \u2014 none of the performance shares are blocked.',
   unknownCause:'Fortress does not know why a tranche is short. A sale, a transfer out, or a plan-level adjustment would all look like this from the portal alone, and the portal history loaded so far does not say.' };
+
+/* The property valuation, with its provenance. Fortress used to hold a single number
+   CK typed in. This records what kind of number it is, when it was struck, what range
+   came with it, and the transactions it can be checked against - so a figure that moves
+   net worth by S$480,000 across its own range is never shown as a point estimate. */
+const HOME_SEED = {
+  project:'The Atelier', unit:'#07-04', beds:2, baths:2, sqft:915,
+  /* The reference is the last TRANSACTED price of an equivalent unit - same project,
+     same floor area - and it holds until a newer equivalent transaction replaces it.
+     A real trade in an identical unit is harder evidence than an algorithm, so the
+     portal's estimate is kept as a cross-check rather than the headline. */
+  basis:'lastTransaction',
+  equivalentRule:'same project, same floor area (915 sqft). A newer transaction meeting that test replaces this reference; nothing else does.',
+  value:2450000, valueDate:'2026-03',
+  low:null, high:null,
+  asOf:'2026-03',
+  basisNote:'The last transacted price of an equivalent unit \u2014 a real trade, not an estimate. It carries no confidence range of its own: one sale is one sale.',
+  source:'URA / HDB transacted price, 2-bedroom 915 sqft at the same project, Mar 2026',
+  /* kept as a second opinion, never as the headline */
+  avm:{ value:2390000, low:2150000, high:2630000, asOf:'2026-08',
+        source:'Property portal estimated value, last updated Aug 2026, with a low\u2013high range' },
+  comps:[
+    { date:'2026-03', sqft:915, price:2450000 },
+    { date:'2026-02', sqft:872, price:2200000 },
+    { date:'2023-06', sqft:872, price:2370000 },
+    { date:'2023-06', sqft:872, price:2200000 },
+    { date:'2023-06', sqft:915, price:2480000 }
+  ],
+  compSource:'URA / HDB transacted prices, 2-bedroom units at the same project, as listed in the portal'
+};
 
 /* Ordinary-share registrations, which is where the loyalty clock actually starts */
 const AL_REGISTRATIONS = [
@@ -476,7 +508,7 @@ if(!state.al){ state.al = AL_SEED; store.set('fortress.al', state.al); }
    readings needs those to reach devices that already installed an older build,
    WITHOUT touching anything the user entered. Each migration is additive and
    idempotent: it fills gaps and repairs missing fields, and never deletes.  */
-const SEED_VERSION = 11;
+const SEED_VERSION = 13;
 function runSeedMigrations(){
   const from = store.get('fortress.seedVersion', 0);
   if(from >= SEED_VERSION) return 0;
@@ -533,6 +565,24 @@ function runSeedMigrations(){
   // v8 — the Air Liquide shareholding
   state.al = state.al || {};
   Object.keys(AL_SEED).forEach(d=>{ if(!state.al[d]){ state.al[d]={...AL_SEED[d], seeded:true}; changed++; } });
+
+  // v13 — the reference becomes the last TRANSACTED price of an equivalent unit,
+  //        holding until a newer equivalent sale replaces it. The portal estimate is
+  //        demoted to a cross-check. Re-seeded because the shape changed.
+  if(state.settings.homeVal && state.settings.homeVal.basis !== 'lastTransaction'
+     && !state.settings.homeVal.userEdited){
+    state.settings.homeVal = { ...HOME_SEED };
+    state.settings.homeValue = HOME_SEED.value;
+    changed++;
+  }
+
+  // v12 — the property valuation gains provenance: a dated automated estimate with a
+  //        range and the comparables behind it, replacing a bare number typed in once.
+  if(!state.settings.homeVal){
+    state.settings.homeVal = { ...HOME_SEED };
+    state.settings.homeValue = HOME_SEED.value;
+    changed++;
+  }
 
   // v11 — the year-55 selector was removed. A stored override is now dead weight at best
   //        and a wrong answer at worst, so clear it once a date of birth exists.
@@ -1703,6 +1753,146 @@ function fxExposure(){
       return { onCollateral: r.pledged*pctMove/100, onWealth: r.total*pctMove/100 }; } };
 }
 
+/* ---- should the shares move to DBS? ------------------------------------------
+   Registered ("nominatif") shares earn +10% on dividends AND +10% on free-share
+   attributions. Bearer shares earn neither. A transfer into a broker's custody
+   normally converts them to bearer, so the whole decision is a recurring, permanent
+   income loss weighed against collateral capacity. Every figure here is computed
+   from his own holding; the two things Fortress cannot know - DBS's advance ratio
+   and whether DBS can hold registered form - are shown as open questions, not filled in. */
+const AL_TRANSFER = {
+  bonusPct:10,
+  qualifyYears:'more than two full calendar years (1 January to 31 December), and you must still hold the shares the day before the dividend is paid or the free shares are attributed',
+  bearerRule:'Bearer shares do not qualify for the loyalty bonus at all.',
+  forms:'Air Liquide recognises two registered forms that both earn the bonus: nominatif pur, held directly with Air Liquide, and nominatif administr\u00e9, registered in your name at Air Liquide but administered by your own financial institution.',
+  attributionRatio:10,          // 1 free share for every 10 held
+  attributionEveryYears:2,      // AL states 10 attributions in the last 20 years
+  horizonNote:'modelled with NO growth in the share price or the dividend - a deliberate floor, not a forecast',
+  source:'Air Liquide \u2014 "Loyalty bonus": +10% on the amount of dividends received and +10% in free shares, for shares held in registered form for more than two full calendar years; bearer shares do not qualify',
+  sourceFiche:'Air Liquide \u2014 Fiche pratique "Prime de fid\u00e9lit\u00e9": plus de deux ann\u00e9es civiles pleines, and you must be the holder the day before payment or attribution',
+  unknowns:[
+    'Whether DBS can hold Air Liquide shares in nominatif administr\u00e9, with you named in the French register. Air Liquide\u2019s own documents do not say, and Fortress will not assume. If DBS can, you could consolidate custody AND keep the bonus.',
+    'Whether DBS would instead take a pledge (nantissement) over shares that stay in nominatif pur \u2014 collateral without a transfer of custody. That is the outcome worth chasing.',
+    'What advance ratio DBS would apply to a single-name Euronext Paris large cap. The range below is a sensitivity, not a DBS quote.',
+    'Whether a transfer to nominatif administr\u00e9 preserves your existing two-year clock or restarts it \u2014 a question for Air Liquide.',
+    'The tax treatment of a custody transfer or a later disposal, in France or Singapore. Fortress holds no tax rules for you and states none.',
+    'Whether your performance shares carry transfer restrictions beyond the ESPP lock-ups.'
+  ]
+};
+
+function alTransferDecision(){
+  const p = alPosition(); if(!p) return null;
+  const D = (typeof alDividends==='function') ? alDividends() : null;
+  const T = AL_TRANSFER;
+  const price = p.price, fx = p.fx;
+  const sgd = e => (fx!=null && e!=null) ? e*fx : null;
+
+  /* --- what registration is worth, per year --- */
+  const loyUnit = D ? D.last.loyaltyUnit : null;      // the declared loyalty rate, not a guess
+  const baseUnit = D ? D.last.baseUnit : null;
+  const wht = D ? D.last.withheldPct/100 : null;
+  const qualNow = p.byBonus.filter(b=>b.qualified).reduce((a,b)=>a+b.qty,0);
+
+  const divGrossAll = loyUnit!=null ? p.total*loyUnit : null;         // once every share qualifies
+  const divNetAll   = divGrossAll!=null ? divGrossAll*(1-wht) : null;
+  const divGrossNow = loyUnit!=null ? qualNow*loyUnit : null;
+  const divNetNow   = divGrossNow!=null ? divGrossNow*(1-wht) : null;
+
+  /* free shares: the bonus is +10% on the NUMBER of free shares attributed */
+  const plainFree = Math.floor(p.total/T.attributionRatio);
+  const bonusFree = Math.floor(p.total/T.attributionRatio*(1+T.bonusPct/100));
+  const extraFree = bonusFree - plainFree;
+  const extraFreeEur = extraFree*price;
+  const freePerYear = extraFreeEur/T.attributionEveryYears;
+
+  const annualEur = (divNetAll||0) + freePerYear;
+  const annualSgd = sgd(annualEur);
+  const pctOfPosition = p.sgd ? annualSgd/p.sgd*100 : null;
+
+  /* --- the floor case: no growth at all, to age 65 --- */
+  const A = cpfAge();
+  const years = A ? Math.max(1, A.year65 - new Date().getFullYear()) : 12;
+  const run = loyal => { let sh=p.total, cash=0;
+    for(let y=1;y<=years;y++){
+      cash += sh*(baseUnit + (loyal?loyUnit:0))*(1-wht);
+      if(y%T.attributionEveryYears===0)
+        sh += loyal ? Math.floor(sh/T.attributionRatio*(1+T.bonusPct/100))
+                    : Math.floor(sh/T.attributionRatio);
+    }
+    return { sh, cash, total: sh*price + cash }; };
+  const stay = (baseUnit!=null) ? run(true) : null;
+  const move = (baseUnit!=null) ? run(false) : null;
+  const gapEur = (stay&&move) ? stay.total - move.total : null;
+
+  /* --- what DBS would give: capacity he mostly already has --- */
+  const mr = latestMrtl(), cap = mrtlCapacity(mr);
+  const undrawnAsset = (cap&&mr&&mr.amountDrawn!=null) ? cap.capacity - mr.amountDrawn : null;
+  const undrawnStated = mr ? mr.availableForDrawdown : null;
+  const util = (cap&&mr&&mr.amountDrawn!=null) ? mr.amountDrawn/cap.capacity*100 : null;
+  const blendedLv = (cap && (typeof agg==='function')) ? cap.capacity/agg(latest()).pledgedAssets*100 : null;
+  const lvRange = [40,50,60,70].map(lv=>({ lv, adds: p.sgd!=null ? p.sgd*lv/100 : null }));
+
+  const C = (typeof alConcentration==='function') ? alConcentration() : null;
+  return { p, D, T, price, fx, qualNow, onClock: p.total - qualNow,
+    divGrossAll, divNetAll, divNetAllSgd: sgd(divNetAll), divNetNow, divNetNowSgd: sgd(divNetNow),
+    plainFree, bonusFree, extraFree, extraFreeEur, extraFreeSgd: sgd(extraFreeEur),
+    freePerYear, freePerYearSgd: sgd(freePerYear),
+    annualEur, annualSgd, pctOfPosition,
+    years, stay, move, gapEur, gapSgd: sgd(gapEur),
+    undrawnAsset, undrawnStated, util, blendedLv, lvRange,
+    blocked: p.blocked, concentration: C ? C.pctOfNet : null,
+    verdict: (annualSgd!=null && undrawnAsset!=null && undrawnAsset>0) ? 'stay' : 'unknown' };
+}
+
+/* what the home is worth, and how confident anyone should be about it */
+function propertyValue(){
+  const H = state.settings.homeVal || null;
+  const v = state.settings.homeValue;
+  if(v==null) return null;
+  const isTxn = (H&&H.basis)==='lastTransaction';
+  const sqft = H ? H.sqft : null;
+  const psf = x => (sqft && x!=null) ? x/sqft : null;
+  const comps = (H && H.comps ? H.comps : []).map(c=>({ ...c, psf:c.price/c.sqft,
+    sameSize: sqft!=null && c.sqft===sqft }));
+  const sameSize = comps.filter(c=>c.sameSize);
+  const allPsf = comps.map(c=>c.psf);
+  const meanPsf = allPsf.length ? allPsf.reduce((a,b)=>a+b,0)/allPsf.length : null;
+  const newest = comps.length ? comps.slice().sort((a,b)=>b.date.localeCompare(a.date))[0] : null;
+  const newestSame = sameSize.length ? sameSize.slice().sort((a,b)=>b.date.localeCompare(a.date))[0] : null;
+
+  const a = agg(latest()), w = netWorth(a);
+  const nwAt = hv => w.dbsUob + hv + (w.cpf||0) + (w.al||0);
+  const mm = latestManual(), mortgage = mm ? (mm.mortgageBalance||0) : 0;
+  const claim = (typeof cpfHomeClaim==='function' && cpfHomeClaim()) ? cpfHomeClaim().claim : 0;
+
+  /* how old the reference trade is, and what the portal thinks instead */
+  const monthsSince = (H&&H.valueDate) ? (()=>{ const [y,m]=H.valueDate.split('-').map(Number);
+      const now=new Date(); return (now.getFullYear()-y)*12 + (now.getMonth()+1-m); })() : null;
+  const avm = (H&&H.avm) ? { ...H.avm, psf:psf(H.avm.value),
+      vsRef:(H.avm.value/v-1)*100, nw:nwAt(H.avm.value),
+      lowNw:nwAt(H.avm.low), highNw:nwAt(H.avm.high),
+      swing:nwAt(H.avm.high)-nwAt(H.avm.low) } : null;
+  /* the spread the evidence itself shows - derived, not invented */
+  const evid = allPsf.length ? { loPsf:Math.min(...allPsf), hiPsf:Math.max(...allPsf),
+      lo:Math.min(...allPsf)*sqft, hi:Math.max(...allPsf)*sqft } : null;
+
+  const band = (H && H.low!=null && H.high!=null) ? { low:H.low, high:H.high,
+    width:H.high-H.low, widthPct:(H.high-H.low)/v*100,
+    lowPct:(H.low/v-1)*100, highPct:(H.high/v-1)*100,
+    nwLow:nwAt(H.low), nwHigh:nwAt(H.high), nwSwing:nwAt(H.high)-nwAt(H.low) } : null;
+
+  return { ...(H||{}), value:v, sqft, psf:psf(v), lowPsf:psf(H&&H.low), highPsf:psf(H&&H.high),
+    isTxn, monthsSince, avm, evid,
+    comps, sameSize, meanPsf, newest, newestSame,
+    vsNewestSame: newestSame ? (psf(v)/newestSame.psf-1)*100 : null,
+    abovePsf: allPsf.filter(x=>psf(v)>x).length, belowPsf: allPsf.filter(x=>psf(v)<x).length,
+    band, netWorth:nwAt(v), pctOfNet: nwAt(v)? v/nwAt(v)*100 : null,
+    nwAt,
+    equity: v - mortgage, mortgage, claim,
+    afterAll: v - mortgage - claim,
+    isAvm: (H&&H.basis)==='avm' };
+}
+
 /* how much of everything is now one company */
 function alConcentration(){
   const p = alPosition(); if(!p||p.sgd==null) return null;
@@ -2011,11 +2201,22 @@ function gaps(){
     add('prop','high','The purchase price of the house is not recorded',
       'Fortress cannot tell you what the property has actually returned. It shows a valuation and a mortgage, but with no cost it cannot compute a gain, a holding-period return, or how much of your net worth is appreciation versus repayment.',
       'Enter it under \u201cWhat the house cost you\u201d on the Property tab, with the year you bought.');
-  if(state.settings.homeValue)
-    add('prop','medium','The S$'+fmt(state.settings.homeValue,0)+' valuation is your own figure, not a valuation',
-      'Every property percentage on the dashboard moves with this number, including the share of net worth and the CPF claim as a fraction of proceeds.',
-      'Re-check it against recent transacted prices in the same development and update the date it was set.',
-      'entered by you on the Property tab');
+  { const V=(typeof propertyValue==='function')?propertyValue():null;
+    if(V && V.isTxn)
+      add('prop', V.monthsSince>12?'high':'medium',
+        'The home is carried at a single transaction from '+dayMonthLabel(V.valueDate)+', now '+fmt(V.monthsSince,0)+' months old',
+        'One sale of one unit is the whole basis. It is real evidence rather than an estimate, but it knows nothing of your floor, facing or condition, and it does not move until another equivalent unit trades. The portal\u2019s algorithm currently reads '+pct(V.avm?V.avm.vsRef:0,1)+' against it, and its own range spans '+money(V.avm?V.avm.swing:0,0)+' of net worth.'+(V.monthsSince>12?' At over a year old this is now stale.':''),
+        'Add the next equivalent sale on the Property tab the moment you see one \u2014 same project, same '+fmt(V.sqft,0)+' sqft.',
+        V.source);
+    else if(V && V.isAvm && V.band)
+      add('prop','high','The home is carried at an automated estimate with a '+money(V.band.width,0)+' range',
+        'Fortress must carry one number into net worth, but the honest figure is a band: '+money(V.band.low,0)+' to '+money(V.band.high,0)+'.',
+        'A formal valuation would close it.', V.source);
+    else if(state.settings.homeValue)
+      add('prop','medium','The S$'+fmt(state.settings.homeValue,0)+' valuation is your own figure, not a valuation',
+        'Every property percentage on the dashboard moves with this number, including the share of net worth and the CPF claim as a fraction of proceeds.',
+        'Re-check it against recent transacted prices in the same development and update the date it was set.',
+        'entered by you'); }
   if(!monthlyIncome())
     add('prop','high','No rental income is recorded',
       'Rent cover against the mortgage instalment cannot be computed, so Fortress cannot say whether the property funds itself.',
@@ -2089,6 +2290,14 @@ function gaps(){
     add('al','medium','Cost basis is known for the performance shares only',
       fmt(p.total - (BA?BA.qty:0),0)+' of your '+fmt(p.total,0)+' shares are ESPP and ordinary shares, and Fortress has no purchase price for any of them. It cannot state your total gain, only the gain on the '+fmt(BA?BA.qty:0,0)+' performance shares.',
       'Load the ESPP subscription prices and the ordinary-share purchase prices.');
+    { const X=(typeof alTransferDecision==='function')?alTransferDecision():null;
+      if(X) add('al','high','Whether DBS can hold these shares in registered form is unanswered',
+        'It decides a '+money(X.annualSgd,0)+'/yr question. The loyalty bonus needs registered form, and a transfer to a broker normally converts to bearer \u2014 but Air Liquide allows nominatif administr\u00e9 at your own institution, which would keep the bonus. Fortress cannot tell you whether DBS supports it, so it cannot close the transfer question either way.',
+        'Ask DBS in writing: can you hold it in nominatif administr\u00e9, or take a pledge over shares that stay in nominatif pur? The decision card on this tab has the exact wording.',
+        AL_TRANSFER.source);
+      if(X) add('al','medium','DBS\u2019s advance ratio for a single-name Euronext large cap is not known',
+        'The collateral value of a transfer cannot be stated, only ranged. Fortress shows 40\u201370% as a sensitivity and labels it as one rather than quoting a number DBS has not given.',
+        'Ask DBS for the advance ratio on this ISIN.'); }
     add('al','medium','Nothing is known about the tax on a disposal',
       'Fortress reports the unrealised gain and refuses to net any tax off it, because it does not know how France or Singapore would treat a sale of these shares in your hands.',
       'Establish this before any decision to sell, not after.');
@@ -2773,6 +2982,54 @@ function viewProp(){
   if(!mm) return `<div class="banner b-warn"><span class="ic">&#8505;</span><div><b>No home-loan data yet</b>Add a month below, or import a UOB statement, screenshot or rate letter through Add data.</div></div>${propForms()}`;
 
   return `
+  ${(()=>{ const V=propertyValue(); if(!V) return '';
+    return `
+  <div class="card">
+    <h2>What it's worth${V.project?`<span class="pill">${esc(V.project)}${V.unit?' &middot; '+esc(V.unit):''}</span>`:''}</h2>
+    <div class="hero">${money(V.value,0)}</div>
+    <div class="hero-sub">${V.sqft?`${fmt(V.sqft,0)} sqft &middot; ${money(V.psf,0)} psf &middot; `:''}${V.isTxn?`last equivalent sale, ${esc(dayMonthLabel(V.valueDate))}`:`estimated ${esc(dayMonthLabel(V.asOf||''))}`}</div>
+
+    ${V.isTxn?`
+    <div class="warnbox" style="margin-top:12px"><b>This is a transacted price, not an estimate.</b>
+      A ${fmt(V.sqft,0)} sqft unit in this project sold for <b>${money(V.value,0)}</b> in ${esc(dayMonthLabel(V.valueDate))} &mdash; the same floor area as yours. Fortress uses it as the reference and will keep using it until a newer equivalent sale replaces it: ${esc(V.equivalentRule||'')}
+      <br><br><b>It carries no range, because one sale is one sale.</b> That is a feature of the method, not a claim of precision: a single trade tells you what one buyer paid for one unit on one day, and says nothing about floor, facing or condition &mdash; yours is ${esc(V.unit||'a different unit')}.</div>`:''}
+
+    ${V.monthsSince!=null?`<div class="kv" style="margin-top:12px"><span class="k">Age of the reference</span><span class="v ${V.monthsSince>12?'neg':''}">${fmt(V.monthsSince,0)} month${V.monthsSince===1?'':'s'}<br><span class="k" style="font-size:11px">${V.monthsSince>12?'stale &mdash; a year without a comparable sale':'still recent'}</span></span></div>`:''}
+
+    ${V.avm?`
+    <div style="margin-top:12px"><b style="font-size:13px">Cross-check: what the portal's algorithm says</b></div>
+    <div class="kv"><span class="k">Estimated value, ${esc(dayMonthLabel(V.avm.asOf))}</span><span class="v">${money(V.avm.value,0)}<br><span class="k" style="font-size:11px">${money(V.avm.psf,0)} psf &middot; <b>${pct(V.avm.vsRef,1)}</b> against the reference</span></span></div>
+    <div class="kv"><span class="k">...with its own range<br><span style="font-size:11px">a ${money(V.avm.high-V.avm.low,0)} spread, ${money(V.avm.swing,0)} of net worth</span></span><span class="v" style="font-size:13px">${money(V.avm.low,0)} &ndash; ${money(V.avm.high,0)}</span></div>
+    <p class="note">The estimate sits ${pct(Math.abs(V.avm.vsRef),1)} <b>below</b> the last equivalent sale, and the reference sits inside the estimate's own range. The two do not contradict each other &mdash; an algorithm blending ${fmt(V.comps.length,0)} transactions of two different sizes will land under a same-size trade when the smaller units fetch a lower psf, which is what they do here. Fortress leads with the transaction because it is evidence rather than inference, and shows the estimate so you can see the disagreement rather than have it hidden.</p>`:''}
+
+    <div style="margin-top:12px"><b style="font-size:13px">The evidence</b></div>
+    <table class="hist" style="margin-top:6px"><tr><th>Sold</th><th>Size</th><th>Price</th><th>psf</th></tr>
+      ${V.comps.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(c=>{
+        const isRef = V.isTxn && c.date===V.valueDate && c.price===V.value;
+        return `<tr${c.sameSize?' style="font-weight:600"':''}>
+        <td>${esc(dayMonthLabel(c.date))}${isRef?' <span style="font-size:10px;color:var(--s1)">&#9679; reference</span>':''}</td>
+        <td>${fmt(c.sqft,0)} sqft${c.sameSize?' &middot; <span style="font-size:10px">same as yours</span>':''}</td>
+        <td>${money(c.price,0)}</td><td>${money(c.psf,0)}</td></tr>`; }).join('')}
+    </table>
+    <p class="note">${V.sameSize.length>1?`<b>${fmt(V.sameSize.length,0)} of the ${fmt(V.comps.length,0)} match your floor area.</b> ${V.sameSize.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(c=>`${esc(dayMonthLabel(c.date))} at ${money(c.psf,0)} psf`).join(' and ')} &mdash; only ${money(Math.abs(V.sameSize[0].psf-V.sameSize[1].psf),0)} psf apart across nearly three years. `:''}The ${fmt(V.comps.length,0)} together span ${money(V.evid.loPsf,0)}&ndash;${money(V.evid.hiPsf,0)} psf, which on ${fmt(V.sqft,0)} sqft is ${money(V.evid.lo,0)}&ndash;${money(V.evid.hi,0)}. That spread is what the market actually shows; it is not a confidence interval and Fortress does not present it as one. Source: ${esc(V.compSource||'')}.</p>
+
+    <div class="kv" style="margin-top:12px"><span class="k">Less the mortgage</span><span class="v">${money(V.equity,0)}<br><span class="k" style="font-size:11px">after ${money(V.mortgage,0)} outstanding</span></span></div>
+    ${V.claim?`<div class="kv"><span class="k">Less the CPF refund too<br><span style="font-size:11px">what actually reaches your bank account on a sale</span></span><span class="v">${money(V.afterAll,0)}<br><span class="k" style="font-size:11px">after ${money(V.claim,0)} back to CPF</span></span></div>
+    <p class="note">Both the mortgage and the CPF claim are fixed in dollars, so every dollar of valuation uncertainty lands on that last figure. On the portal's low case it would be ${money(V.avm?V.avm.low-V.mortgage-V.claim:0,0)}.</p>`:''}
+    <p class="note">Source: ${esc(V.source||'')}. ${esc(V.basisNote||'')}</p>
+  </div>
+
+  <div class="card">
+    <h2>A newer equivalent sale<span class="pill">replaces the reference</span></h2>
+    <p class="note" style="margin-top:0">Enter one when you see it. Fortress only accepts it as the reference if the floor area matches yours (${fmt(V.sqft,0)} sqft) and the date is newer than ${esc(dayMonthLabel(V.valueDate||V.asOf))} &mdash; anything else is stored as a comparable but does not move the headline.</p>
+    <label class="fld">Month sold (YYYY-MM)</label>
+    <input type="text" id="cmpDate" placeholder="e.g. 2026-11" inputmode="numeric">
+    <label class="fld">Floor area (sqft)</label>
+    <input type="number" id="cmpSqft" inputmode="numeric" value="${V.sqft||''}">
+    <label class="fld">Price (S$)</label>
+    <input type="number" id="cmpPrice" step="1" inputmode="decimal" placeholder="e.g. 2500000">
+    <button class="btn" style="margin-top:12px" onclick="addComparable()">Add transaction</button>
+  </div>`; })()}
   ${pend.length?`<div class="banner b-warn"><span class="ic">&#8599;</span><div><b>${pend.length} rate change not yet in force</b>${pend.map(rc=>{
       const bits=[];
       if(rc.ratePct!=null && rc.rateEffective>today) bits.push('rate '+pct(rc.ratePct,5)+' from '+dayLabel(rc.rateEffective));
@@ -3366,6 +3623,51 @@ function viewAl(){
           return a&&b&&Math.abs(a.withheldPct-b.withheldPct)>0.01; };
         const both = runs.slice(1).filter(r=>rateMoved(r.from)).length;
         return ` Paid by ${runs.map(r=>esc(r.m.toLowerCase())+' '+r.from+(r.from!==r.to?'\u2013'+r.to:'')).join(', then ')}. Of the ${runs.length-1} route change${runs.length>2?'s':''} and the ${D.regimes.length-1} rate changes, ${both===0?'none coincide':both===1?('only one coincides ('+runs.slice(1).filter(r=>rateMoved(r.from))[0].from+')'):'only '+both+' coincide'}, so the payment route does not determine the rate.`; })()} Source: ${esc(M.source)}.<br>${esc(M.frSource)}.<br>${esc(M.treatySource)}.</p>
+  </div>`; })()}
+
+  ${(()=>{ const X=alTransferDecision(); if(!X||!X.stay) return '';
+    const T=X.T;
+    return `
+  <div class="card">
+    <h2>Should these move to DBS?<span class="pill">costs ${money(X.annualSgd,0)}/yr</span></h2>
+    <div class="warnbox" style="margin-bottom:10px"><b>On the numbers Fortress can compute: no — and not because of the money.</b>
+      A transfer into a broker's custody normally converts registered shares to <b>bearer</b>, and ${esc(T.bearerRule).toLowerCase()} That is a permanent, recurring loss, bought to obtain collateral capacity you already hold and are not using.</div>
+
+    <div style="margin-top:4px"><b style="font-size:13px">What registration is worth, every year</b></div>
+    <div class="kv"><span class="k">Dividend loyalty line<br><span style="font-size:11px">${fmt(X.p.total,0)} shares &times; &euro;${fmt(X.D.last.loyaltyUnit,2)}, less ${pct(X.D.last.withheldPct,2)}, once all qualify</span></span><span class="v">${money(X.divNetAllSgd,0)}<br><span class="k" style="font-size:11px">&euro;${fmt(X.divNetAll,2)} net${X.onClock?` &middot; ${money(X.divNetNowSgd,0)} on the ${fmt(X.qualNow,0)} qualifying today`:''}</span></span></div>
+    <div class="kv"><span class="k">Free-share loyalty<br><span style="font-size:11px">1-for-${T.attributionRatio} gives ${fmt(X.plainFree,0)} shares; +${T.bonusPct}% gives ${fmt(X.bonusFree,0)}</span></span><span class="v">${money(X.freePerYearSgd,0)}<br><span class="k" style="font-size:11px"><b>${fmt(X.extraFree,0)} shares = ${money(X.extraFreeSgd,0)}</b> per attribution</span></span></div>
+    <div class="kv"><span class="k"><b>Total forgone by transferring</b></span><span class="v neg"><b>${money(X.annualSgd,0)}/yr</b><br><span class="k" style="font-size:11px">${pct(X.pctOfPosition,2)} of the position, every year</span></span></div>
+    <p class="note">The free-share half is the one that gets missed. The bonus is +${T.bonusPct}% on the <em>number</em> of free shares attributed, not just on the dividend &mdash; and Air Liquide has made roughly one attribution every ${T.attributionEveryYears} years.</p>
+
+    <div class="kv" style="margin-top:12px"><span class="k"><b>Over ${fmt(X.years,0)} years to 65</b><br><span style="font-size:11px">${esc(T.horizonNote)}</span></span><span class="v neg"><b>${money(X.gapSgd,0)}</b></span></div>
+    <p class="note">Staying registered: <b>${fmt(X.stay.sh,0)} shares</b> plus &euro;${fmt(X.stay.cash,0)} of dividends. Moving to bearer: ${fmt(X.move.sh,0)} shares plus &euro;${fmt(X.move.cash,0)}. The difference is ${fmt(X.stay.sh-X.move.sh,0)} shares and &euro;${fmt(X.stay.cash-X.move.cash,0)} of income. It compounds, because the extra free shares themselves earn dividends and further attributions.</p>
+
+    <div style="margin-top:12px"><b style="font-size:13px">What DBS would give in exchange</b></div>
+    ${X.lvRange.map(r=>`<div class="kv"><span class="k" style="font-size:12px">at a ${r.lv}% advance ratio</span><span class="v" style="font-size:12px">+${money(r.adds,0)} of capacity</span></div>`).join('')}
+    <div class="kv"><span class="k"><b>Undrawn capacity you already have</b></span><span class="v pos"><b>${money(X.undrawnAsset,0)}</b>${X.undrawnStated!=null?`<br><span class="k" style="font-size:11px">${money(X.undrawnStated,0)} on DBS's own stated figure</span>`:''}</span></div>
+    <div class="kv"><span class="k">Facility utilisation</span><span class="v">${pct(X.util,1)}</span></div>
+    <p class="note"><b>Fortress does not know DBS's advance ratio for this name</b> &mdash; the rows above are a sensitivity, not a quote. Whatever it is, you would be paying ${pct(X.pctOfPosition,2)} a year in perpetuity to buy a fourth key to a door you already have three keys for and have not opened.</p>
+
+    <div class="warnbox"><b>The argument that matters is not the money.</b>
+      Pledging your employer's stock creates a correlation trap. A margin call arrives when markets fall, and Air Liquide falls hardest in the same scenarios that threaten your salary and the CPF contributions that salary generates &mdash; ${X.concentration!=null?`the ${pct(X.concentration,1)} of net worth `:''}already three exposures to one company. Pledge the shares and a bad enough year could force their sale at the bottom, while your income is under pressure, on the one asset you would most want to hold through.
+      <br><br>Unpledged, they are ring-fenced. Fortress says elsewhere that they &ldquo;cannot be seized in a margin call &mdash; but they also cannot help you survive one.&rdquo; <b>The first half of that is a feature.</b></div>
+
+    ${X.blocked?`<p class="note"><b>A wholesale transfer is not available to you anyway.</b> ${fmt(X.blocked,0)} shares are blocked under the ESPP lock-ups and cannot move.</p>`:''}
+    <p class="note"><b>And transferring is not required in order to sell.</b> If the real goal is trimming the concentration, you can sell from the Air Liquide account directly. The transfer is irrelevant to that decision and should not be bundled with it.</p>
+
+    <div class="warnbox"><b>The question the whole thing turns on, which Fortress cannot answer.</b>
+      ${esc(T.forms)} <b>So the bonus does not require holding directly with Air Liquide &mdash; it requires being registered.</b> If DBS can hold them in <em>nominatif administr&eacute;</em>, you could consolidate custody and keep the bonus. Air Liquide's own documents do not say whether a non-French institution can, and Fortress will not assume.
+      <div style="margin-top:8px"><b>Put these to DBS in writing:</b></div>
+      <ol class="note" style="margin:4px 0;padding-left:20px">
+        <li style="margin:3px 0">Can you hold ${esc((X.p.lines[0]||{}).isin||'FR0000053951')} in <b>nominatif administr&eacute;</b> with Air Liquide's registrar, with me named in the issuer's register?</li>
+        <li style="margin:3px 0">If not, can you take a <b>pledge (nantissement)</b> over shares that remain in nominatif pur &mdash; collateral without a transfer of custody?</li>
+        <li style="margin:3px 0">What advance ratio would you apply to a single-name Euronext Paris large cap?</li>
+      </ol>
+      <div><b>And to Air Liquide:</b> does a transfer to nominatif administr&eacute; preserve the existing two-year clock, or restart it?</div>
+      <br><b>Do nothing unless question 1 or 2 comes back yes.</b> A yes to question 2 is the good outcome: collateral value with the bonus intact.</div>
+
+    <p class="note"><b>What Fortress does not know here:</b> ${T.unknowns.slice(4).map(esc).join(' ')}</p>
+    <p class="note">Sources: ${esc(T.source)}. ${esc(T.sourceFiche)}.</p>
   </div>`; })()}
 
   ${(()=>{ const B=alBasis(); if(!B) return '';
@@ -4053,8 +4355,37 @@ function saveSettings(){
   const hv=document.getElementById('setHome');
   state.settings.lendingValue = lv===''?null:Math.min(95,Math.max(1,+lv));
   state.settings.ltvAlert = al===''?35:Math.min(95,Math.max(5,+al));
-  if(hv) state.settings.homeValue = hv.value===''?null:Math.max(0,+hv.value);
+  if(hv){ const nv = hv.value===''?null:Math.max(0,+hv.value);
+    if(state.settings.homeVal && nv !== state.settings.homeVal.value){
+      /* the range and the comparables belonged to the estimate that was replaced */
+      state.settings.homeVal = { ...state.settings.homeVal, basis:'own', userEdited:true, low:null, high:null,
+        asOf:new Date().toISOString().slice(0,7), source:'entered by you on the Settings tab',
+        basisNote:'Your own figure. No range and no comparables travel with it.' };
+    }
+    state.settings.homeValue = nv; }
   saveAll(); go('dash');
+}
+function addComparable(){
+  const V = propertyValue(); if(!V) return;
+  const d = (document.getElementById('cmpDate').value||'').trim();
+  const sq = +document.getElementById('cmpSqft').value;
+  const px = +document.getElementById('cmpPrice').value;
+  if(!/^\d{4}-\d{2}$/.test(d)){ alert('Month must be YYYY-MM, e.g. 2026-11'); return; }
+  if(!(sq>0)){ alert('Floor area must be a positive number.'); return; }
+  if(!(px>0)){ alert('Price must be a positive number.'); return; }
+  const H = { ...state.settings.homeVal };
+  H.comps = (H.comps||[]).concat([{ date:d, sqft:sq, price:px }]);
+  /* it only becomes the reference if it is genuinely equivalent AND newer */
+  const equivalent = sq === H.sqft;
+  const newer = d > (H.valueDate || H.asOf || '');
+  if(equivalent && newer){
+    H.value = px; H.valueDate = d; H.asOf = d; H.basis = 'lastTransaction';
+    H.source = 'URA / HDB transacted price, '+H.beds+'-bedroom '+sq+' sqft at the same project, '+d;
+    state.settings.homeValue = px;
+  }
+  state.settings.homeVal = H; saveAll(); render();
+  if(!equivalent) alert('Stored as a comparable. It is '+sq+' sqft against your '+H.sqft+' sqft, so it does not replace the reference.');
+  else if(!newer) alert('Stored as a comparable. It is not newer than the current reference, so it does not replace it.');
 }
 function savePropCost(){
   const n=id=>{ const e=document.getElementById(id); if(!e) return undefined;
