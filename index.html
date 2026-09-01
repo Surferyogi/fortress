@@ -141,7 +141,7 @@ details.gap[open]>summary::after{content:'  \2212'}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:SEP:01-14:10';
+const VERSION = 'v2026:SEP:01-16:05';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -3318,13 +3318,42 @@ function cpfKeyNumbers(){
    lever runs its own test against CK's own balances and prints the arithmetic that
    opened or closed it. Where Fortress does not hold an input, the lever is marked
    unknown rather than guessed. */
+/* Open/closed is a verdict for today. It says nothing about whether today is the only
+   day it holds. Each lever therefore also carries a WHEN: does it expire, does it reopen,
+   does it reset every year, or is it fixed until the rules themselves change? Every date
+   here is either published by CPF/MOF or derived from CK's own birth date - none is a
+   forecast. */
+function whenBadge(kind, date, text, chipOverride){
+  const d = date ? daysUntil(date) : null;
+  const tone = kind==='deadline' ? 'warn' : (kind==='opens' ? 'soon' : '');
+  /* 'opens' MUST carry a date. A reopening with no date is not a promise Fortress can
+     make, so it is a 'conditional' instead and the chip names the condition rather than
+     implying a queue the lever is sitting in. */
+  if(kind==='opens' && !date) kind = 'conditional';
+  return { kind, date: date||null, days: d,
+    /* the short line that sits under the lever name */
+    label: text,
+    /* the chip on the status side */
+    chip: chipOverride ? chipOverride
+        : kind==='deadline'    ? (d!=null? `closes in ${fmt(d,0)} days` : 'has a deadline')
+        : kind==='opens'       ? `opens in ${fmt(d,0)} days`
+        : kind==='conditional' ? 'reopens only on a condition'
+        : kind==='annual'      ? 'resets yearly'
+        : kind==='changes'     ? 'changes at 55'
+        : kind==='fires'       ? (d!=null? `happens in ${fmt(d,0)} days` : 'dated')
+        : kind==='anytime'     ? 'no deadline'
+        : kind==='needs'       ? 'no date \u2014 needs a number'
+        : 'until the rules change',
+    tone };
+}
+
 function cpfBefore55(){
   const c = latestCpf(); if(!c) return null;
   const R = CPF_RULES, A = cpfAge(), K = cpfKeyNumbers();
   const oa = c.oa||0, sa = c.sa||0, ma = c.ma||0, combined = oa+sa+ma;
   const past55 = !!(A && A.age >= 55);
   const out = [];
-  const push = o => out.push(Object.assign({ open:false, unknown:false, source:null }, o));
+  const push = o => out.push(Object.assign({ open:false, unknown:false, source:null, when:null }, o));
 
   /* 1 — voluntary housing refund: the one large, open, before-55 lever he actually has */
   const hc = cpfHomeClaim();
@@ -3339,6 +3368,7 @@ function cpfBefore55(){
         + (A && A.days55>0 ? ` For you that lock runs ${fmt(A.days55,0)} days, to ${esc(dayLabel(A.date55))}.` : '')
         + ` And because your combined balances are ${money(combined,0)} — far above the ${money(R.extraBelow55.onFirst,0)} that earns extra interest — a refund earns the plain ${pct(R.oaPct,1)}, with <b>no extra interest on top</b>.`,
       action:`Fortress does not know how much spare cash you hold outside DBS and CPF, so it will not size this for you. It states the rate, the lock and the accrual you would stop.`,
+      when: whenBadge('anytime', null, `<b>No closing date.</b> This one does not expire — it shrinks only as you refund. But waiting is not free: the accrual runs at ${money(hc.monthlyAccrual,2)} a month whether you act or not, so the cost of delay is ${money(hc.monthlyAccrual*12,2)} a year. Fortress does not state what happens to a refund made after 55 — it did not verify those mechanics.`),
       unknown:false, source:R.vhr.source, quote:R.vhr.quoteMax });
   }
 
@@ -3350,6 +3380,18 @@ function cpfBefore55(){
         ? `There is ${money(room,2)} of room. Two routes share the same cap: a <b>cash top-up</b>, which carries tax relief of up to ${money(R.reliefCombinedCap/2,0)} a year, and an <b>OA-to-SA transfer</b> of money already in CPF, which carries none. Both are one-way.`
         : `Closed, and by a wide margin — your Special Account is <b>${money(-room,2)} above</b> the ${R.sumsYear} Full Retirement Sum. Both routes share this one cap, so a cash top-up (with relief) and an OA-to-SA transfer (without) are shut together. The common advice to "top up your SA for the 4% and the tax relief" does not apply to you and will not until the FRS overtakes your SA — and your SA is compounding at ${pct(R.saPct,1)} while it tries.`,
       action: room > 0 ? 'Top up early in the year so it earns for the full year.' : 'Nothing to do. The test re-runs on every render.',
+      when: (()=>{ /* would it ever reopen? Only if the FRS overtook his SA. On PUBLISHED
+                      figures alone - his SA compounded at the 4% floor with no contributions,
+                      against CPF's announced sums - the gap is going the other way. That is
+                      arithmetic on published data, not a projection of policy. */
+        const last = R.frsLastPublished;
+        const yrs = last - (+(''+c.asOf).slice(0,4));
+        const saThen = sa * Math.pow(1 + R.saPct/100, Math.max(0,yrs));
+        const gapNow = sa - R.frs, gapThen = saThen - R.frsByYear[last];
+        const widening = gapThen > gapNow;
+        return whenBadge('conditional', null,
+          `<b>Closed, and moving further away.</b> Against CPF's published sums, with your SA compounded at the ${pct(R.saPct,1)} floor and no contributions, the gap is ${money(gapNow,0)} for ${R.sumsYear} and ${money(gapThen,0)} for ${last} — ${widening?'widening':'narrowing'}. It could only reopen if the Full Retirement Sum overtook your Special Account${A&&!past55?`, and it shuts permanently on ${esc(dayLabel(A.date55))} when the Special Account itself is closed`:''}. ${R.frsByYear[last+1]==null?`Beyond ${last} the sums are unpublished, so Fortress stops there.`:''}`,
+          widening ? 'reopens only if the FRS catches up \u2014 it is not' : 'reopens only if the FRS catches up'); })(),
       source:R.saTopUpCapSource });
   }
 
@@ -3361,6 +3403,8 @@ function cpfBefore55(){
         ? `${money(room,2)} still fits, earning ${pct(R.maPct,1)}.`
         : `Full — MediSave sits exactly at the ${R.bhsYear} Basic Healthcare Sum. The <b>only</b> thing that reopens this before 55 is the January raise: the BHS went ${money(R.prevBhs,0)} to ${money(R.bhs,0)} for ${R.bhsYear}, a rise of ${money(R.bhs-R.prevBhs,0)} (${pct((R.bhs/R.prevBhs-1)*100,2)}). <b>CPF has not published the ${R.bhsYear+1} figure</b>, so Fortress states the last rise and refuses to forecast the next one.`,
       action: room > 0.005 ? 'Contribute before year end.' : `Re-check in January ${R.bhsYear+1}, when CPF announces the new BHS.`,
+      when: whenBadge('annual', `${R.bhsYear+1}-01-01`,
+        `<b>Reopens every January</b>, by however much CPF raises the Basic Healthcare Sum — next on 1 Jan ${R.bhsYear+1}, in ${fmt(daysUntil(`${R.bhsYear+1}-01-01`),0)} days. The ${R.bhsYear+1} figure is <b>not published</b>, so Fortress cannot say how much room that will be; the last raise was ${money(R.bhs-R.prevBhs,0)}. The yearly reopening itself stops at 65${A?`, in ${A.year65}`:''}, when your BHS is fixed for life.`),
       source:R.bhsSource });
   }
 
@@ -3371,6 +3415,15 @@ function cpfBefore55(){
       ? `Already maxed out. You are ${money(combined - R.extraBelow55.onFirst,0)} past the threshold, so you collect the full <b>${money(K.extra.earned,2)} a year</b> of extra interest and <b>not one dollar more, whatever you do</b>. Every further dollar you put into CPF before 55 earns the base rate only — ${pct(R.oaPct,1)} in the OA, ${pct(R.saPct,1)} in the SA. This is the single most important thing to understand before topping anything up.`
       : `${money(K.extra.headroom,2)} of the extra-interest band is still unused.`,
     action: K.extra.saturated ? 'Nothing to do — but price every other lever at the base rate, not the headline rate.' : 'Filling the band is the highest-return CPF move available.',
+    when: (()=>{ /* the one place on this card where doing nothing makes you money: the
+                    extra-interest tiers get BETTER at 55, automatically. */
+      const after = cpfYearInterest(oa, sa, ma, true).extra;
+      const gain = after - K.extra.earned;
+      return whenBadge(gain>0 && A && !past55 ? 'changes' : 'permanent', A?A.date55:null,
+        A && !past55
+          ? `<b>Cannot be increased by anything you do — but it improves on its own at 55.</b> The band changes from ${pct(R.extraBelow55.pct,0)} on the first ${money(R.extraBelow55.onFirst,0)} to ${pct(R.extraFrom55.tiers[0].pct,0)} on the first ${money(R.extraFrom55.tiers[0].upTo,0)} and ${pct(R.extraFrom55.tiers[1].pct,0)} on the next ${money(R.extraFrom55.tiers[1].upTo - R.extraFrom55.tiers[0].upTo,0)}. On today's balances that takes you from <b>${money(K.extra.earned,2)}</b> to <b>${money(after,2)}</b> a year — ${money(gain,2)} more, on ${esc(dayLabel(A.date55))}, with nothing to do.`
+          : `Fixed until the rules themselves change.`,
+        gain>0 && A && !past55 ? `improves by ${money(gain,0)}/yr at 55` : undefined); })(),
     source:R.extraSource });
 
   /* 5 — the CPF Annual Limit: genuinely unknown, because Fortress has no payslip */
@@ -3381,6 +3434,8 @@ function cpfBefore55(){
         + (con ? ` The CPF ledger it does hold shows ${fmt(con.count,0)} contribution rows, the most recent dated ${esc(con.date)} at ${money(con.total,2)} and a median month of ${money(con.median,2)} — but a ledger extract is not a year-to-date total, and Fortress will not treat it as one.`
                : ` Its CPF ledger holds no contribution rows at all.`),
       action:'Read the year-to-date contribution figure off your CPF statement and subtract it from '+money(R.annualLimit,0)+'.',
+      when: whenBadge('needs', null,
+        `<b>No date is blocking this one — a number is.</b> It is resolvable the moment you give Fortress your year-to-date mandatory contributions. Separately, the limit itself resets every 1 January, so any headroom you do not use in ${R.annualLimitYear} is gone rather than carried forward.`),
       source:R.annualLimitSource });
   }
 
@@ -3398,6 +3453,8 @@ function cpfBefore55(){
         + (F.published ? '' : ` Your cohort's ${A.year55} sum is <b>not published</b>, so that excess is an upper bound: a higher sum would shelter more of it in the Retirement Account.`)
         + ` <b>There is no defence.</b> The "SA shielding" workaround people used to describe was removed with the account itself; a bigger SA today simply means a bigger balance stepping down on your birthday.`,
       action:`Nothing can stop it. It is priced here so the ${pct(R.saPct,1)} on your SA is not mistaken for a rate you keep.`,
+      when: whenBadge('fires', A.date55,
+        `<b>Fires once, on ${esc(dayLabel(A.date55))} — ${fmt(A.days55,0)} days — and is permanent after that.</b> This is the only row on the card that is a deadline rather than an opportunity: nothing opens or closes, an event happens to you.`),
       source:R.saClosure.source });
   }
 
@@ -3424,6 +3481,9 @@ function cpfBefore55(){
           + (rent>0 ? ` Fortress does hold one piece of the picture: rent of ${money(rent,0)} a month, ${money(rent*12,0)} a year gross, which is Singapore-source. What it does not hold is the deductible expenses against it, your tax residency, or your marginal rate — so it states the gross figure and refuses to compute a tax saving from it.` : '')
           + ` Your withdrawal age is separately locked at ${S.lockedAge} — see the Retire tab.`,
         action:`Two things to settle before 31 December ${S.capYear}: confirm with IRAS or your tax adviser that you can actually claim the relief, and only then decide the amount. Contributing without the relief locks money up for no tax benefit.`,
+        when: (()=>{ const end = `${S.capYear}-12-31`, d = daysUntil(end);
+          return whenBadge('deadline', end,
+            `<b>This year's allowance closes on 31 Dec ${S.capYear} — ${fmt(d,0)} days — and does not carry forward.</b> A fresh allowance opens on 1 Jan ${S.capYear+1} at whatever cap then applies; Fortress does not assume it stays ${money(S.yearCap,0)}. The scheme itself does not close at 55: contributions run until you make your first withdrawal, which for you is from age ${S.lockedAge}.`); })(),
         source:SR.source });
     }
   }
@@ -3441,12 +3501,20 @@ function cpfBefore55(){
         + ` One thing worth knowing before you get there: an ERS top-up above the Full Retirement Sum carries <b>no tax relief</b> — <em>&ldquo;${esc(R.reliefCeilingQuote)}&rdquo;</em>`
         + `<br><br><b>The one thing you can do now that changes it:</b> the ERS transfer at 55 is funded out of whatever is sitting in your Ordinary Account on the day. The voluntary housing refund above is the only lever on this card that increases that balance — so it is the indirect route to a bigger ERS transfer, not a direct one.`,
       action:`Nothing to do until ${esc(dayLabel(A.date55))}. The sizing lives on the Retire tab, which models the transfer against your projected OA.`,
+      when: whenBadge('opens', A.date55,
+        `<b>Not closed forever — not yet.</b> It opens on ${esc(dayLabel(A.date55))}, in ${fmt(A.days55,0)} days, when the Retirement Account is created. From then it stays open for life, and the ceiling rises each year with that year's Full Retirement Sum.`),
       source:R.ersRuleSource });
   }
 
   const open = out.filter(l=>l.open && !l.unknown);
   const unknown = out.filter(l=>l.unknown);
+  /* the timing rollup: which rows have a date on them at all, and which is the nearest */
+  const dated = out.filter(l=>l.when && l.when.date).sort((a,b)=>a.when.days-b.when.days);
   return { levers:out, open, unknown, closed: out.filter(l=>!l.open && !l.unknown),
+           dated, nextDate: dated.length? dated[0] : null,
+           deadlines: out.filter(l=>l.when && l.when.kind==='deadline'),
+           opensLater: out.filter(l=>l.when && l.when.kind==='opens' && l.when.date),
+           permanent: out.filter(l=>l.when && (l.when.kind==='permanent'||l.when.kind==='anytime')),
            A, past55, combined, K, checkedOn:R.checkedOn };
 }
 
@@ -3573,13 +3641,15 @@ function viewCpf(){
 
   ${(()=>{ const B=cpfBefore55(); if(!B) return '';
     const hdr = B.past55 ? 'these tests are kept for the record; you have passed 55'
-      : `${B.open.length} of ${B.levers.length} open${B.unknown.length?` &middot; ${B.unknown.length} needs a fact Fortress lacks`:''}`;
+      : `${B.open.length} of ${B.levers.length} open${B.unknown.length?` &middot; ${B.unknown.length} needs a fact`:''}${B.dated.length?` &middot; ${B.dated.length} dated`:''}`;
     return `<div class="card">
     <h2>Maximise before 55 &mdash; CPF and SRS<span class="pill">${hdr}</span></h2>
     <p class="note" style="margin-top:0">Everything here is testable <b>before</b> your 55th birthday${B.A?` — ${fmt(B.A.days55,0)} days, to ${esc(dayLabel(B.A.date55))}`:''}. SRS sits on this card because it is not CPF but it <em>is</em> a before-55 lever, and the only tax-relief route still open to you; the ERS sits here because it is the opposite — a thing people expect to find on a list like this, which turns out not to be available until 55 at all. The sizing of the at-55 levers (the Retirement Account split, the property pledge, the ERS transfer, CPF LIFE) lives on the Retire tab. Each test below is recomputed on every render against your own balances; a "closed" is arithmetic, not an opinion.</p>
+    <p class="note" style="margin-top:0"><b>Open and closed are verdicts for today, so every row also says when that changes.</b> ${B.nextDate?`The nearest date is <b>${esc(B.nextDate.name.replace(/ —.*$/,''))}</b>, ${B.nextDate.when.kind==='deadline'?'closing':'due'} in <b>${fmt(B.nextDate.when.days,0)} days</b> on ${esc(dayLabel(B.nextDate.when.date))}.`:''} ${B.permanent.length?`${B.permanent.length} row${B.permanent.length>1?'s carry':' carries'} no date at all — ${B.permanent.length>1?'they hold':'it holds'} until the rules themselves change.`:''}</p>
     ${B.levers.map(x=>`
-    <div class="kv"><span class="k">${esc(x.name)}</span><span class="v ${x.open?'pos':''}" style="font-size:12px">${x.unknown?'needs a fact Fortress lacks':x.open?'OPEN':'closed'}</span></div>
+    <div class="kv" style="align-items:flex-start"><span class="k">${esc(x.name)}${x.when?`<br><span style="font-size:10.5px;opacity:.72">${x.when.chip}</span>`:''}</span><span class="v ${x.open?'pos':''}" style="font-size:12px;text-align:right">${x.unknown?'needs a fact Fortress lacks':x.open?'OPEN':'closed'}${x.when&&x.when.date?`<br><span class="k" style="font-size:10.5px;font-weight:400">${esc(dayLabel(x.when.date))}</span>`:''}</span></div>
     <p class="note" style="margin:2px 0 4px"><b>Test:</b> ${esc(x.test)}</p>
+    ${x.when?`<p class="note" style="margin:0 0 4px"><b>When this changes:</b> ${x.when.label}</p>`:''}
     <p class="note" style="margin:0 0 4px">${x.detail}</p>
     <p class="note" style="margin:0 0 12px"><b>Action:</b> ${esc(x.action)}${x.quote?`<br><span style="font-size:10.5px">CPF's words: &ldquo;${esc(x.quote)}&rdquo;</span>`:''}<br><span style="font-size:10.5px">Source: ${esc(x.source||'')}</span></p>`).join('')}
     <p class="note"><b>The honest summary.</b> ${B.open.length===0

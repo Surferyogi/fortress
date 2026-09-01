@@ -163,16 +163,52 @@ balances on every render. It is deliberately separate from the Retire tab's `ret
 which answers "at and after 55"; the card says so and points there rather than repeating it.
 Each lever prints the arithmetic that opened or closed it:
 
-| Lever | Result | The arithmetic |
-| --- | --- | --- |
-| Voluntary housing refund | **open** | up to the $502,500.00 principal drawn; $3,140.64 accrued so far, growing $1,046.88/month |
-| SRS — this year's allowance | **open** | $15,300 cap for 2026 − $1.00 used = **$15,299.00** |
-| Put more into the Special Account | closed | $220,400 − $310,602.02 = **−$90,202.02** |
-| Top up MediSave to the BHS | closed | $79,000 − $79,000.00 = **$0.00** |
-| Extra interest on the first $60,000 | closed | combined balances $466,040.26 — saturated at $600.00/yr |
-| CPF Annual Limit headroom | **unknown** | $37,740 less mandatory contributions, which Fortress does not hold |
-| The 4% clock on the Special Account | closed | $82,402.02 excess × 1.5pp = **$1,236.03/yr, permanently** |
-| Top up to the Enhanced Retirement Sum | closed | age 55 only; he is 53, and no RA exists until 27 Aug 2028 |
+| Lever | Result | When that changes | The arithmetic |
+| --- | --- | --- | --- |
+| Voluntary housing refund | **open** | no deadline | up to the $502,500.00 principal drawn; $3,140.64 accrued so far, growing $1,046.88/month |
+| SRS — this year's allowance | **open** | closes in 121 days (31 Dec 2026) | $15,300 cap for 2026 − $1.00 used = **$15,299.00** |
+| Put more into the Special Account | closed | reopens only if the FRS catches up — it is not | $220,400 − $310,602.02 = **−$90,202.02** |
+| Top up MediSave to the BHS | closed | resets yearly (1 Jan 2027, 122 days) | $79,000 − $79,000.00 = **$0.00** |
+| Extra interest on the first $60,000 | closed | improves by $300/yr at 55 | combined balances $466,040.26 — saturated at $600.00/yr |
+| CPF Annual Limit headroom | **unknown** | no date — needs a number | $37,740 less mandatory contributions, which Fortress does not hold |
+| The 4% clock on the Special Account | closed | happens in 726 days (27 Aug 2028) | $82,402.02 excess × 1.5pp = **$1,236.03/yr, permanently** |
+| Top up to the Enhanced Retirement Sum | closed | opens in 726 days (27 Aug 2028) | age 55 only; he is 53, and no RA exists until 27 Aug 2028 |
+
+### Open and closed are verdicts for today
+
+A binary verdict answers "can I do this now" and silently implies "and that is the whole
+story", which is false for six of the eight rows. Every lever therefore carries a **when**
+alongside its verdict, shown on the collapsed row so it is read at the same moment as the
+OPEN/closed: a chip under the lever name, and the date itself beside the verdict. The card
+header counts them (*"2 of 8 open · 1 needs a fact · 5 dated"*) and names the nearest date
+in the lead paragraph.
+
+Six kinds, and the distinction between two of them is the point:
+
+- **deadline** — open now, closes on a date (SRS, 31 Dec 2026)
+- **opens** — closed now, opens on a *known* date (the ERS, 27 Aug 2028)
+- **conditional** — closed now, and reopening depends on a condition, not a date
+- **annual** — resets every year (MediSave, each January)
+- **changes** — stays, but its terms move on a date (extra interest, at 55)
+- **fires** / **anytime** / **needs** — a dated event; no deadline at all; blocked by a
+  missing number rather than by time
+
+`whenBadge()` **structurally refuses** a dateless `opens` and downgrades it to
+`conditional`, because "opens later" implies a queue the lever may not be in. The SA row is
+the case that forced this: it was first written as `opens`, which quietly promised a
+reopening Fortress cannot promise. It is conditional, and the chip names both the condition
+and its direction — *"reopens only if the FRS catches up — it is not"* — backed by
+arithmetic on published figures only: his SA compounded at the 4% floor with no
+contributions against CPF's announced sums gives a gap of **$90,202 for 2026 and $94,826
+for 2027, widening**. Beyond 2027 the sums are unpublished and the row stops there rather
+than extrapolating. It also notes the hard stop: the route shuts permanently on 27 Aug 2028
+when the Special Account is closed.
+
+Adding the timing surfaced something the card had missed entirely: **extra interest gets
+better at 55 with no action at all.** Below 55 it is +1% on the first $60,000 = $600.00/yr.
+From 55 it becomes +2% on the first $30,000 and +1% on the next $30,000 = $900.00/yr on the
+same balances. The one row on the card where doing nothing pays, and it had been described
+only as a saturated ceiling.
 
 The card is titled **CPF and SRS**, not CPF alone, and says why: SRS is not CPF but *is* a
 before-55 lever — the only tax-relief route still open to him — while the ERS is the
@@ -237,7 +273,7 @@ The Annual Limit lever is marked **unknown**, not closed and not estimated. Fort
 CPF ledger rows but a ledger extract is not a year-to-date total, and the card refuses to
 treat it as one. It appears as a declared gap at the bottom of the CPF tab.
 
-`maxtest.js` (94 assertions) covers all of this: every figure, every lever verdict, the
+`maxtest.js` (130 assertions) covers all of this: every figure, every lever verdict, the
 verbatim CPF quotes, plain-English collapse behaviour, no horizontal overflow at 360px, and
 a surgical check that `cpfPlan()`, `retireAt55()`, `retireLevers()` and the seed version are
 all untouched. One assertion in it was written wrong first — it claimed three of the seven
