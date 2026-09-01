@@ -166,13 +166,20 @@ Each lever prints the arithmetic that opened or closed it:
 | Lever | Result | The arithmetic |
 | --- | --- | --- |
 | Voluntary housing refund | **open** | up to the $502,500.00 principal drawn; $3,140.64 accrued so far, growing $1,046.88/month |
+| SRS — this year's allowance | **open** | $15,300 cap for 2026 − $1.00 used = **$15,299.00** |
 | Put more into the Special Account | closed | $220,400 − $310,602.02 = **−$90,202.02** |
 | Top up MediSave to the BHS | closed | $79,000 − $79,000.00 = **$0.00** |
 | Extra interest on the first $60,000 | closed | combined balances $466,040.26 — saturated at $600.00/yr |
 | CPF Annual Limit headroom | **unknown** | $37,740 less mandatory contributions, which Fortress does not hold |
 | The 4% clock on the Special Account | closed | $82,402.02 excess × 1.5pp = **$1,236.03/yr, permanently** |
+| Top up to the Enhanced Retirement Sum | closed | age 55 only; he is 53, and no RA exists until 27 Aug 2028 |
 
-Three of those deserve a note.
+The card is titled **CPF and SRS**, not CPF alone, and says why: SRS is not CPF but *is* a
+before-55 lever — the only tax-relief route still open to him — while the ERS is the
+opposite, the thing people expect to find on a list like this which turns out not to exist
+before 55. Leaving either off would have been the bigger error.
+
+Five of those deserve a note.
 
 **The housing refund is the only open route, and it is priced against its real alternative.**
 Cash put back into CPF earns the OA rate of 2.5%; the same cash used to prepay the mortgage
@@ -197,11 +204,40 @@ account itself — a bigger SA today simply means a bigger balance stepping down
 prices the step rather than implying something can be done about it, and flags that the
 unpublished 2028 sum makes $82,402.02 an *upper* bound on the excess.
 
+**SRS separates the room from the value, and refuses to conflate them.** The room is
+arithmetic: $15,299.00 left of the 2026 cap, gone on 31 December, no carry-forward (MOF's
+wording quoted). Whether the *relief* is worth anything is a different question, and it
+turns on Singapore tax residency and on having Singapore assessable income. **Fortress could
+not verify IRAS's rule on personal reliefs for non-residents from a primary source in this
+session, and so asserts nothing about it** — the lever says exactly that. It does state the
+one piece it holds: rent of $5,800/month, $69,600/year gross, Singapore-source. It does not
+hold the deductible expenses, his residency status, or his marginal rate, so it prints the
+gross figure and refuses to derive a tax saving. The action is ordered accordingly: confirm
+eligibility with IRAS or a tax adviser *first*, decide the amount second — contributing
+without the relief locks money up for no tax benefit.
+
+**The ERS is not a before-55 lever, and the card says so rather than quietly omitting it.**
+CPF's definition is the whole answer: *"ERS is double the current year's FRS and is the
+maximum amount you can top up to your RA if you are aged 55 and above."* The Retirement
+Account does not exist until 27 Aug 2028, so there is nothing to top up; the before-55
+ceiling is the FRS instead, and that is shut too by $90,202.02. For scale the ERS would be
+$456,400 on the last published figures — flagged as **not fixed by cohort**, since it moves
+with each year's current FRS. An ERS top-up above the FRS also carries **no tax relief**:
+*"Tax relief is only granted up to the current year's FRS."* The card closes with the one
+real connection between the two open levers — the ERS transfer at 55 is funded out of
+whatever sits in the OA on the day, and the housing refund is the only thing on the card
+that increases it.
+
+While adding this, the ERS derivation was changed from `BRS × 4` to `FRS × 2`, which is how
+CPF itself states it. The number is identical ($456,400) because FRS = 2 × BRS; `maxtest.js`
+now pins both derivations to each other so a future divergence fails loudly instead of the
+app silently showing a figure from the wrong rule.
+
 The Annual Limit lever is marked **unknown**, not closed and not estimated. Fortress holds
 CPF ledger rows but a ledger extract is not a year-to-date total, and the card refuses to
 treat it as one. It appears as a declared gap at the bottom of the CPF tab.
 
-`maxtest.js` (74 assertions) covers all of this: every figure, every lever verdict, the
+`maxtest.js` (94 assertions) covers all of this: every figure, every lever verdict, the
 verbatim CPF quotes, plain-English collapse behaviour, no horizontal overflow at 360px, and
 a surgical check that `cpfPlan()`, `retireAt55()`, `retireLevers()` and the seed version are
 all untouched. One assertion in it was written wrong first — it claimed three of the seven

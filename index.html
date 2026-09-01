@@ -141,7 +141,7 @@ details.gap[open]>summary::after{content:'  \2212'}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:SEP:01-12:45';
+const VERSION = 'v2026:SEP:01-14:10';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -426,8 +426,18 @@ const CPF_RULES = {
     quoteLock:'If you are currently aged 55 and below, you will not be able to withdraw the refunded amount credited to your CPF accounts in cash until you meet the CPF withdrawal conditions from age 55.',
     quoteAccrual:'By making a VHR early, you reduce the accrued interest that is being built up.' },
 
+  /* ERS, in CPF's own words. The arithmetic is unchanged (FRS = 2x BRS, so 2x FRS = 4x BRS)
+     but CPF frames it off the CURRENT year's FRS, and that framing is the one that makes
+     the "it is not fixed by your cohort" part obvious. Verified 1 Sep 2026. */
+  ersFromAge:55,
+  ersRuleText:'ERS is double the current year\u2019s FRS and is the maximum amount you can top up to your RA if you are aged 55 and above',
+  ersRuleSource:'CPF Board, "What are the retirement sums \u2014 Basic Retirement Sum (BRS), Full Retirement Sum (FRS) and Enhanced Retirement Sum (ERS)"',
+  reliefCeiling:'the current year\u2019s FRS',
+  reliefCeilingQuote:'Tax relief is only granted up to the current year\u2019s FRS.',
+  reliefCeilingSource:'CPF Board, "How much tax relief can I enjoy when I make cash top-ups?"',
+
   checkedOn:'2026-09-01',
-  checkedNote:'Rates, BHS, FRS series, Annual Limit, relief caps and the voluntary-housing-refund rules were all re-read from cpf.gov.sg and iras.gov.sg on this date.'
+  checkedNote:'Rates, BHS, FRS series, Annual Limit, relief caps, the ERS definition, the relief ceiling and the voluntary-housing-refund rules were all re-read from cpf.gov.sg, iras.gov.sg and mof.gov.sg on this date.'
 };
 
 /* recurring income — seeded from the GIRO credits in CK's UOB statements */
@@ -825,6 +835,22 @@ function cpfYearInterest(oa, sa, ma, from55){
    than guessed either way. */
 /* CK's SRS account, transcribed from the DBS SRS account screen of 28 Aug 2026, 16:15.
    The first-contribution DATE is the load-bearing fact here, not the balance. */
+/* SRS eligibility, from MOF's own page — re-read 1 Sep 2026. Kept next to the account
+   seed so the rule and the balance it is tested against never drift apart. */
+const SRS_RULES = {
+  minAge:18, maxAge:null,
+  eligibility:['A Singapore Citizen, Permanent Resident, or foreigner','At least 18 years old',
+               'Not an undischarged bankrupt','Able to manage your own affairs'],
+  capCitizen:15300, capForeigner:35700,
+  deadline:'31 December each year',
+  cadenceQuote:'contribute to your SRS anytime and as often as you like by 31 December each year, up to the annual contribution cap',
+  source:'Ministry of Finance, "Supplementary Retirement Scheme"',
+  /* The one thing that decides whether the RELIEF is worth anything, and the one thing
+     Fortress could not verify from a primary source. It is declared, not guessed. */
+  residencyUnknown:'Whether the relief can be claimed at all turns on Singapore tax residency and on having Singapore assessable income. Fortress could not verify IRAS\u2019s rule on personal reliefs for non-residents from a primary source, and will not assert one.',
+  checkedOn:'2026-09-01'
+};
+
 const SRS_SEED = {
   bank:'DBS', account:'0120-362854-5-223',
   firstContribution:'2026-06-29', totalContributed:1.00, cashBalance:1.00, invested:0,
@@ -1964,7 +1990,10 @@ function retireAt55(){
   const A = cpfAge(), c = latestCpf(); if(!A || !c) return null;
   const R = RETIRE_RULES;
   const F = frsFor(A.year55), B = brsFor(A.year55);
-  const ersRule = B.value * 4;                    // from 2025 the ERS is 4x the BRS
+  /* CPF's own definition: "ERS is double the current year's FRS". Arithmetically the
+     same as 4x the BRS (FRS = 2x BRS), but stated the way CPF states it. maxtest pins
+     the two derivations together so this can never drift into a silent change. */
+  const ersRule = F.value * 2;
   const oa = c.oa||0, sa = c.sa||0;
 
   /* (a) what the split would look like on TODAY's balances - no growth assumed */
@@ -3372,6 +3401,49 @@ function cpfBefore55(){
       source:R.saClosure.source });
   }
 
+  /* 7 — SRS. Not CPF, but it is the only tax-relief route still open to him before 55,
+         and leaving it off a "what can I do before 55" card would be the bigger error.
+         Room and value are judged SEPARATELY: the room is arithmetic, the value depends
+         on a tax fact Fortress does not hold and could not verify. */
+  if(!past55){
+    const S = (typeof srsPosition==='function') ? srsPosition() : null;
+    const SR = SRS_RULES;
+    const rent = (typeof monthlyIncome==='function') ? monthlyIncome() : 0;
+    if(!S){
+      push({ id:'srs', name:'Supplementary Retirement Scheme — this year’s allowance', open:true, unknown:true,
+        test:'Fortress holds no SRS account for you',
+        detail:`Contributions are open from age ${SR.minAge} with no upper age limit, so this is available to you now. Up to ${money(SR.capCitizen,0)} a year for a citizen or PR.`,
+        action:'Tell Fortress whether an account exists and when it was first funded.', source:SR.source });
+    } else {
+      const room = S.headroom;
+      push({ id:'srs', name:'Supplementary Retirement Scheme — this year’s allowance', open: room>0,
+        test:`${money(S.yearCap,0)} cap for ${S.capYear} less ${money(S.usedThisYear,2)} used = ${money(room,2)}`,
+        detail:`<b>This is the only tax-relief route still open to you before 55.</b> The CPF ones are shut: your SA is past the Full Retirement Sum and MediSave is at the Basic Healthcare Sum. SRS has no upper age limit — CPF’s ${SR.minAge}-and-over test is the only age condition — so unlike the Retirement Account it is available to you <em>today</em>, not from ${A?dayLabel(A.date55):'55'}.`
+          + ` You have <b>${money(room,2)}</b> of ${S.capYear} room and it does <b>not</b> carry forward: <em>&ldquo;${esc(SR.cadenceQuote)}&rdquo;</em> Unused room is gone on ${esc(SR.deadline.replace(' each year',' '+S.capYear))}.`
+          + ` <b>But the room being open is not the same as the relief being worth anything.</b> ${esc(SR.residencyUnknown)}`
+          + (rent>0 ? ` Fortress does hold one piece of the picture: rent of ${money(rent,0)} a month, ${money(rent*12,0)} a year gross, which is Singapore-source. What it does not hold is the deductible expenses against it, your tax residency, or your marginal rate — so it states the gross figure and refuses to compute a tax saving from it.` : '')
+          + ` Your withdrawal age is separately locked at ${S.lockedAge} — see the Retire tab.`,
+        action:`Two things to settle before 31 December ${S.capYear}: confirm with IRAS or your tax adviser that you can actually claim the relief, and only then decide the amount. Contributing without the relief locks money up for no tax benefit.`,
+        source:SR.source });
+    }
+  }
+
+  /* 8 — ERS. Asked about, and the honest answer is that it is not a before-55 lever at all.
+         Listed so the answer is on the page rather than only in a conversation. */
+  if(!past55 && A){
+    const Rt = (typeof retireAt55==='function') ? retireAt55() : null;
+    const F = frsFor(A.year55);
+    push({ id:'ers-before55', name:'Top up to the Enhanced Retirement Sum', open:false,
+      test:`the ERS applies from age ${R.ersFromAge} only; you are ${A.age}, and there is no Retirement Account to top up until ${esc(dayLabel(A.date55))}`,
+      detail:`<b>Not available before 55, and not partly available.</b> CPF’s definition is the answer: <em>&ldquo;${esc(R.ersRuleText)}&rdquo;</em> The Retirement Account it tops up does not exist until your 55th birthday, so there is nothing to top up.`
+        + ` Before 55 the ceiling on the Special Account is the Full Retirement Sum instead — and that is shut for you too, by ${money(sa - R.frs,2)}.`
+        + (Rt ? ` For scale, on the last published figures the ERS would be <b>${money(Rt.ersRule,0)}</b> — double the ${CPF_RULES.frsLastPublished} FRS. It is <b>not fixed by your cohort</b>: it moves with each year’s current FRS, so your own number will be higher and Fortress does not forecast it.` : '')
+        + ` One thing worth knowing before you get there: an ERS top-up above the Full Retirement Sum carries <b>no tax relief</b> — <em>&ldquo;${esc(R.reliefCeilingQuote)}&rdquo;</em>`
+        + `<br><br><b>The one thing you can do now that changes it:</b> the ERS transfer at 55 is funded out of whatever is sitting in your Ordinary Account on the day. The voluntary housing refund above is the only lever on this card that increases that balance — so it is the indirect route to a bigger ERS transfer, not a direct one.`,
+      action:`Nothing to do until ${esc(dayLabel(A.date55))}. The sizing lives on the Retire tab, which models the transfer against your projected OA.`,
+      source:R.ersRuleSource });
+  }
+
   const open = out.filter(l=>l.open && !l.unknown);
   const unknown = out.filter(l=>l.unknown);
   return { levers:out, open, unknown, closed: out.filter(l=>!l.open && !l.unknown),
@@ -3503,8 +3575,8 @@ function viewCpf(){
     const hdr = B.past55 ? 'these tests are kept for the record; you have passed 55'
       : `${B.open.length} of ${B.levers.length} open${B.unknown.length?` &middot; ${B.unknown.length} needs a fact Fortress lacks`:''}`;
     return `<div class="card">
-    <h2>Maximise your CPF before 55<span class="pill">${hdr}</span></h2>
-    <p class="note" style="margin-top:0">Everything here is <b>before</b> your 55th birthday${B.A?` — ${fmt(B.A.days55,0)} days, to ${esc(dayLabel(B.A.date55))}`:''}. The levers that open <em>at</em> 55 and after (the Retirement Account, the property pledge, the ERS, CPF LIFE) live on the Retire tab and are not repeated here. Each test below is recomputed on every render against your own balances; a "closed" is arithmetic, not an opinion.</p>
+    <h2>Maximise before 55 &mdash; CPF and SRS<span class="pill">${hdr}</span></h2>
+    <p class="note" style="margin-top:0">Everything here is testable <b>before</b> your 55th birthday${B.A?` — ${fmt(B.A.days55,0)} days, to ${esc(dayLabel(B.A.date55))}`:''}. SRS sits on this card because it is not CPF but it <em>is</em> a before-55 lever, and the only tax-relief route still open to you; the ERS sits here because it is the opposite — a thing people expect to find on a list like this, which turns out not to be available until 55 at all. The sizing of the at-55 levers (the Retirement Account split, the property pledge, the ERS transfer, CPF LIFE) lives on the Retire tab. Each test below is recomputed on every render against your own balances; a "closed" is arithmetic, not an opinion.</p>
     ${B.levers.map(x=>`
     <div class="kv"><span class="k">${esc(x.name)}</span><span class="v ${x.open?'pos':''}" style="font-size:12px">${x.unknown?'needs a fact Fortress lacks':x.open?'OPEN':'closed'}</span></div>
     <p class="note" style="margin:2px 0 4px"><b>Test:</b> ${esc(x.test)}</p>
@@ -4391,8 +4463,8 @@ function plainSummary(tab){
           return `<b>Four numbers rule your CPF</b>, and they are listed at the top of this page: the <b>Full Retirement Sum</b> (${M(K.frs.value)}) is how much gets locked away at 55; the <b>Basic Healthcare Sum</b> (${M(K.bhs.value)}) is the most MediSave may hold; and the two interest rates are <b>${pct(K.oa.pct,1)}</b> and <b>${pct(K.sa.pct,1)}</b>.`; })(),
         (()=>{ const B=(typeof cpfBefore55==='function')?cpfBefore55():null; if(!B||B.past55) return null;
           return B.open.length
-            ? `<b>Before 55 there ${B.open.length===1?'is one thing':'are '+B.open.length+' things'} you can still do</b> to put more into CPF: ${B.open.map(x=>x.name.toLowerCase()).join(', ')}. Everything else is already at its limit.`
-            : `<b>There is nothing left to top up before 55.</b> Every CPF route Fortress can test is already at its cap.`; })(),
+            ? `<b>Before 55 there ${B.open.length===1?'is one thing':'are '+B.open.length+' things'} you can still do</b> to put more into retirement savings: ${B.open.map(x=>x.name.replace(/ —.*$/,'').toLowerCase()).join(', ')}. Every other route is already at its limit, and the Enhanced Retirement Sum cannot be touched until you are 55.`
+            : `<b>There is nothing left to top up before 55.</b> Every route Fortress can test is already at its cap.`; })(),
         (typeof cpfSaOverFrs==='function'&&cpfSaOverFrs())?`Your Special Account is already above the current Full Retirement Sum, so the usual advice to "top up your SA for the tax relief" is <b>closed to you</b>. Fortress checks this every time it loads.`:null,
         `<b>Not known:</b> the retirement sum for your year. CPF has not published it yet, so the projection uses the last published figure and is therefore a little optimistic about how much stays liquid.`
       ]:[]},
