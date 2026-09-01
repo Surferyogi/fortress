@@ -141,7 +141,7 @@ details.gap[open]>summary::after{content:'  \2212'}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:AUG:31-13:30';
+const VERSION = 'v2026:SEP:01-12:45';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -406,7 +406,28 @@ const CPF_RULES = {
   frsLastPublished:2027,
   frsSource:'CPF Board — Full Retirement Sum by year of 55th birthday',
   sumsSource:'CPF Board — retirement sums for members turning 55 in 2026: BRS $110,200, FRS $220,400, ERS $440,800',
-  checkedOn:'2026-08-23'
+
+  /* ---- rules that govern what can still be done BEFORE 55 (verified 1 Sep 2026) ---- */
+  annualLimit:37740, annualLimitYear:2026,
+  annualLimitSource:'CPF Board, "Top up Ordinary, Special and MediSave savings"',
+  annualLimitQuote:'Top-ups cannot exceed the CPF Annual Limit of $37,740, which includes your mandatory CPF contributions for the calendar year.',
+  saTopUpCapSource:'CPF Board — "you can top up your Special Account up to the current year\u2019s Full Retirement Sum (FRS)" (below 55)',
+  reliefCombinedCap:16000,
+  reliefCapSource:'IRAS, CPF Cash Top-up Relief: from YA 2023 the maximum relief is $16,000 \u2014 $8,000 for top-ups to your own SA/RA/MA and $8,000 for top-ups to family members\u2019',
+  saClosure:{ date:'2025-01-19', appliesFrom:55,
+    source:'CPF Board \u2014 "What is the closure of Special Account for members aged 55 and above about"',
+    quote:'SA savings will be transferred to your Retirement Account (RA) up to your Full Retirement Sum (FRS), where they will continue to earn the long-term interest rate.',
+    quoteRest:'Any remaining balance is transferred to the Ordinary Account, which earns the short-term interest rate and can be withdrawn on demand.',
+    belowNote:'This change does not affect members below 55.' },
+  vhr:{ toAccount:'Ordinary Account',
+    source:'CPF Board, "3 reasons why you should consider making a voluntary housing refund"',
+    quoteAccount:'While your housing refund will be mainly credited to your Ordinary Account (OA), it can also be credited to your other CPF accounts such as your Special Account (SA), Retirement Account (RA) and MediSave Account (MA).',
+    quoteMax:'You can refund any amount, up to the total CPF principal amount withdrawn for your property.',
+    quoteLock:'If you are currently aged 55 and below, you will not be able to withdraw the refunded amount credited to your CPF accounts in cash until you meet the CPF withdrawal conditions from age 55.',
+    quoteAccrual:'By making a VHR early, you reduce the accrued interest that is being built up.' },
+
+  checkedOn:'2026-09-01',
+  checkedNote:'Rates, BHS, FRS series, Annual Limit, relief caps and the voluntary-housing-refund rules were all re-read from cpf.gov.sg and iras.gov.sg on this date.'
 };
 
 /* recurring income — seeded from the GIRO credits in CK's UOB statements */
@@ -2234,6 +2255,10 @@ function gaps(){
   add('cpf','medium','Future CPF contributions are an assumption, not a fact',
     'The projection can run with or without contributions, but Fortress does not know your salary, your employer\'s rate, or how long you intend to work. The contribution figure it uses is derived from your recent ledger, not from anything you have told it.',
     'Confirm the monthly contribution and the year you expect it to stop.');
+  add('cpf','medium','Your year-to-date mandatory CPF contributions are not known',
+    'The CPF Annual Limit of '+money(R.annualLimit,0)+' is a single ceiling covering mandatory and voluntary contributions together. Without the year-to-date mandatory figure, Fortress cannot tell you how much voluntary room is left for '+R.annualLimitYear+', so the "Maximise your CPF before 55" card marks that lever unknown rather than sizing it.',
+    'Read the year-to-date contribution total off your CPF statement and subtract it from '+money(R.annualLimit,0)+'.',
+    R.annualLimitSource);
   add('cpf','medium','CPF interest rates are treated as fixed at today\'s floors',
     'OA at '+pct(R.oaPct,1)+' and SA at '+pct(R.saPct,1)+' are statutory floors, reviewed quarterly. A long projection compounds whatever rate it is given, so a change of a quarter-point moves the 55 figure materially.',
     'Re-check the rates each quarter; the CPF tab records when they were last verified ('+esc(R.checkedOn)+').',
@@ -3227,6 +3252,132 @@ function savePropertyValue(){
    one answer everywhere. This function exists because there used to be two
    projections with different settings, and the two tabs disagreed about the most
    important date in the app without either of them saying so. */
+/* ---- The four numbers CK asked to see, and his live position against each ----------
+   Nothing here is a forecast. Each figure is a published CPF number, paired with the
+   balance it is measured against, so the card can state the distance rather than a mood. */
+function cpfKeyNumbers(){
+  const c = latestCpf(); if(!c) return null;
+  const R = CPF_RULES, A = cpfAge();
+  const oa = c.oa||0, sa = c.sa||0, ma = c.ma||0;
+  const F = A ? frsFor(A.year55) : { value:R.frs, published:true };
+  const yr = cpfYearInterest(oa, sa, ma, false);
+  return {
+    asOf: c.asOf,
+    frs: { year: A ? A.year55 : R.sumsYear, value: F.value, published: F.published,
+           fallbackYear: F.fallbackYear || null, chosen: !!F.chosen,
+           yours: sa, over: sa - F.value,
+           roomToTopUp: Math.max(0, R.frs - sa),        // the top-up cap is the CURRENT year's FRS
+           currentFrs: R.frs, currentFrsYear: R.sumsYear,
+           source: R.frsSource, topUpSource: R.saTopUpCapSource },
+    bhs: { year: R.bhsYear, value: R.bhs, prev: R.prevBhs, prevYear: R.prevBhsYear,
+           rise: R.bhs - R.prevBhs, risePct: (R.bhs/R.prevBhs - 1)*100,
+           yours: ma, room: Math.max(0, R.bhs - ma), full: Math.abs(ma - R.bhs) < 0.01,
+           source: R.bhsSource },
+    oa:  { pct: R.oaPct, balance: oa, yearly: oa*R.oaPct/100, source: R.ratesSource },
+    sa:  { pct: R.saPct, balance: sa, yearly: sa*R.saPct/100, source: R.ratesSource },
+    extra: { pct: R.extraBelow55.pct, onFirst: R.extraBelow55.onFirst, oaCap: R.extraBelow55.oaCap,
+             combined: oa+sa+ma, earned: yr.extra,
+             saturated: (oa+sa+ma) >= R.extraBelow55.onFirst,
+             headroom: Math.max(0, R.extraBelow55.onFirst - (oa+sa+ma)),
+             source: R.extraSource },
+    period: R.ratesPeriod, checkedOn: R.checkedOn, checkedNote: R.checkedNote
+  };
+}
+
+/* ---- What can still be done BEFORE 55 ---------------------------------------------
+   Deliberately separate from retireLevers(), which answers "at and after 55". Every
+   lever runs its own test against CK's own balances and prints the arithmetic that
+   opened or closed it. Where Fortress does not hold an input, the lever is marked
+   unknown rather than guessed. */
+function cpfBefore55(){
+  const c = latestCpf(); if(!c) return null;
+  const R = CPF_RULES, A = cpfAge(), K = cpfKeyNumbers();
+  const oa = c.oa||0, sa = c.sa||0, ma = c.ma||0, combined = oa+sa+ma;
+  const past55 = !!(A && A.age >= 55);
+  const out = [];
+  const push = o => out.push(Object.assign({ open:false, unknown:false, source:null }, o));
+
+  /* 1 — voluntary housing refund: the one large, open, before-55 lever he actually has */
+  const hc = cpfHomeClaim();
+  if(hc){
+    const eff = effectiveLoanTerms();
+    const spread = eff.ratePct!=null ? R.oaPct - eff.ratePct : null;
+    push({ id:'vhr', name:'Voluntary housing refund', open: hc.principal > 0,
+      test:`refundable up to the CPF principal taken out for the property — ${money(hc.principal,2)}`,
+      detail:`You took <b>${money(hc.principal,2)}</b> of CPF out for the house, and CPF has already accrued <b>${money(hc.accrued,2)}</b> of interest on it, growing by <b>${money(hc.monthlyAccrual,2)} a month</b>. A refund puts cash back into your <b>Ordinary Account at ${pct(R.oaPct,1)}</b> and stops that accrual on the amount refunded.`
+        + (spread!=null ? ` The alternative use of the same cash is prepaying the mortgage, which currently costs <b>${pct(eff.ratePct,3)}</b>. The OA rate is <b>${spread>=0?'+':''}${fmt(spread,3)} percentage points</b> ${spread>=0?'above':'below'} that, so on rate alone the refund ${spread>=0?'wins':'loses'} — ${money(Math.abs(spread)/100*10000,2)} a year per $10,000 moved.` : '')
+        + ` It is not free money: <em>"${esc(R.vhr.quoteLock)}"</em>`
+        + (A && A.days55>0 ? ` For you that lock runs ${fmt(A.days55,0)} days, to ${esc(dayLabel(A.date55))}.` : '')
+        + ` And because your combined balances are ${money(combined,0)} — far above the ${money(R.extraBelow55.onFirst,0)} that earns extra interest — a refund earns the plain ${pct(R.oaPct,1)}, with <b>no extra interest on top</b>.`,
+      action:`Fortress does not know how much spare cash you hold outside DBS and CPF, so it will not size this for you. It states the rate, the lock and the accrual you would stop.`,
+      unknown:false, source:R.vhr.source, quote:R.vhr.quoteMax });
+  }
+
+  /* 2 — cash top-up / OA-to-SA transfer, both capped by the CURRENT year's FRS */
+  { const room = R.frs - sa;
+    push({ id:'sa-room', name:'Put more into the Special Account', open: room > 0,
+      test:`cap is the ${R.sumsYear} Full Retirement Sum (${money(R.frs,0)}) less your SA (${money(sa,2)}) = ${money(room,2)}`,
+      detail: room > 0
+        ? `There is ${money(room,2)} of room. Two routes share the same cap: a <b>cash top-up</b>, which carries tax relief of up to ${money(R.reliefCombinedCap/2,0)} a year, and an <b>OA-to-SA transfer</b> of money already in CPF, which carries none. Both are one-way.`
+        : `Closed, and by a wide margin — your Special Account is <b>${money(-room,2)} above</b> the ${R.sumsYear} Full Retirement Sum. Both routes share this one cap, so a cash top-up (with relief) and an OA-to-SA transfer (without) are shut together. The common advice to "top up your SA for the 4% and the tax relief" does not apply to you and will not until the FRS overtakes your SA — and your SA is compounding at ${pct(R.saPct,1)} while it tries.`,
+      action: room > 0 ? 'Top up early in the year so it earns for the full year.' : 'Nothing to do. The test re-runs on every render.',
+      source:R.saTopUpCapSource });
+  }
+
+  /* 3 — MediSave, and the January reset that is the only thing that reopens it */
+  { const room = R.bhs - ma;
+    push({ id:'ma-room', name:'Top up MediSave to the Basic Healthcare Sum', open: room > 0.005,
+      test:`${R.bhsYear} BHS (${money(R.bhs,0)}) less your MediSave (${money(ma,2)}) = ${money(room,2)}`,
+      detail: room > 0.005
+        ? `${money(room,2)} still fits, earning ${pct(R.maPct,1)}.`
+        : `Full — MediSave sits exactly at the ${R.bhsYear} Basic Healthcare Sum. The <b>only</b> thing that reopens this before 55 is the January raise: the BHS went ${money(R.prevBhs,0)} to ${money(R.bhs,0)} for ${R.bhsYear}, a rise of ${money(R.bhs-R.prevBhs,0)} (${pct((R.bhs/R.prevBhs-1)*100,2)}). <b>CPF has not published the ${R.bhsYear+1} figure</b>, so Fortress states the last rise and refuses to forecast the next one.`,
+      action: room > 0.005 ? 'Contribute before year end.' : `Re-check in January ${R.bhsYear+1}, when CPF announces the new BHS.`,
+      source:R.bhsSource });
+  }
+
+  /* 4 — extra interest: a ceiling, not a lever, and he is already through it */
+  push({ id:'extra', name:'Extra interest on the first '+money(R.extraBelow55.onFirst,0), open: !K.extra.saturated,
+    test:`extra ${pct(R.extraBelow55.pct,0)} applies to the first ${money(R.extraBelow55.onFirst,0)} of combined balances; yours are ${money(combined,2)}`,
+    detail: K.extra.saturated
+      ? `Already maxed out. You are ${money(combined - R.extraBelow55.onFirst,0)} past the threshold, so you collect the full <b>${money(K.extra.earned,2)} a year</b> of extra interest and <b>not one dollar more, whatever you do</b>. Every further dollar you put into CPF before 55 earns the base rate only — ${pct(R.oaPct,1)} in the OA, ${pct(R.saPct,1)} in the SA. This is the single most important thing to understand before topping anything up.`
+      : `${money(K.extra.headroom,2)} of the extra-interest band is still unused.`,
+    action: K.extra.saturated ? 'Nothing to do — but price every other lever at the base rate, not the headline rate.' : 'Filling the band is the highest-return CPF move available.',
+    source:R.extraSource });
+
+  /* 5 — the CPF Annual Limit: genuinely unknown, because Fortress has no payslip */
+  { const con = cpfLastContribution();
+    push({ id:'annual-limit', name:'CPF Annual Limit headroom', open:false, unknown:true,
+      test:`${money(R.annualLimit,0)} for ${R.annualLimitYear}, less your mandatory contributions this year — which Fortress does not hold`,
+      detail:`Voluntary contributions of any kind share one ceiling: <em>&ldquo;${esc(R.annualLimitQuote)}&rdquo;</em> Fortress cannot compute your headroom because it does not know your ${R.annualLimitYear} mandatory contributions.`
+        + (con ? ` The CPF ledger it does hold shows ${fmt(con.count,0)} contribution rows, the most recent dated ${esc(con.date)} at ${money(con.total,2)} and a median month of ${money(con.median,2)} — but a ledger extract is not a year-to-date total, and Fortress will not treat it as one.`
+               : ` Its CPF ledger holds no contribution rows at all.`),
+      action:'Read the year-to-date contribution figure off your CPF statement and subtract it from '+money(R.annualLimit,0)+'.',
+      source:R.annualLimitSource });
+  }
+
+  /* 6 — the 4% clock. Not a lever: a deadline, priced. */
+  if(A && !past55){
+    const Rt = (typeof retireAt55==='function') ? retireAt55() : null;
+    const F = frsFor(A.year55);
+    const projSa = Rt && Rt.ev ? Rt.ev.sa : null;      // SA at 55 on the shared projection
+    const excessNow = Math.max(0, sa - F.value);
+    const drop = (R.saPct - R.oaPct)/100;
+    push({ id:'sa-clock', name:'The 4% clock on your Special Account', open:false,
+      test:`the SA closes at 55; on ${esc(dayLabel(A.date55))} everything above the Retirement Sum moves to the OA`,
+      detail:`CPF closed the Special Account for members 55 and above on ${esc(dayLabel(R.saClosure.date))}. <em>"${esc(R.saClosure.quote)}"</em> <em>"${esc(R.saClosure.quoteRest)}"</em> ${esc(R.saClosure.belowNote)} — so nothing happens to you until ${esc(dayLabel(A.date55))}.`
+        + ` On today's balances the excess above the ${F.published?A.year55:'last published'} sum of ${money(F.value,0)} is <b>${money(excessNow,2)}</b>, and it would drop from ${pct(R.saPct,1)} to ${pct(R.oaPct,1)} — <b>${money(excessNow*drop,2)} a year, permanently</b>.`
+        + (F.published ? '' : ` Your cohort's ${A.year55} sum is <b>not published</b>, so that excess is an upper bound: a higher sum would shelter more of it in the Retirement Account.`)
+        + ` <b>There is no defence.</b> The "SA shielding" workaround people used to describe was removed with the account itself; a bigger SA today simply means a bigger balance stepping down on your birthday.`,
+      action:`Nothing can stop it. It is priced here so the ${pct(R.saPct,1)} on your SA is not mistaken for a rate you keep.`,
+      source:R.saClosure.source });
+  }
+
+  const open = out.filter(l=>l.open && !l.unknown);
+  const unknown = out.filter(l=>l.unknown);
+  return { levers:out, open, unknown, closed: out.filter(l=>!l.open && !l.unknown),
+           A, past55, combined, K, checkedOn:R.checkedOn };
+}
+
 function cpfPlan(){
   const c = latestCpf(); if(!c) return null;
   const A = cpfAge();
@@ -3312,6 +3463,26 @@ function viewCpf(){
     <div class="tile"><div class="v pos">${money(yr.total,0)}</div><div class="l">Interest in the next year</div><div class="d">${blended!=null?pct(blended,2)+' blended, no contributions assumed':''}</div></div>
   </div>
 
+  ${(()=>{ const K=cpfKeyNumbers(); if(!K) return '';
+    return `<div class="card">
+    <h2>The four numbers that govern your CPF<span class="pill">published by CPF</span></h2>
+    <table><thead><tr><th>Number</th><th class="r">Published</th><th class="r">Where you stand</th></tr></thead><tbody>
+      <tr><td><b>Full Retirement Sum</b><br><span class="k" style="font-size:11px">the sum locked into a Retirement Account at 55${K.frs.published?'':' — <b>not yet published for your cohort</b>'}</span></td>
+          <td class="r"><b>${money(K.frs.value,0)}</b><br><span class="k" style="font-size:11px">${K.frs.published?'for those turning 55 in '+K.frs.year:'showing '+K.frs.fallbackYear+', the last published year'}</span></td>
+          <td class="r">SA ${money(K.frs.yours,0)}<br><span class="${K.frs.over>=0?'pos':'neg'}" style="font-size:11px">${K.frs.over>=0?money(K.frs.over,0)+' above':money(-K.frs.over,0)+' below'}</span></td></tr>
+      <tr><td><b>Basic Healthcare Sum</b><br><span class="k" style="font-size:11px">the MediSave ceiling for ${K.bhs.year}; it rises most Januaries</span></td>
+          <td class="r"><b>${money(K.bhs.value,0)}</b><br><span class="k" style="font-size:11px">${money(K.bhs.prev,0)} in ${K.bhs.prevYear} &middot; +${money(K.bhs.rise,0)}</span></td>
+          <td class="r">MA ${money(K.bhs.yours,0)}<br><span class="${K.bhs.full?'pos':''}" style="font-size:11px">${K.bhs.full?'exactly at the cap':money(K.bhs.room,0)+' of room'}</span></td></tr>
+      <tr><td><b>Ordinary Account interest</b><br><span class="k" style="font-size:11px">statutory floor, set in the CPF Act</span></td>
+          <td class="r"><b>${pct(K.oa.pct,1)}</b> p.a.</td>
+          <td class="r">${money(K.oa.balance,0)}<br><span class="pos" style="font-size:11px">${money(K.oa.yearly,0)}/yr</span></td></tr>
+      <tr><td><b>Special Account interest</b><br><span class="k" style="font-size:11px">a floor extended year by year, currently to 31 Dec 2026</span></td>
+          <td class="r"><b>${pct(K.sa.pct,1)}</b> p.a.</td>
+          <td class="r">${money(K.sa.balance,0)}<br><span class="pos" style="font-size:11px">${money(K.sa.yearly,0)}/yr</span></td></tr>
+    </tbody></table>
+    <p class="note">Rates are the floors in force for ${esc(K.period)}. ${K.frs.published?'':`<b>Your cohort's Full Retirement Sum has not been published.</b> The figure shown is ${money(K.frs.value,0)}, the ${K.frs.fallbackYear} sum, which is the last one CPF has announced — your own will be higher, so everything downstream understates what gets locked away and overstates what stays liquid. `}The top-up cap is a different number from the sum you must set aside: topping up the SA before 55 is capped at the <b>current</b> year's FRS (${money(K.frs.currentFrs,0)} for ${K.frs.currentFrsYear}), not your cohort's.</p>
+    <p class="note">Sources: ${esc(K.oa.source)}; ${esc(K.frs.source)}; ${esc(K.bhs.source)}; ${esc(K.frs.topUpSource)}. ${esc(K.checkedNote||'')} Checked ${esc(K.checkedOn)}.</p>
+  </div>`; })()}
   ${A?`<div class="banner ${A.days55<=1095?'b-warn':''}"><span class="ic">&#9200;</span><div><b>${A.age} years old &middot; 55 on ${esc(dayLabel(A.date55))}</b>${A.days55>0?`That is <b>${fmt(A.days55,0)} days</b> — ${fmt(A.days55/365.25,1)} years. On that date the Special Account closes, ${money(frsFor(A.year55).value,0)} moves to a Retirement Account and the rest of it drops from ${pct(CPF_RULES.saPct,1)} to ${pct(CPF_RULES.oaPct,1)} in the OA. Your SA is ${money(latestCpf().sa,0)} today, so most of the excess is already built.`:'You have passed 55; the projection below uses the post-55 rules.'} MediSave's Basic Healthcare Sum stops rising for you at 65, in ${esc(String(A.year65))}.</div></div>`:''}
   ${atBhs?`<div class="banner b-good"><span class="ic">&#9679;</span><div><b>MediSave is full</b>It sits exactly at the ${R.bhsYear} Basic Healthcare Sum of ${money(R.bhs,0)}. Interest it earns, and any future contribution, overflows out of MediSave — ${(()=>{ const c=latestCpf(), over = c && c.sa > R.frs;
     return over ? `and because your Special Account is already above the Full Retirement Sum (${money(c.sa,0)} against ${money(R.frs,0)}), it goes to your <b>Ordinary Account at ${pct(R.oaPct,1)}</b>, not the Special Account at ${pct(R.saPct,1)}. <b>That is a real loss of ${pct(R.saPct-R.oaPct,1)} a year</b> on everything that overflows, and your own ledger below proves it is what happens.`
@@ -3327,6 +3498,22 @@ function viewCpf(){
     <p class="note">Extra interest is ${pct(R.extraBelow55.pct,0)} on the first ${money(R.extraBelow55.onFirst,0)} of combined balances, of which at most ${money(R.extraBelow55.oaCap,0)} may come from the OA. Below 55 it is credited to your Special Account. Rates are the floors in force for ${esc(R.ratesPeriod)}. Source: ${esc(R.ratesSource)}; ${esc(R.extraSource)}. Checked ${esc(R.checkedOn)}.</p>
     <p class="note"><b>These rates are policy, not contract.</b> The 4% floor is extended only to 31 Dec 2026 and has been extended year by year; the OA floor is 2.5% and set in the CPF Act. Fortress uses today's published floors and does not forecast changes.</p>
   </div>
+
+  ${(()=>{ const B=cpfBefore55(); if(!B) return '';
+    const hdr = B.past55 ? 'these tests are kept for the record; you have passed 55'
+      : `${B.open.length} of ${B.levers.length} open${B.unknown.length?` &middot; ${B.unknown.length} needs a fact Fortress lacks`:''}`;
+    return `<div class="card">
+    <h2>Maximise your CPF before 55<span class="pill">${hdr}</span></h2>
+    <p class="note" style="margin-top:0">Everything here is <b>before</b> your 55th birthday${B.A?` — ${fmt(B.A.days55,0)} days, to ${esc(dayLabel(B.A.date55))}`:''}. The levers that open <em>at</em> 55 and after (the Retirement Account, the property pledge, the ERS, CPF LIFE) live on the Retire tab and are not repeated here. Each test below is recomputed on every render against your own balances; a "closed" is arithmetic, not an opinion.</p>
+    ${B.levers.map(x=>`
+    <div class="kv"><span class="k">${esc(x.name)}</span><span class="v ${x.open?'pos':''}" style="font-size:12px">${x.unknown?'needs a fact Fortress lacks':x.open?'OPEN':'closed'}</span></div>
+    <p class="note" style="margin:2px 0 4px"><b>Test:</b> ${esc(x.test)}</p>
+    <p class="note" style="margin:0 0 4px">${x.detail}</p>
+    <p class="note" style="margin:0 0 12px"><b>Action:</b> ${esc(x.action)}${x.quote?`<br><span style="font-size:10.5px">CPF's words: &ldquo;${esc(x.quote)}&rdquo;</span>`:''}<br><span style="font-size:10.5px">Source: ${esc(x.source||'')}</span></p>`).join('')}
+    <p class="note"><b>The honest summary.</b> ${B.open.length===0
+      ? 'Of the routes CPF offers before 55, none that Fortress can test is open to you: the Special Account is already past the Full Retirement Sum, MediSave is exactly at the Basic Healthcare Sum, and the extra-interest band is saturated many times over.'
+      : `${B.open.length===1?'One route is':B.open.length+' routes are'} open: ${B.open.map(x=>esc(x.name)).join(', ')}.`} ${B.unknown.length?`${B.unknown.length===1?'One further route cannot be judged':B.unknown.length+' further routes cannot be judged'} until Fortress is given ${B.unknown.map(x=>esc(x.name)).join(', ')}.`:''} Nothing above is a forecast, and no figure on this card was assumed. All rules re-verified ${esc(B.checkedOn)}.</p>
+  </div>`; })()}
 
   <div class="card">
     <h2>Projection<span class="pill">${years} years, ${withC?'with contributions':'no contributions'}</span></h2>
@@ -4200,6 +4387,12 @@ function plainSummary(tab){
         `It sits in three pots: <b>${M(c.oa)}</b> Ordinary (housing and some investing), <b>${M(c.sa)}</b> Special (retirement, higher interest), <b>${M(c.ma)}</b> MediSave (healthcare).`,
         A?`At <b>55</b>, in ${A.year55}, the rules change. The Special Account closes, a set amount moves into a Retirement Account, and whatever is left over becomes money you can actually withdraw.`:null,
         `The Special Account pays ${pct(CPF_RULES.saPct,1)} and the Ordinary Account ${pct(CPF_RULES.oaPct,1)}. That gap is why where the money sits matters.`,
+        (()=>{ const K=(typeof cpfKeyNumbers==='function')?cpfKeyNumbers():null; if(!K) return null;
+          return `<b>Four numbers rule your CPF</b>, and they are listed at the top of this page: the <b>Full Retirement Sum</b> (${M(K.frs.value)}) is how much gets locked away at 55; the <b>Basic Healthcare Sum</b> (${M(K.bhs.value)}) is the most MediSave may hold; and the two interest rates are <b>${pct(K.oa.pct,1)}</b> and <b>${pct(K.sa.pct,1)}</b>.`; })(),
+        (()=>{ const B=(typeof cpfBefore55==='function')?cpfBefore55():null; if(!B||B.past55) return null;
+          return B.open.length
+            ? `<b>Before 55 there ${B.open.length===1?'is one thing':'are '+B.open.length+' things'} you can still do</b> to put more into CPF: ${B.open.map(x=>x.name.toLowerCase()).join(', ')}. Everything else is already at its limit.`
+            : `<b>There is nothing left to top up before 55.</b> Every CPF route Fortress can test is already at its cap.`; })(),
         (typeof cpfSaOverFrs==='function'&&cpfSaOverFrs())?`Your Special Account is already above the current Full Retirement Sum, so the usual advice to "top up your SA for the tax relief" is <b>closed to you</b>. Fortress checks this every time it loads.`:null,
         `<b>Not known:</b> the retirement sum for your year. CPF has not published it yet, so the projection uses the last published figure and is therefore a little optimistic about how much stays liquid.`
       ]:[]},

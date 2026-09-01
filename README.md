@@ -144,6 +144,70 @@ keeps them different.
 
 Every CPF rate, cap and sum in the app carries its source and the date it was checked.
 
+### The four numbers, and what can still be done before 55
+
+The CPF tab opens with **The four numbers that govern your CPF** — the Full Retirement Sum,
+the Basic Healthcare Sum, and the two interest rates — each paired with the balance it is
+measured against, so the card states a distance rather than a mood. All four were re-read
+from cpf.gov.sg on **1 Sep 2026**: OA 2.5%, SA/MediSave/RA 4.0% for 1 Jul – 30 Sep 2026;
+BHS $79,000 for 2026, up from $75,500; the FRS series published only to 2027 ($228,200).
+
+Two Full Retirement Sums appear on that card and they are **not the same number**. The sum
+set aside at 55 is your *cohort's* — CK turns 55 in 2028 and CPF has not published it, so
+the card shows the 2027 figure and says so in bold. The cap on *topping up* the SA before 55
+is the **current** year's FRS, $220,400 for 2026. Conflating them is the most common CPF
+error and the card separates them explicitly.
+
+Below the rates card, **Maximise your CPF before 55** runs six tests against CK's own
+balances on every render. It is deliberately separate from the Retire tab's `retireLevers()`,
+which answers "at and after 55"; the card says so and points there rather than repeating it.
+Each lever prints the arithmetic that opened or closed it:
+
+| Lever | Result | The arithmetic |
+| --- | --- | --- |
+| Voluntary housing refund | **open** | up to the $502,500.00 principal drawn; $3,140.64 accrued so far, growing $1,046.88/month |
+| Put more into the Special Account | closed | $220,400 − $310,602.02 = **−$90,202.02** |
+| Top up MediSave to the BHS | closed | $79,000 − $79,000.00 = **$0.00** |
+| Extra interest on the first $60,000 | closed | combined balances $466,040.26 — saturated at $600.00/yr |
+| CPF Annual Limit headroom | **unknown** | $37,740 less mandatory contributions, which Fortress does not hold |
+| The 4% clock on the Special Account | closed | $82,402.02 excess × 1.5pp = **$1,236.03/yr, permanently** |
+
+Three of those deserve a note.
+
+**The housing refund is the only open route, and it is priced against its real alternative.**
+Cash put back into CPF earns the OA rate of 2.5%; the same cash used to prepay the mortgage
+saves 1.13020%. The spread is +1.370 percentage points — $136.98 a year per $10,000 moved.
+Against that, the card quotes CPF verbatim on the lock ("you will not be able to withdraw the
+refunded amount … until you meet the CPF withdrawal conditions from age 55"), dates it to
+CK's own birthday (726 days, to 27 Aug 2028), and warns that because his combined balances
+are $466,040 — far past the $60,000 extra-interest band — a refund earns the plain 2.5% and
+**no extra interest**. Fortress will not size the refund: it does not know his cash position
+outside DBS and CPF, and says so instead of assuming one.
+
+**Extra interest is a ceiling he is already through.** This is the single most important
+thing on the card, because it silently reprices every other lever: he collects the full
+$600.00 a year and not one dollar more, whatever he does. Every further dollar into CPF
+before 55 earns the base rate only.
+
+**The 4% clock has no defence, and the card says so.** CPF closed the Special Account for
+members 55 and above on 19 Jan 2025; the change does not affect anyone below 55, so nothing
+happens to CK until 27 Aug 2028. On that day the excess above the retirement sum steps down
+from 4% to 2.5%. The "SA shielding" workaround people still describe was removed with the
+account itself — a bigger SA today simply means a bigger balance stepping down. The card
+prices the step rather than implying something can be done about it, and flags that the
+unpublished 2028 sum makes $82,402.02 an *upper* bound on the excess.
+
+The Annual Limit lever is marked **unknown**, not closed and not estimated. Fortress holds
+CPF ledger rows but a ledger extract is not a year-to-date total, and the card refuses to
+treat it as one. It appears as a declared gap at the bottom of the CPF tab.
+
+`maxtest.js` (74 assertions) covers all of this: every figure, every lever verdict, the
+verbatim CPF quotes, plain-English collapse behaviour, no horizontal overflow at 360px, and
+a surgical check that `cpfPlan()`, `retireAt55()`, `retireLevers()` and the seed version are
+all untouched. One assertion in it was written wrong first — it claimed three of the seven
+at-55 levers were open when only two are — and the app was right, not the author. It now
+asserts the lever ids rather than a count.
+
 ## Reminders
 
 The Overview tab carries a **Reminders** card in two halves.
