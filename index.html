@@ -141,7 +141,7 @@ details.gap[open]>summary::after{content:'  \2212'}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:SEP:01-16:05';
+const VERSION = 'v2026:SEP:01-18:40';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -396,6 +396,21 @@ const CPF_RULES = {
   bhs:79000, bhsYear:2026, prevBhs:75500, prevBhsYear:2025,
   owCeiling:8000, owCeilingYear:2026,
   owCeilingSource:'CPF Board — the Ordinary Wage ceiling reached $8,000 in 2026',
+
+  /* ---- the contribution ceilings, re-read from cpf.gov.sg on 1 Sep 2026 ---- */
+  annualSalaryCeiling:102000,
+  annualSalaryCeilingSource:'CPF Board, "Budget 2023: CPF monthly salary ceiling to be raised to $8,000 by 2026": "There is no change to the CPF annual ceiling at this point, but this will be reviewed periodically to ensure it continues to cover the broad majority of CPF members."',
+  owCeilingHistory:[
+    { from:'2023-09-01', ceiling:6300, step:300 },
+    { from:'2024-01-01', ceiling:6800, step:500 },
+    { from:'2025-01-01', ceiling:7400, step:600 },
+    { from:'2026-01-01', ceiling:8000, step:600 }],
+  owCeilingHistorySource:'CPF Board / Ministry of Finance — the monthly salary ceiling was raised in four steps from $6,000 to $8,000 between Sep 2023 and Jan 2026',
+  awCeilingFormula:'$102,000 - Total Ordinary Wage subject to CPF for the year',
+  awCeilingSource:'CPF Board, "What is the Additional Wage (AW) ceiling"',
+  contribRateTo55:37, contribEmployer:17, contribEmployee:20,
+  owMaxMonthly:2960, owMaxMonthlyEmployee:1600,
+  contribRateSource:'CPF Board, "CPF Contribution Rate Table from 1 January 2026", Table 1 (Citizens and PRs from the 3rd year): 55 and below \u2014 employer 17%, employee 20%, total 37%; OW contribution capped at "Max. of $2,960" a month',
   alloc50to55:{ oa:0.4055, sa:0.3108, ma:0.2837 },
   allocSource:'CPF Board, "CPF Allocation Rates from 1 January 2026" — above 50 to 55: OA 0.4055, SA 0.3108, MA 0.2837 of contributions',
   overflowSource:'CPF Board — MediSave above the BHS overflows to the SA below 55, but goes to the OA instead once the SA exceeds the Full Retirement Sum',
@@ -409,6 +424,9 @@ const CPF_RULES = {
 
   /* ---- rules that govern what can still be done BEFORE 55 (verified 1 Sep 2026) ---- */
   annualLimit:37740, annualLimitYear:2026,
+  /* Fortress's own observation, not a CPF definition: 37% x $102,000 = $37,740 exactly.
+     Stated as arithmetic because CPF publishes the limit as a figure, not as a formula. */
+  annualLimitIsRateTimesCeiling:true,
   annualLimitSource:'CPF Board, "Top up Ordinary, Special and MediSave savings"',
   annualLimitQuote:'Top-ups cannot exceed the CPF Annual Limit of $37,740, which includes your mandatory CPF contributions for the calendar year.',
   saTopUpCapSource:'CPF Board — "you can top up your Special Account up to the current year\u2019s Full Retirement Sum (FRS)" (below 55)',
@@ -2284,10 +2302,15 @@ function gaps(){
   add('cpf','medium','Future CPF contributions are an assumption, not a fact',
     'The projection can run with or without contributions, but Fortress does not know your salary, your employer\'s rate, or how long you intend to work. The contribution figure it uses is derived from your recent ledger, not from anything you have told it.',
     'Confirm the monthly contribution and the year you expect it to stop.');
-  add('cpf','medium','Your year-to-date mandatory CPF contributions are not known',
-    'The CPF Annual Limit of '+money(R.annualLimit,0)+' is a single ceiling covering mandatory and voluntary contributions together. Without the year-to-date mandatory figure, Fortress cannot tell you how much voluntary room is left for '+R.annualLimitYear+', so the "Maximise your CPF before 55" card marks that lever unknown rather than sizing it.',
-    'Read the year-to-date contribution total off your CPF statement and subtract it from '+money(R.annualLimit,0)+'.',
-    R.annualLimitSource);
+  { const C = (typeof cpfContributions==='function') ? cpfContributions() : null;
+    if(!C) add('cpf','medium','Your year-to-date mandatory CPF contributions are not known',
+      'The CPF Annual Limit of '+money(R.annualLimit,0)+' covers mandatory and voluntary contributions together. Without contribution rows tagged with the wage month they are for, Fortress cannot compute how much voluntary room is left.',
+      'Import the printable CPF transaction history, which carries the wage month on each contribution row.',
+      R.annualLimitSource);
+    else add('cpf','low','Contributions after '+esc(C.rows[C.rows.length-1].label)+' are a projection, not a fact',
+      'The Annual Limit position is computed from '+fmt(C.months,0)+' wage months CPF has actually posted. The remaining '+fmt(C.monthsLeft,0)+' months are carried at the Ordinary Wage ceiling because every posted month has been at it — but Fortress does not know your salary and cannot know it will stay there. A month below '+money(R.owCeiling,0)+' opens '+money(C.roomPerThousandShort,0)+' of voluntary room per '+money(1000,0)+' of shortfall.',
+      'Nothing to add — the figure self-corrects as CPF posts each month. Re-import the ledger to refresh it.',
+      R.contribRateSource); }
   add('cpf','medium','CPF interest rates are treated as fixed at today\'s floors',
     'OA at '+pct(R.oaPct,1)+' and SA at '+pct(R.saPct,1)+' are statutory floors, reviewed quarterly. A long projection compounds whatever rate it is given, so a change of a quarter-point moves the 55 figure materially.',
     'Re-check the rates each quarter; the CPF tab records when they were last verified ('+esc(R.checkedOn)+').',
@@ -3318,6 +3341,64 @@ function cpfKeyNumbers(){
    lever runs its own test against CK's own balances and prints the arithmetic that
    opened or closed it. Where Fortress does not hold an input, the lever is marked
    unknown rather than guessed. */
+/* ---- What actually goes IN: the ceilings, read against his own ledger -------------
+   CPF publishes four ceilings and they interlock. The ledger is what turns them from
+   general rules into his position, because the total contribution divided by the 37%
+   rate recovers the wage that produced it. Nothing here is a salary Fortress was told;
+   it is a wage IMPLIED by CPF's own contribution rows, and it is labelled as implied. */
+function cpfContributions(year){
+  const R = CPF_RULES;
+  const MON = {JAN:1,FEB:2,MAR:3,APR:4,MAY:5,JUN:6,JUL:7,AUG:8,SEP:9,OCT:10,NOV:11,DEC:12};
+  const rate = R.contribRateTo55/100;
+  const owMax = R.owCeiling * rate;                     // $2,960 a month in 2026
+  const parsed = cpfTxns().filter(t=>t.code==='CON').map(t=>{
+    const m = /^([A-Z]{3})\s+(\d{4})$/.exec(String(t.forMonth||'').trim().toUpperCase());
+    if(!m) return null;
+    const total = (t.oa||0)+(t.sa||0)+(t.ma||0);
+    return { posted:t.date, label:t.forMonth, month:MON[m[1]], year:+m[2],
+             oa:t.oa||0, sa:t.sa||0, ma:t.ma||0, total, impliedWage: total/rate };
+  }).filter(Boolean);
+  if(!parsed.length) return null;
+  const Y = year || Math.max(...parsed.map(p=>p.year));
+  const rows = parsed.filter(p=>p.year===Y).sort((a,b)=>a.month-b.month);
+  if(!rows.length) return null;
+
+  /* split each month into its Ordinary and Additional parts. Anything a month carries
+     ABOVE the published monthly OW maximum can only be Additional Wage. */
+  let owCon=0, awCon=0, atCeiling=0;
+  rows.forEach(p=>{ const o = Math.min(p.total, owMax);
+    owCon += o; awCon += Math.max(0, p.total - o);
+    if(p.total >= owMax - 0.005) atCeiling++; });
+
+  const ytd = owCon + awCon;
+  const lastMonth = rows[rows.length-1].month, monthsLeft = Math.max(0, 12 - lastMonth);
+  const owSubjectSoFar = owCon/rate, awSubjectSoFar = awCon/rate;
+  /* the projection makes ONE assumption and names it: that OW stays at the ceiling */
+  const projRemaining = monthsLeft * owMax;
+  const projTotal = ytd + projRemaining;
+  const owSubjectFull = owSubjectSoFar + monthsLeft*R.owCeiling;
+  const awCeilingFull = Math.max(0, R.annualSalaryCeiling - owSubjectFull);
+  const awCeilingSoFar = Math.max(0, R.annualSalaryCeiling - owSubjectSoFar);
+
+  return { year:Y, rows, months:rows.length, lastMonth, monthsLeft, rate, owMax,
+    owCon, awCon, ytd, projRemaining, projTotal,
+    owSubjectSoFar, awSubjectSoFar, owSubjectFull, awCeilingFull, awCeilingSoFar,
+    awUsedPct: awCeilingFull>0 ? awSubjectSoFar/awCeilingFull*100 : null,
+    awExhausted: awSubjectSoFar >= awCeilingFull - 0.005,
+    atCeiling, allAtCeiling: atCeiling===rows.length,
+    headroomNow: R.annualLimit - ytd,
+    headroomProjected: R.annualLimit - projTotal,
+    /* max mandatory possible in a year = the rate applied to the annual salary ceiling,
+       which lands exactly on the published Annual Limit */
+    maxMandatory: R.annualSalaryCeiling * rate,
+    limitEqualsRateTimesCeiling: Math.abs(R.annualSalaryCeiling*rate - R.annualLimit) < 0.005,
+    /* how much room each $1,000 of monthly shortfall would open */
+    roomPerThousandShort: 1000*rate,
+    /* MediSave has stopped taking its share - the ledger says where it goes instead */
+    maStopped: rows.filter(p=>p.ma===0).length,
+    maLastNonZero: [...rows].reverse().find(p=>p.ma>0) || null };
+}
+
 /* Open/closed is a verdict for today. It says nothing about whether today is the only
    day it holds. Each lever therefore also carries a WHEN: does it expire, does it reopen,
    does it reset every year, or is it fixed until the rules themselves change? Every date
@@ -3426,17 +3507,33 @@ function cpfBefore55(){
         gain>0 && A && !past55 ? `improves by ${money(gain,0)}/yr at 55` : undefined); })(),
     source:R.extraSource });
 
-  /* 5 — the CPF Annual Limit: genuinely unknown, because Fortress has no payslip */
-  { const con = cpfLastContribution();
-    push({ id:'annual-limit', name:'CPF Annual Limit headroom', open:false, unknown:true,
-      test:`${money(R.annualLimit,0)} for ${R.annualLimitYear}, less your mandatory contributions this year — which Fortress does not hold`,
-      detail:`Voluntary contributions of any kind share one ceiling: <em>&ldquo;${esc(R.annualLimitQuote)}&rdquo;</em> Fortress cannot compute your headroom because it does not know your ${R.annualLimitYear} mandatory contributions.`
-        + (con ? ` The CPF ledger it does hold shows ${fmt(con.count,0)} contribution rows, the most recent dated ${esc(con.date)} at ${money(con.total,2)} and a median month of ${money(con.median,2)} — but a ledger extract is not a year-to-date total, and Fortress will not treat it as one.`
-               : ` Its CPF ledger holds no contribution rows at all.`),
-      action:'Read the year-to-date contribution figure off your CPF statement and subtract it from '+money(R.annualLimit,0)+'.',
-      when: whenBadge('needs', null,
-        `<b>No date is blocking this one — a number is.</b> It is resolvable the moment you give Fortress your year-to-date mandatory contributions. Separately, the limit itself resets every 1 January, so any headroom you do not use in ${R.annualLimitYear} is gone rather than carried forward.`),
-      source:R.annualLimitSource });
+  /* 5 — the CPF Annual Limit. This was an UNKNOWN until the ledger was read properly:
+         every CON row carries the wage month it is for, and total / 37% recovers the wage
+         that produced it. That turns "Fortress does not know" into arithmetic. */
+  { const C = (typeof cpfContributions==='function') ? cpfContributions() : null;
+    if(!C){ const con = cpfLastContribution();
+      push({ id:'annual-limit', name:'CPF Annual Limit headroom', open:false, unknown:true,
+        test:`${money(R.annualLimit,0)} for ${R.annualLimitYear}, less your mandatory contributions this year — which Fortress cannot read from the ledger it holds`,
+        detail:`Voluntary contributions of any kind share one ceiling: <em>&ldquo;${esc(R.annualLimitQuote)}&rdquo;</em> Fortress needs contribution rows tagged with the wage month they are for; ${con?'the rows it holds are not tagged':'it holds no contribution rows at all'}.`,
+        action:'Import the printable CPF transaction history, which carries the wage month on each contribution row.',
+        when: whenBadge('needs', null, `<b>No date is blocking this — a number is.</b> The limit itself resets every 1 January.`),
+        source:R.annualLimitSource });
+    } else {
+      const closedByProjection = C.headroomProjected <= 0.005;
+      push({ id:'annual-limit', name:'CPF Annual Limit headroom', open: !closedByProjection,
+        test:`${money(R.annualLimit,0)} for ${C.year}, less ${money(C.ytd,2)} contributed for ${fmt(C.months,0)} wage months so far = ${money(C.headroomNow,2)} today; ${fmt(C.monthsLeft,0)} months still to come at ${money(C.owMax,2)} = ${money(C.projRemaining,2)}, leaving ${money(C.headroomProjected,2)}`,
+        detail:`<b>This was the card's one unknown. It is not any more — your own ledger answers it.</b> Every contribution row carries the wage month it is for, and the total divided by the ${pct(R.contribRateTo55,0)} rate recovers the wage that produced it. All ${fmt(C.months,0)} of your ${C.year} months come back at exactly ${money(R.owCeiling,0)} — ${money(C.owMax,2)} of contribution, which is CPF's own published monthly maximum. <b>You are at the Ordinary Wage ceiling every single month.</b>`
+          + ` <br><br>The four ceilings interlock, and that is what closes this: the Annual Salary Ceiling is ${money(R.annualSalaryCeiling,0)}, and ${pct(R.contribRateTo55,0)} of it is ${money(C.maxMandatory,0)} — <b>exactly the Annual Limit</b>${C.limitEqualsRateTimesCeiling?'':' (Fortress computes these as different, which should not happen)'}. A full year at the ceiling therefore consumes the whole limit on mandatory contributions alone, and leaves nothing for voluntary ones.`
+          + ` <br><br>Your Additional Wage is already spent too: the ${C.year} AW ceiling is ${money(R.annualSalaryCeiling,0)} less ${money(C.owSubjectFull,0)} of Ordinary Wage = <b>${money(C.awCeilingFull,0)}</b>, and your ${esc(C.rows.find(r=>r.total>C.owMax)?C.rows.find(r=>r.total>C.owMax).label:'bonus')} row carries ${money(C.awCon,2)} of contribution — ${money(C.awSubjectSoFar,0)} of Additional Wage, ${C.awExhausted?'<b>the whole ceiling</b>':pct(C.awUsedPct,0)+' of it'}.`
+          + ` <br><br><b>The one assumption, named:</b> the projection holds your Ordinary Wage at the ceiling for the remaining ${fmt(C.monthsLeft,0)} months. Fortress does not know your salary — it only knows what CPF has already collected. If a month comes in below ${money(R.owCeiling,0)}, room opens at ${money(C.roomPerThousandShort,0)} for every ${money(1000,0)} of shortfall.`,
+        action: closedByProjection
+          ? `Nothing to contribute voluntarily to CPF this year. Check again in January, and re-check here if your wage drops below the ceiling in any remaining month — this test re-runs on every render.`
+          : `${money(C.headroomProjected,2)} of voluntary room is projected to remain. Confirm against your CPF statement before using it.`,
+        when: whenBadge('annual', `${C.year+1}-01-01`,
+          `<b>Resets every 1 January</b> — in ${fmt(daysUntil(`${C.year+1}-01-01`),0)} days — and unused room never carries forward. ${closedByProjection?`On the pattern your ledger shows, ${C.year} closes at exactly the limit with ${money(C.headroomProjected,0)} to spare, so there is nothing to lose by waiting. `:''}Whether ${C.year+1} looks the same depends on the ceilings CPF sets for it, which are not published.`,
+          closedByProjection ? 'closed by your own wage, not by a date' : undefined),
+        source:R.annualLimitSource });
+    }
   }
 
   /* 6 — the 4% clock. Not a lever: a deadline, priced. */
@@ -3622,6 +3719,31 @@ function viewCpf(){
     </tbody></table>
     <p class="note">Rates are the floors in force for ${esc(K.period)}. ${K.frs.published?'':`<b>Your cohort's Full Retirement Sum has not been published.</b> The figure shown is ${money(K.frs.value,0)}, the ${K.frs.fallbackYear} sum, which is the last one CPF has announced — your own will be higher, so everything downstream understates what gets locked away and overstates what stays liquid. `}The top-up cap is a different number from the sum you must set aside: topping up the SA before 55 is capped at the <b>current</b> year's FRS (${money(K.frs.currentFrs,0)} for ${K.frs.currentFrsYear}), not your cohort's.</p>
     <p class="note">Sources: ${esc(K.oa.source)}; ${esc(K.frs.source)}; ${esc(K.bhs.source)}; ${esc(K.frs.topUpSource)}. ${esc(K.checkedNote||'')} Checked ${esc(K.checkedOn)}.</p>
+  </div>`; })()}
+
+  ${(()=>{ const C=cpfContributions(); if(!C) return '';
+    const Rr=CPF_RULES, last=C.rows[C.rows.length-1], awRow=C.rows.find(r=>r.total>C.owMax);
+    return `<div class="card">
+    <h2>What goes in &mdash; the four contribution ceilings<span class="pill">${C.year} &middot; ${fmt(C.months,0)} wage months posted</span></h2>
+    <table><thead><tr><th>Ceiling</th><th class="r">${C.year}</th><th class="r">Your position</th></tr></thead><tbody>
+      <tr><td><b>Monthly OW ceiling</b><br><span class="k" style="font-size:11px">the most monthly wage CPF is charged on</span></td>
+          <td class="r"><b>${money(Rr.owCeiling,0)}</b></td>
+          <td class="r">${C.allAtCeiling?`<span class="pos">at it, all ${fmt(C.months,0)} months</span>`:`${fmt(C.atCeiling,0)} of ${fmt(C.months,0)} months at it`}<br><span class="k" style="font-size:11px">${money(C.owMax,2)}/mo of contribution</span></td></tr>
+      <tr><td><b>Annual Salary Ceiling</b><br><span class="k" style="font-size:11px">OW + AW charged in a year</span></td>
+          <td class="r"><b>${money(Rr.annualSalaryCeiling,0)}</b></td>
+          <td class="r">${money(C.owSubjectSoFar + C.awSubjectSoFar,0)} used<br><span class="k" style="font-size:11px">${money(C.owSubjectSoFar,0)} OW + ${money(C.awSubjectSoFar,0)} AW</span></td></tr>
+      <tr><td><b>AW ceiling</b><br><span class="k" style="font-size:11px">${esc(Rr.awCeilingFormula)}</span></td>
+          <td class="r"><b>${money(C.awCeilingFull,0)}</b><br><span class="k" style="font-size:11px">on a full year at the OW ceiling</span></td>
+          <td class="r">${C.awExhausted?`<span class="neg">fully used</span>`:`${pct(C.awUsedPct,0)} used`}<br><span class="k" style="font-size:11px">${awRow?`${money(C.awSubjectSoFar,0)} in ${esc(awRow.label)}`:'none yet'}</span></td></tr>
+      <tr><td><b>CPF Annual Limit</b><br><span class="k" style="font-size:11px">mandatory <em>and</em> voluntary, together</span></td>
+          <td class="r"><b>${money(Rr.annualLimit,0)}</b></td>
+          <td class="r">${money(C.ytd,0)} so far<br><span class="${C.headroomProjected<=0.005?'neg':'pos'}" style="font-size:11px">${money(C.headroomProjected,0)} projected room</span></td></tr>
+    </tbody></table>
+    <div class="banner ${C.headroomProjected<=0.005?'b-warn':''}" style="margin-top:10px"><span class="ic">&#8505;</span><div><b>${pct(Rr.contribRateTo55,0)} of ${money(Rr.annualSalaryCeiling,0)} is ${money(C.maxMandatory,0)} &mdash; the Annual Limit exactly.</b>A full year at the Ordinary Wage ceiling uses the entire limit on compulsory contributions, leaving nothing for voluntary ones. Your ledger shows ${money(C.ytd,2)} for ${fmt(C.months,0)} months and ${fmt(C.monthsLeft,0)} more at ${money(C.owMax,2)} would be ${money(C.projRemaining,2)} &mdash; ${money(C.projTotal,2)} for the year, against a limit of ${money(Rr.annualLimit,0)}.</div></div>
+    <p class="note"><b>These wages are implied, not told to Fortress.</b> It holds no payslip. Each contribution row divided by the ${pct(Rr.contribRateTo55,0)} rate recovers the wage that produced it: every ${C.year} month comes back at ${money(Rr.owCeiling,0)}, and ${awRow?`${esc(awRow.label)} at ${money(awRow.impliedWage,0)} — ${money(Rr.owCeiling,0)} of Ordinary Wage plus ${money(awRow.impliedWage-Rr.owCeiling,0)} of Additional Wage`:'no month carries Additional Wage'}. That is a floor on your wage, not your wage: anything above the ceiling produces the same contribution and is invisible here.</p>
+    <p class="note"><b>The ceiling has been moving.</b> ${Rr.owCeilingHistory.map(h=>`${esc(dayLabel(h.from))} ${money(h.ceiling,0)} (+${money(h.step,0)})`).join(' &middot; ')}. The Annual Salary Ceiling stayed at ${money(Rr.annualSalaryCeiling,0)} throughout. ${esc(Rr.annualSalaryCeilingSource)} Fortress does not forecast the next step and CPF has published none.</p>
+    ${C.maStopped>0?`<p class="note"><b>MediSave has stopped taking its share.</b> ${fmt(C.maStopped,0)} of your ${fmt(C.months,0)} posted months show ${money(0,0)} to MediSave${C.maLastNonZero?`, the last non-zero being ${esc(C.maLastNonZero.label)} at ${money(C.maLastNonZero.ma,2)}`:''} — MediSave is at the Basic Healthcare Sum, so its share is redirected. Because your Special Account is already above the Full Retirement Sum it goes to the <b>Ordinary Account at ${pct(Rr.oaPct,1)}</b>, not the Special Account at ${pct(Rr.saPct,1)}: ${C.maLastNonZero?`${money(C.maLastNonZero.ma,2)} a month now earning ${pct(Rr.oaPct,1)} instead of ${pct(Rr.saPct,1)} is ${money(C.maLastNonZero.ma*12*(Rr.saPct-Rr.oaPct)/100,2)} a year of forgone interest on a full year of it`:''}. Nothing can redirect it back.</p>`:''}
+    <p class="note">Sources: ${esc(Rr.contribRateSource)}; ${esc(Rr.owCeilingHistorySource)}; ${esc(Rr.awCeilingSource)}; ${esc(Rr.annualLimitSource)} — <em>&ldquo;${esc(Rr.annualLimitQuote)}&rdquo;</em>. Wage months are read from your own CPF transaction history. Checked ${esc(Rr.checkedOn)}.</p>
   </div>`; })()}
   ${A?`<div class="banner ${A.days55<=1095?'b-warn':''}"><span class="ic">&#9200;</span><div><b>${A.age} years old &middot; 55 on ${esc(dayLabel(A.date55))}</b>${A.days55>0?`That is <b>${fmt(A.days55,0)} days</b> — ${fmt(A.days55/365.25,1)} years. On that date the Special Account closes, ${money(frsFor(A.year55).value,0)} moves to a Retirement Account and the rest of it drops from ${pct(CPF_RULES.saPct,1)} to ${pct(CPF_RULES.oaPct,1)} in the OA. Your SA is ${money(latestCpf().sa,0)} today, so most of the excess is already built.`:'You have passed 55; the projection below uses the post-55 rules.'} MediSave's Basic Healthcare Sum stops rising for you at 65, in ${esc(String(A.year65))}.</div></div>`:''}
   ${atBhs?`<div class="banner b-good"><span class="ic">&#9679;</span><div><b>MediSave is full</b>It sits exactly at the ${R.bhsYear} Basic Healthcare Sum of ${money(R.bhs,0)}. Interest it earns, and any future contribution, overflows out of MediSave — ${(()=>{ const c=latestCpf(), over = c && c.sa > R.frs;

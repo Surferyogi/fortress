@@ -170,7 +170,7 @@ Each lever prints the arithmetic that opened or closed it:
 | Put more into the Special Account | closed | reopens only if the FRS catches up — it is not | $220,400 − $310,602.02 = **−$90,202.02** |
 | Top up MediSave to the BHS | closed | resets yearly (1 Jan 2027, 122 days) | $79,000 − $79,000.00 = **$0.00** |
 | Extra interest on the first $60,000 | closed | improves by $300/yr at 55 | combined balances $466,040.26 — saturated at $600.00/yr |
-| CPF Annual Limit headroom | **unknown** | no date — needs a number | $37,740 less mandatory contributions, which Fortress does not hold |
+| CPF Annual Limit headroom | closed | resets 1 Jan 2027 | $22,940 posted + 5 × $2,960 = **$37,740 = the limit exactly** |
 | The 4% clock on the Special Account | closed | happens in 726 days (27 Aug 2028) | $82,402.02 excess × 1.5pp = **$1,236.03/yr, permanently** |
 | Top up to the Enhanced Retirement Sum | closed | opens in 726 days (27 Aug 2028) | age 55 only; he is 53, and no RA exists until 27 Aug 2028 |
 
@@ -269,16 +269,58 @@ CPF itself states it. The number is identical ($456,400) because FRS = 2 × BRS;
 now pins both derivations to each other so a future divergence fails loudly instead of the
 app silently showing a figure from the wrong rule.
 
-The Annual Limit lever is marked **unknown**, not closed and not estimated. Fortress holds
-CPF ledger rows but a ledger extract is not a year-to-date total, and the card refuses to
-treat it as one. It appears as a declared gap at the bottom of the CPF tab.
+### The Annual Limit stopped being unknown
 
-`maxtest.js` (130 assertions) covers all of this: every figure, every lever verdict, the
+It was the card's one unknown, on the grounds that "a ledger extract is not a year-to-date
+total". That was true of how the ledger was being *read*, not of the ledger. Every `CON` row
+carries the **wage month it is for**, and the total divided by the 37% contribution rate
+recovers the wage that produced it. Read that way, the ledger answers the question outright.
+
+A fifth card, **"What goes in — the four contribution ceilings"**, now sits under the rates
+card:
+
+| Ceiling | 2026 | His position |
+| --- | --- | --- |
+| Monthly OW ceiling | $8,000 | **at it, all 7 posted months** ($2,960/mo) |
+| Annual Salary Ceiling | $102,000 | $62,000 used ($56,000 OW + $6,000 AW) |
+| AW ceiling | $6,000 | **fully used** ($6,000 in MAY 2026) |
+| CPF Annual Limit | $37,740 | $22,940 so far · **$0 projected room** |
+
+The four interlock, and that is what closes the lever: **37% × $102,000 = $37,740 — the
+Annual Limit exactly.** A full year at the Ordinary Wage ceiling consumes the entire limit
+on compulsory contributions and leaves nothing voluntary. His ledger: $22,940 for 7 wage
+months, plus 5 more at $2,960 = $14,800, giving **$37,740 for the year against a limit of
+$37,740**. To the cent.
+
+Three things this required care over:
+
+- **Wage month, not posting date.** The 15 Jan 2026 posting is for DEC 2025 wages and must
+  not land in 2026. Seven 2026 rows, not eight; `maxtest.js` asserts the DEC 2025 row is
+  excluded.
+- **The wages are implied, never told.** Fortress holds no payslip. Each row ÷ 37% recovers
+  the wage — every month comes back at exactly $8,000, matching CPF's own published monthly
+  maximum of "$2,960". The card says this is *"a floor on your wage, not your wage"*:
+  anything above the ceiling produces the same contribution and is invisible.
+- **The projection has exactly one assumption, and it is labelled.** The remaining 5 months
+  are carried at the ceiling because every posted month has been at it — but Fortress does
+  not know his salary. The card states the sensitivity that undoes it: **$370 of room per
+  $1,000 of monthly shortfall**. The old "contributions are unknown" gap was retired and
+  replaced with a `low` one naming the projected months, so no gap contradicts the card.
+
+The ledger also confirms the MediSave overflow from the contribution side: 3 of 7 months
+show $0 to MediSave, the last non-zero being APR 2026 at $703.98, with the OA share rising
+by exactly that amount. At his balances that is **$126.72 a year of forgone interest** on a
+full year of redirection — 4% in MediSave becoming 2.5% in the OA.
+
+`maxtest.js` (169 assertions) covers all of this: every figure, every lever verdict, the
 verbatim CPF quotes, plain-English collapse behaviour, no horizontal overflow at 360px, and
 a surgical check that `cpfPlan()`, `retireAt55()`, `retireLevers()` and the seed version are
 all untouched. One assertion in it was written wrong first — it claimed three of the seven
 at-55 levers were open when only two are — and the app was right, not the author. It now
-asserts the lever ids rather than a count.
+asserts the lever ids rather than a count. A second stale assertion surfaced the same way:
+`/Maximise your CPF before 55/` kept passing months after the card was renamed, because a
+**gap entry elsewhere on the page quoted the old title**. It was matching stale prose, not
+the card. It is now anchored to the card's own `h2` element.
 
 ## Reminders
 
