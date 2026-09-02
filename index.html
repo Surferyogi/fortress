@@ -141,7 +141,7 @@ details.gap[open]>summary::after{content:'  \2212'}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:SEP:01-21:50';
+const VERSION = 'v2026:SEP:02-11:20';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -466,6 +466,32 @@ const CPF_RULES = {
 };
 
 /* recurring income — seeded from the GIRO credits in CK's UOB statements */
+/* ---- MCST maintenance, straight off the tax invoice. Every figure below is printed on
+   the document; nothing is derived, annualised or rounded at the seed. The annualisation
+   happens in mcstPosition(), which labels it as an annualisation of the current quarter. */
+const MCST_SEED = {
+  mcst:'MCST Plan No. 4940', regNo:'T25MC0009B', project:'The Atelier',
+  unit:'#07-04', shareUnits:6,
+  agent:'Knight Frank Property & Facilities Management Pte Ltd',
+  frequency:'quarterly', quartersPerYear:4,
+  managementFund:1368.00, sinkingFund:90.00, perQuarter:1458.00,
+  gstPct:0.00, gstAmount:0.00,
+  invoiceDate:'2026-09-02',
+  periods:[
+    { begin:'2026-06-01', end:'2026-08-31', mgmt:1368.00, sink:90.00, total:1458.00,
+      invMgmt:'M/F4940000257', invSink:'S/F4940000137', dueDate:null, kind:'broughtForward' },
+    { begin:'2026-09-01', end:'2026-11-30', mgmt:1368.00, sink:90.00, total:1458.00,
+      invMgmt:'M/F4940000377', invSink:'S/F4940000257', dueDate:'2026-09-30', kind:'current' }
+  ],
+  balanceBF:1458.00, currentAmount:1458.00, totalDue:2916.00,
+  lateInterestPct:12.00,
+  lateRule:'Interest at 12.00 % p.a. will be levied for payments received after 30 days from the 1st day of each billing period.',
+  contributionRule:'Contributions are due and payable on the 1st day of each billing period.',
+  cutoff:'2026-08-31',
+  cutoffRule:'Payments received after 31/08/2026 will not be reflected in this statement.',
+  source:'MCST Plan No. 4940 (The Atelier) tax invoice dated 02/09/2026, unit #07-04, share unit 6'
+};
+
 const INCOME_SEED = [{
   id:'rent-atelier', label:'Rent — The Atelier', payer:'PLOETNER MATHIAS ALE',
   amount:5800.00, ccy:'SGD', frequency:'monthly', dayOfMonth:11,
@@ -1106,6 +1132,48 @@ function cpfProject(years, withContrib, age55Year){
 
 /* the housing withdrawal, and what it will cost to unwind.
    Accrued interest is charged at the OA rate on the principal still withdrawn. */
+/* ---- What the MCST actually costs, and what it does to the rent -------------------
+   The invoice states a quarter. Everything annual below is that quarter multiplied by
+   four and is labelled as such: Fortress has seen one invoice, not a year of them, and a
+   revised budget would change it. The arrears line is reported exactly as the statement
+   presents it - unpaid AS AT the stated cut-off - because a payment made after that date
+   would not appear on it, and Fortress cannot tell the difference. */
+function mcstPosition(){
+  const M = state.settings.mcst || MCST_SEED; if(!M) return null;
+  const perQuarter = M.perQuarter, annual = perQuarter * M.quartersPerYear;
+  const monthly = annual / 12;
+  const rentM = (typeof monthlyIncome==='function') ? monthlyIncome() : 0;
+  const rentY = rentM * 12;
+  const current = M.periods.find(p=>p.kind==='current') || null;
+  const bf      = M.periods.find(p=>p.kind==='broughtForward') || null;
+
+  /* the late-interest trigger is 30 days from the FIRST day of the billing period, not
+     from the invoice date or the due date - so it is derived from the period, not assumed */
+  const trigger = iso => { const d = new Date(iso+'T00:00:00'); d.setDate(d.getDate()+30);
+                           return d.toISOString().slice(0,10); };
+  const bfTrigger = bf ? trigger(bf.begin) : null;
+  const today = new Date().toISOString().slice(0,10);
+  const daysPastTrigger = bfTrigger ? -daysUntil(bfTrigger) : null;
+
+  const dailyIfUnpaid = M.balanceBF * (M.lateInterestPct/100) / 365;
+  return { ...M, perQuarter, annual, monthly,
+    rentM, rentY,
+    pctOfRent: rentY>0 ? annual/rentY*100 : null,
+    current, bf, dueDate: current ? current.dueDate : null,
+    daysToDue: current && current.dueDate ? daysUntil(current.dueDate) : null,
+    bfTrigger, daysPastTrigger,
+    /* stated only as a conditional - the invoice charges no interest and Fortress does
+       not know whether the brought-forward quarter was settled after the cut-off */
+    dailyIfUnpaid, monthlyIfUnpaid: M.balanceBF * (M.lateInterestPct/100) / 12,
+    /* how this rate compares with the borrowing he already has - the useful comparison */
+    vsMortgage: (()=>{ const e=(typeof effectiveLoanTerms==='function')?effectiveLoanTerms():null;
+                       return e && e.ratePct!=null ? M.lateInterestPct - e.ratePct : null; })(),
+    vsMargin: (()=>{ const a=(typeof latest==='function')?latest():null;
+                     const l = a && a.portfolios ? (a.portfolios.flatMap(p=>p.loans||[])[0]||null) : null;
+                     return l && l.ratePct!=null ? M.lateInterestPct - l.ratePct : null; })(),
+    annualisedFromOneInvoice: true };
+}
+
 function cpfHomeClaim(onDate){
   const h = latestCpfHome(); if(!h) return null;
   const prin = h.principalWithdrawn||0, accr = h.accruedInterest||0;
@@ -2296,9 +2364,18 @@ function gaps(){
     add('prop','high','No rental income is recorded',
       'Rent cover against the mortgage instalment cannot be computed, so Fortress cannot say whether the property funds itself.',
       'Add the monthly rent on the Property tab.');
-  if(state.settings.homeAnnualCosts==null) add('prop','medium','Property running costs are not captured',
-    'Rent cover is measured against the instalment alone. Property tax, maintenance, agent fees, insurance and vacancy are not in Fortress, so the true net yield is lower than anything shown.',
-    'Add the annual total under \u201cWhat the house cost you\u201d on the Property tab.');
+  /* The MCST invoice narrows this gap; it does not close it. But if the remaining costs
+     HAVE been entered, the gap must close - an unconditional gap would tell him a figure
+     is missing after he has supplied it. */
+  { const Mc = (typeof mcstPosition==='function') ? mcstPosition() : null;
+    if(state.settings.homeAnnualCosts!=null){ /* answered - no gap */ }
+    else if(Mc) add('prop','medium','Only one of the property\u2019s running costs is known',
+      'MCST maintenance is now captured from the invoice \u2014 '+money(Mc.perQuarter,2)+' a quarter, '+money(Mc.annual,2)+' a year. Still missing: property tax, insurance, agent commission, repairs and vacancy. Net yield is therefore still overstated, only by less than before.',
+      'Add the remaining annual total under \u201cWhat the house cost you\u201d on the Property tab.',
+      Mc.source);
+    else add('prop','medium','Property running costs are not captured',
+      'Rent cover is measured against the instalment alone. Property tax, maintenance, agent fees, insurance and vacancy are not in Fortress, so the true net yield is lower than anything shown.',
+      'Add the annual total under \u201cWhat the house cost you\u201d on the Property tab.'); }
 
   /* ---------- CPF ---------- */
   if(A){ const F = frsFor(A.year55);
@@ -2492,6 +2569,22 @@ function retirementChecks(){
   const today = new Date().toISOString().slice(0,10);
 
   /* ---------- dated ---------- */
+  { const Mc = (typeof mcstPosition==='function') ? mcstPosition() : null;
+    if(Mc && Mc.dueDate){ const d = Mc.daysToDue;
+      add({ id:'mcst-due', cat:'dated', date:Mc.dueDate, days:d,
+        tone: d<=7?'serious':(d<=21?'warn':'info'),
+        title:'MCST maintenance due', head:`${money(Mc.currentAmount,2)} for ${esc(dayLabel(Mc.current.begin))} \u2013 ${esc(dayLabel(Mc.current.end))}`,
+        detail:`${money(Mc.managementFund,2)} management fund plus ${money(Mc.sinkingFund,2)} sinking fund. Late payment carries ${pct(Mc.lateInterestPct,2)} a year \u2014 ${Mc.vsMortgage!=null?`${fmt(Mc.vsMortgage,2)} points above your mortgage`:'far above your other borrowing'}, which makes it the most expensive money in your structure.`,
+        source:Mc.source });
+    }
+    if(Mc && Mc.balanceBF > 0){
+      add({ id:'mcst-arrears', cat:'dated', date:Mc.bfTrigger, days:Mc.bfTrigger?daysUntil(Mc.bfTrigger):null,
+        tone:'warn',
+        title:'MCST quarter shown unpaid', head:`${money(Mc.balanceBF,2)} brought forward`,
+        detail:`The ${esc(dayLabel(Mc.bf.begin))} \u2013 ${esc(dayLabel(Mc.bf.end))} quarter appears as a balance brought forward. <b>That may simply be timing:</b> the invoice states \u201c${esc(Mc.cutoffRule)}\u201d, so a payment made on or after ${esc(dayLabel(Mc.cutoff))} would not show. Fortress cannot tell the difference and does not assume you are in arrears. If it <em>is</em> outstanding, interest runs at ${pct(Mc.lateInterestPct,2)} from ${esc(dayLabel(Mc.bfTrigger))} \u2014 ${money(Mc.dailyIfUnpaid,2)} a day, ${money(Mc.monthlyIfUnpaid,2)} a month. Check the account, then dismiss this.`,
+        source:Mc.source });
+    }
+  }
   const L = (a.loans||[])[0];
   if(L && L.maturityDate){
     const d = daysUntil(L.maturityDate);
@@ -3269,6 +3362,25 @@ function propForms(){
     <button class="btn" style="margin-top:12px" onclick="saveManual()">Save month</button>
     ${manualMonths().length?`<div style="margin-top:12px">${manualMonths().slice().reverse().map(m=>`<div class="kv"><span class="k">${esc(m)}</span><span class="v">${money(state.manual[m].mortgageBalance,2)} <button class="btn ghost" style="width:auto;padding:2px 8px;font-size:11px;margin-left:8px" onclick="delManual('${esc(m)}')">×</button></span></div>`).join('')}</div>`:''}
   </div>
+  ${(()=>{ const M=mcstPosition(); if(!M) return '';
+    return `<div class="card">
+    <h2>MCST maintenance<span class="pill">${esc(M.mcst)} &middot; ${fmt(M.shareUnits,0)} share units</span></h2>
+    <div class="tiles">
+      <div class="tile"><div class="v">${money(M.perQuarter,2)}</div><div class="l">Per quarter</div><div class="d">${money(M.managementFund,2)} management + ${money(M.sinkingFund,2)} sinking</div></div>
+      <div class="tile"><div class="v">${money(M.annual,0)}</div><div class="l">A year</div><div class="d">${money(M.monthly,2)} a month &middot; four quarters</div></div>
+      <div class="tile"><div class="v ${M.pctOfRent!=null&&M.pctOfRent>0?'neg':''}">${M.pctOfRent!=null?pct(M.pctOfRent,2):'n/a'}</div><div class="l">Of the gross rent</div><div class="d">${M.rentY>0?`${money(M.rentY,0)} a year in`:'no rent recorded'}</div></div>
+      <div class="tile"><div class="v ${M.daysToDue!=null&&M.daysToDue<=21?'neg':''}">${M.daysToDue!=null?fmt(M.daysToDue,0):'—'}</div><div class="l">Days to the next due date</div><div class="d">${M.dueDate?esc(dayLabel(M.dueDate)):'not stated'}</div></div>
+    </div>
+    <table style="margin-top:10px"><thead><tr><th>Billing period</th><th class="r">Total</th></tr></thead><tbody>
+      ${M.periods.map(q=>`<tr><td>${esc(dayLabel(q.begin))} &ndash; ${esc(dayLabel(q.end))}<br><span class="k" style="font-size:11px">${money(q.mgmt,2)} management + ${money(q.sink,2)} sinking &middot; ${q.kind==='broughtForward'?'brought forward':`due ${esc(dayLabel(q.dueDate))}`}</span></td><td class="r"><b>${money(q.total,2)}</b></td></tr>`).join('')}
+      <tr><td><b>Total due</b><br><span class="k" style="font-size:11px">as shown on the invoice</span></td><td class="r"><b>${money(M.totalDue,2)}</b></td></tr>
+    </tbody></table>
+    ${M.balanceBF>0?`<div class="banner b-warn" style="margin-top:10px"><span class="ic">&#9888;</span><div><b>${money(M.balanceBF,2)} shows as brought forward.</b>The ${esc(dayLabel(M.bf.begin))}&ndash;${esc(dayLabel(M.bf.end))} quarter is unpaid <em>on this statement</em>. That may only be timing: <em>&ldquo;${esc(M.cutoffRule)}&rdquo;</em> &mdash; so a payment made on or after ${esc(dayLabel(M.cutoff))} would not appear. <b>Fortress does not assume you are in arrears</b>; it reports what the document says. If it is genuinely outstanding, interest has run since ${esc(dayLabel(M.bfTrigger))} &mdash; ${fmt(M.daysPastTrigger,0)} days &mdash; at ${money(M.dailyIfUnpaid,2)} a day.</div></div>`:''}
+    <p class="note"><b>${pct(M.lateInterestPct,2)} is the most expensive money in your structure.</b> ${esc(M.lateRule)} ${M.vsMortgage!=null?`That is <b>${fmt(M.vsMortgage,2)} points</b> above your mortgage`:''}${M.vsMargin!=null?` and <b>${fmt(M.vsMargin,2)} points</b> above your margin loan`:''}. Nothing else you owe comes close, so this is the one bill where paying on the day is worth more than the cash is worth anywhere else.</p>
+    <p class="note"><b>The yearly figure is one quarter multiplied by four.</b> Fortress has seen a single invoice, not a year of them. Contributions are set by the MCST's budget and can be revised at a general meeting, so ${money(M.annual,0)} is the current run rate, not a commitment. GST is shown on the invoice at ${pct(M.gstPct,2)} &mdash; if that ever changes, this figure moves with it.</p>
+    <p class="note"><b>What this does and does not cover.</b> It is the management fund and the sinking fund only. Property tax, insurance, agent commission, repairs and vacancy are still not in Fortress, so the net yield it shows remains better than the truth &mdash; by less than it was, but still. Source: ${esc(M.source)}.</p>
+  </div>`; })()}
+
   <div class="card"><h2>What the house cost you</h2>
     <p class="note" style="margin-top:0">Without a purchase price Fortress can show what the property is worth but not what it has returned. Nothing here is guessed — leave a field blank and Fortress says the figure is unavailable rather than estimating it.</p>
     <label class="fld">Purchase price (S$)</label>

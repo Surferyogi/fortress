@@ -396,6 +396,61 @@ asserts the lever ids rather than a count. A second stale assertion surfaced the
 **gap entry elsewhere on the page quoted the old title**. It was matching stale prose, not
 the card. It is now anchored to the card's own `h2` element.
 
+## MCST maintenance
+
+Read straight off the MCST 4940 tax invoice dated 2 Sep 2026 for #07-04 (share unit 6),
+managed by Knight Frank. Nothing is derived at the seed:
+
+| | |
+| --- | --- |
+| Management fund | $1,368.00 a quarter |
+| Sinking fund | $90.00 a quarter |
+| **Per quarter** | **$1,458.00** (GST shown at 0.00%) |
+| Annualised | $5,832 — **$486.00 a month** |
+| Share of gross rent | **8.38%** of $69,600 |
+| Next due | 30 Sep 2026 |
+
+Three things the card is careful about.
+
+**The annualisation is labelled as one.** Fortress has seen a single invoice, not a year of
+them. Contributions are set by the MCST's budget and can be revised at a general meeting, so
+$5,832 is the current run rate, not a commitment — and GST is 0.00% *on this invoice*, which
+would move the figure if it ever changed.
+
+**The brought-forward line is reported, not interpreted.** The 1 Jun – 31 Aug quarter shows
+as $1,458.00 brought forward, so the invoice totals $2,916.00. That may be arrears or it may
+be timing: the invoice itself says *"Payments received after 31/08/2026 will not be reflected
+in this statement."* Fortress cannot tell the two apart, says so, and **does not assert he is
+in arrears**. It states the conditional instead: if it is outstanding, interest has run from
+1 Jul 2026 — 30 days from the first day of the billing period, derived from the period rather
+than assumed — at $0.48 a day, $14.58 a month.
+
+**12% p.a. is the most expensive money in his structure**, and the card says so plainly:
+10.87 points above the 1.130% mortgage and 9.90 points above the 2.10% margin loan. This is
+the one bill where paying on the day beats any other use of the cash.
+
+Two reminders come off it: a dated one counting down to 30 Sep, toned by proximity, and a
+warn-level one on the brought-forward quarter that asks him to check the account and dismiss it.
+
+The Property gap was **narrowed, not closed** — MCST is one running cost of several, and
+property tax, insurance, agent commission, repairs and vacancy remain unknown, so net yield is
+still overstated, by less than before. The gap still closes properly when the remaining annual
+total is entered; an unconditional version of it would have told him a figure was missing
+after he had supplied it, and `simpletest.js` caught exactly that.
+
+### A test-quality bug this shipment exposed
+
+Several assertions in `maxtest.js` had **frozen day counts** — `726`, `121`, `122`. Those decay
+at midnight, and the suite began failing the next morning with no code change at all. A test
+that expires is worse than no test, because it trains you to ignore red. Both `maxtest.js` and
+`mcsttest.js` now derive the expected count from the date at run time, so the assertion is that
+the app counts the same days the test does — not that the answer is a particular constant. The
+reminder-tone assertion was rewritten the same way: it asserts the *rule*
+(`≤7 serious, ≤21 warn, else info`) rather than today's output.
+
+`mcsttest.js` — 37 assertions, including no horizontal overflow at 360px and 390px, that the
+brought-forward line declines to call arrears, and that nothing else on the Property tab moved.
+
 ## Reminders
 
 The Overview tab carries a **Reminders** card in two halves.
