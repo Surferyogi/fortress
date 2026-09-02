@@ -432,6 +432,46 @@ the one bill where paying on the day beats any other use of the cash.
 Two reminders come off it: a dated one counting down to 30 Sep, toned by proximity, and a
 warn-level one on the brought-forward quarter that asks him to check the account and dismiss it.
 
+### MCST is a cost against the rent, not a footnote
+
+`rentNet()` now takes it off the top, and the conclusion changes:
+
+| | |
+| --- | --- |
+| Gross rent | $5,800.00/mo |
+| Less MCST maintenance | −$486.00/mo |
+| **Net rent** | **$5,314.00/mo** |
+| Mortgage instalment | $5,485.67/mo |
+| **Cover** | **96.9%** — $171.67 short each month |
+
+On gross rent the property reads as self-funding at **105.7%**. It is not. Once the MCST — a
+fixed, quarterly, invoiced obligation — comes off, cover is **96.9%** and the property draws
+**$171.67 a month, $2,060.04 a year**, from his own cash flow. Both figures are shown together
+so the gap between them is the point rather than a footnote, and the card still says this is
+the *best* case: property tax, insurance, agent commission, repairs and vacancy remain unknown.
+
+The plain-English summary was carrying the old gross figure and has been corrected the same
+way. The card also moved up the Property tab — it now sits below the home loan and above the
+rent-cover card it feeds, rather than near the bottom — and the billing periods are `.kv` rows
+instead of a table, which could not hold currency columns at 390px.
+
+### A timezone bug his screenshot caught
+
+The arrears banner rendered **30 Jun 2026** on his phone where the test suite asserted 1 Jul.
+Both were reading the same code. The trigger was built as `new Date(iso+'T00:00:00')` — parsed
+as **local** midnight — then read back with `.toISOString()`, which converts to **UTC**. East
+of Greenwich that subtracts hours and lands on the previous day. The test runner is UTC, so it
+could never see it; every Singapore phone could.
+
+A calendar date must not round-trip through a timezone. `addDays()` does the arithmetic in UTC
+and never leaves it. Two follow-ons:
+
+- `mcsttest.js` now runs its whole browser context at `timezoneId: 'Asia/Singapore'`, so the
+  suite reproduces his device rather than the runner's.
+- That immediately exposed the *same* flaw in the test's own helper: it computed expected day
+  counts in Node (UTC) and compared them against a page running at UTC+8, failing correct code
+  by one day. Expectations are now asked of the page, in the same clock as the thing under test.
+
 The Property gap was **narrowed, not closed** — MCST is one running cost of several, and
 property tax, insurance, agent commission, repairs and vacancy remain unknown, so net yield is
 still overstated, by less than before. The gap still closes properly when the remaining annual
@@ -448,7 +488,7 @@ the app counts the same days the test does — not that the answer is a particul
 reminder-tone assertion was rewritten the same way: it asserts the *rule*
 (`≤7 serious, ≤21 warn, else info`) rather than today's output.
 
-`mcsttest.js` — 37 assertions, including no horizontal overflow at 360px and 390px, that the
+`mcsttest.js` — 56 assertions, including no horizontal overflow at 360px and 390px, that the
 brought-forward line declines to call arrears, and that nothing else on the Property tab moved.
 
 ## Reminders

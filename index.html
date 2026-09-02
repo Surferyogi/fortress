@@ -141,7 +141,7 @@ details.gap[open]>summary::after{content:'  \2212'}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:SEP:02-11:20';
+const VERSION = 'v2026:SEP:02-15:35';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -154,6 +154,12 @@ const pct = (n,dp=2)=> n===null||n===undefined||isNaN(n) ? '—' : fmt(n,dp)+'%'
 const esc = s=> String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const monthLabel = iso=>{ const [y,m]=iso.split('-'); return new Date(+y,+m-1,1).toLocaleString('en',{month:'short'})+'-'+y.slice(2); };
 const daysUntil = iso=>{ if(!iso) return null; return Math.ceil((new Date(iso+'T00:00:00')-new Date())/86400000); };
+/* Add days to a YYYY-MM-DD calendar date without ever leaving UTC. Building a local Date
+   and reading it back with toISOString() shifts the day for anyone east of Greenwich —
+   a bug that is invisible to a UTC test runner and visible on every Singapore phone. */
+const addDays = (iso, n)=>{ if(!iso) return null;
+  const [y,m,d] = iso.split('-').map(Number);
+  return new Date(Date.UTC(y, m-1, d+n)).toISOString().slice(0,10); };
 const addMonths = (iso,n)=>{ const [y,m]=iso.split('-').map(Number); const d=new Date(y,m-1+n,1);
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); };
 const dayMonthLabel = ym=>{ if(!ym) return '\u2014'; const [y,m]=ym.split('-');
@@ -1148,9 +1154,14 @@ function mcstPosition(){
   const bf      = M.periods.find(p=>p.kind==='broughtForward') || null;
 
   /* the late-interest trigger is 30 days from the FIRST day of the billing period, not
-     from the invoice date or the due date - so it is derived from the period, not assumed */
-  const trigger = iso => { const d = new Date(iso+'T00:00:00'); d.setDate(d.getDate()+30);
-                           return d.toISOString().slice(0,10); };
+     from the invoice date or the due date - so it is derived from the period, not assumed.
+
+     This USED to build the date as `new Date(iso+'T00:00:00')` (parsed as LOCAL midnight),
+     add 30 days, then read it back with toISOString() (which converts to UTC). East of
+     UTC that subtracts hours and lands on the PREVIOUS day: CK's phone in Singapore
+     (UTC+8) showed 30 Jun where the UTC test runner showed 1 Jul. A calendar date must
+     never round-trip through a timezone. addDays() below is pure UTC arithmetic. */
+  const trigger = iso => addDays(iso, 30);
   const bfTrigger = bf ? trigger(bf.begin) : null;
   const today = new Date().toISOString().slice(0,10);
   const daysPastTrigger = bfTrigger ? -daysUntil(bfTrigger) : null;
@@ -1172,6 +1183,33 @@ function mcstPosition(){
                      const l = a && a.portfolios ? (a.portfolios.flatMap(p=>p.loans||[])[0]||null) : null;
                      return l && l.ratePct!=null ? M.lateInterestPct - l.ratePct : null; })(),
     annualisedFromOneInvoice: true };
+}
+
+/* ---- What the property really nets, once the costs Fortress HOLDS are taken off ------
+   Gross rent flatters everything. MCST is a fixed, quarterly, contractual cost with an
+   invoice behind it, so it belongs in the cover calculation rather than in a footnote.
+   The other running costs are still unknown, so this is a CEILING on the net figure -
+   the true one is lower - and every consumer of it says so. */
+function rentNet(){
+  const gross = (typeof monthlyIncome==='function') ? monthlyIncome() : 0;
+  if(!(gross>0)) return null;
+  const M = (typeof mcstPosition==='function') ? mcstPosition() : null;
+  const mcstM = M ? M.monthly : 0;
+  const known = mcstM;                               // the only fixed cost with a document
+  const net = gross - known;
+  const mm = latestManual(), eff = effectiveLoanTerms();
+  const instal = eff.instalment ?? (mm ? mm.mortgagePayment : null) ?? null;
+  const other = state.settings.homeAnnualCosts != null ? state.settings.homeAnnualCosts/12 : null;
+  const netAfterAll = other!=null ? net - other : null;
+  return { gross, mcstM, known, net, instal, other, netAfterAll,
+    coverGross: instal ? gross/instal*100 : null,
+    coverNet:   instal ? net/instal*100   : null,
+    coverAll:   (instal && netAfterAll!=null) ? netAfterAll/instal*100 : null,
+    surplusGross: instal ? gross-instal : null,
+    surplusNet:   instal ? net-instal   : null,
+    /* the honest caveat: this is the best case until the rest of the costs are known */
+    incomplete: other==null,
+    missing:['property tax','insurance','agent commission','repairs','vacancy'] };
 }
 
 function cpfHomeClaim(onDate){
@@ -3253,6 +3291,25 @@ function viewProp(){
     ${rateChangeBlock(mm, instNow)}
     <p class="note">Implied interest = instalment − principal reduction between your two latest entries (pure arithmetic from UOB statements, no assumptions). A property loan has no market-linked margin call, but its interest is part of the hurdle your portfolio must beat. Update monthly in the form further down this tab.</p>
   </div>`; })()}
+  ${(()=>{ const M=mcstPosition(); if(!M) return '';
+    return `<div class="card">
+    <h2>MCST maintenance<span class="pill">${esc(M.mcst)} &middot; ${fmt(M.shareUnits,0)} share units</span></h2>
+    <div class="tiles">
+      <div class="tile"><div class="v">${money(M.perQuarter,2)}</div><div class="l">Per quarter</div><div class="d">${money(M.managementFund,2)} management + ${money(M.sinkingFund,2)} sinking</div></div>
+      <div class="tile"><div class="v">${money(M.annual,0)}</div><div class="l">A year</div><div class="d">${money(M.monthly,2)} a month &middot; four quarters</div></div>
+      <div class="tile"><div class="v ${M.pctOfRent!=null&&M.pctOfRent>0?'neg':''}">${M.pctOfRent!=null?pct(M.pctOfRent,2):'n/a'}</div><div class="l">Of the gross rent</div><div class="d">${M.rentY>0?`${money(M.rentY,0)} a year in`:'no rent recorded'}</div></div>
+      <div class="tile"><div class="v ${M.daysToDue!=null&&M.daysToDue<=21?'neg':''}">${M.daysToDue!=null?fmt(M.daysToDue,0):'—'}</div><div class="l">Days to the next due date</div><div class="d">${M.dueDate?esc(dayLabel(M.dueDate)):'not stated'}</div></div>
+    </div>
+    <div style="margin-top:12px"><span class="k" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">Billing periods on this invoice</span></div>
+    ${M.periods.map(q=>`
+    <div class="kv" style="align-items:flex-start"><span class="k">${esc(dayLabel(q.begin))} &ndash; ${esc(dayLabel(q.end))}<br><span style="font-size:11px;opacity:.72">${money(q.mgmt,2)} management &middot; ${money(q.sink,2)} sinking</span></span><span class="v" style="text-align:right"><b>${money(q.total,2)}</b><br><span style="font-size:11px;font-weight:400;opacity:.72">${q.kind==='broughtForward'?'brought forward':`due ${esc(dayLabel(q.dueDate))}`}</span></span></div>`).join('')}
+    <div class="kv"><span class="k"><b>Total due on the invoice</b></span><span class="v"><b>${money(M.totalDue,2)}</b></span></div>
+    ${M.balanceBF>0?`<div class="banner b-warn" style="margin-top:10px"><span class="ic">&#9888;</span><div><b>${money(M.balanceBF,2)} shows as brought forward.</b>The ${esc(dayLabel(M.bf.begin))}&ndash;${esc(dayLabel(M.bf.end))} quarter is unpaid <em>on this statement</em>. That may only be timing: <em>&ldquo;${esc(M.cutoffRule)}&rdquo;</em> &mdash; so a payment made on or after ${esc(dayLabel(M.cutoff))} would not appear. <b>Fortress does not assume you are in arrears</b>; it reports what the document says. If it is genuinely outstanding, interest has run since ${esc(dayLabel(M.bfTrigger))} &mdash; ${fmt(M.daysPastTrigger,0)} days &mdash; at ${money(M.dailyIfUnpaid,2)} a day.</div></div>`:''}
+    <p class="note"><b>${pct(M.lateInterestPct,2)} is the most expensive money in your structure.</b> ${esc(M.lateRule)} ${M.vsMortgage!=null?`That is <b>${fmt(M.vsMortgage,2)} points</b> above your mortgage`:''}${M.vsMargin!=null?` and <b>${fmt(M.vsMargin,2)} points</b> above your margin loan`:''}. Nothing else you owe comes close, so this is the one bill where paying on the day is worth more than the cash is worth anywhere else.</p>
+    <p class="note"><b>The yearly figure is one quarter multiplied by four.</b> Fortress has seen a single invoice, not a year of them. Contributions are set by the MCST's budget and can be revised at a general meeting, so ${money(M.annual,0)} is the current run rate, not a commitment. GST is shown on the invoice at ${pct(M.gstPct,2)} &mdash; if that ever changes, this figure moves with it.</p>
+    <p class="note"><b>What this does and does not cover.</b> It is the management fund and the sinking fund only. Property tax, insurance, agent commission, repairs and vacancy are still not in Fortress, so the net yield it shows remains better than the truth &mdash; by less than it was, but still. Source: ${esc(M.source)}.</p>
+  </div>`; })()}
+
   ${(()=>{ const h=cpfHomeClaim(); if(!h) return '';
     const R=CPF_RULES;
     const fundTotal = MORTGAGE_META.original + h.principal;
@@ -3297,9 +3354,19 @@ function viewProp(){
   <div class="card">
     <h2>Rental income vs debt service</h2>
     ${inc.map(i=>`<div class="kv"><span class="k">${esc(i.label)}${i.payer?' · '+esc(i.payer):''}</span><span class="v">${money(i.amount,2)}/mo</span></div>`).join('')}
-    <p class="note">${cover!=null && cover>=100
-      ? 'The tenant services the entire mortgage payment — principal and interest — with '+money(rentTotal-inst,2)+' left over each month. The home loan is self-funding at the current rent and rate; it is the floating rate, not the balance, that would break that.'
-      : 'Rent does not fully cover the instalment — the shortfall comes from your own cash flow.'}</p>
+    ${(()=>{ const N=rentNet(); if(!N) return '';
+      return `${N.mcstM>0?`<div class="kv"><span class="k">Less MCST maintenance<br><span style="font-size:11px;opacity:.72">fixed, quarterly, invoiced</span></span><span class="v neg">&minus;${money(N.mcstM,2)}/mo</span></div>`:''}
+      ${N.other!=null?`<div class="kv"><span class="k">Less other running costs<br><span style="font-size:11px;opacity:.72">as you entered them</span></span><span class="v neg">&minus;${money(N.other,2)}/mo</span></div>`:''}
+      <div class="kv"><span class="k"><b>Net rent</b>${N.incomplete?`<br><span style="font-size:11px;opacity:.72">before the costs Fortress still lacks</span>`:''}</span><span class="v"><b>${money(N.netAfterAll!=null?N.netAfterAll:N.net,2)}/mo</b></span></div>
+      ${N.instal!=null?`<div class="kv"><span class="k">Mortgage instalment</span><span class="v">${money(N.instal,2)}/mo</span></div>
+      <div class="kv"><span class="k"><b>Covers</b><br><span style="font-size:11px;opacity:.72">gross rent would show ${pct(N.coverGross,1)}</span></span><span class="v ${(N.coverAll??N.coverNet)>=100?'pos':'neg'}"><b>${pct(N.coverAll??N.coverNet,1)}</b><br><span style="font-size:11px;font-weight:400">${(N.coverAll??N.coverNet)>=100?money((N.netAfterAll??N.net)-N.instal,2)+' over':money(N.instal-(N.netAfterAll??N.net),2)+' short'} each month</span></span></div>`:''}`; })()}
+    ${(()=>{ const N=rentNet();
+      if(!N || N.instal==null) return `<p class="note">${cover!=null && cover>=100 ? 'Rent exceeds the instalment.' : 'Rent does not fully cover the instalment.'}</p>`;
+      const c = N.coverAll ?? N.coverNet;
+      return `<p class="note">${c>=100
+        ? `<b>The property funds itself — but only after the costs are taken off, and only just.</b> Gross rent of ${money(N.gross,2)} covers ${pct(N.coverGross,1)} of the instalment; once ${money(N.known,2)} of MCST comes off it is ${pct(c,1)}, leaving ${money((N.netAfterAll??N.net)-N.instal,2)} a month.`
+        : `<b>On gross rent the property looks self-funding. It is not.</b> ${money(N.gross,2)} of rent against a ${money(N.instal,2)} instalment reads as ${pct(N.coverGross,1)} — but MCST is a fixed, invoiced, quarterly obligation of ${money(N.mcstM,2)} a month, and once it comes off, cover falls to <b>${pct(c,1)}</b>. The property is <b>${money(N.instal-(N.netAfterAll??N.net),2)} a month short</b>, or ${money((N.instal-(N.netAfterAll??N.net))*12,2)} a year, from your own cash flow.`}
+        ${N.incomplete?` And this is still the <b>best case</b>: ${N.missing.join(', ')} are not in Fortress, so the true net is lower again.`:''}</p>`; })()}
     <p class="note">Credited around day ${esc(String(inc[0].dayOfMonth||'?'))} each month to ${esc(inc[0].account||'')}. Source: ${esc(inc[0].source||'manual entry')}.</p>
   </div>`; })()}
   ${(()=>{ const mm=manualMonths(); if(!mm.length) return '';
@@ -3362,25 +3429,6 @@ function propForms(){
     <button class="btn" style="margin-top:12px" onclick="saveManual()">Save month</button>
     ${manualMonths().length?`<div style="margin-top:12px">${manualMonths().slice().reverse().map(m=>`<div class="kv"><span class="k">${esc(m)}</span><span class="v">${money(state.manual[m].mortgageBalance,2)} <button class="btn ghost" style="width:auto;padding:2px 8px;font-size:11px;margin-left:8px" onclick="delManual('${esc(m)}')">×</button></span></div>`).join('')}</div>`:''}
   </div>
-  ${(()=>{ const M=mcstPosition(); if(!M) return '';
-    return `<div class="card">
-    <h2>MCST maintenance<span class="pill">${esc(M.mcst)} &middot; ${fmt(M.shareUnits,0)} share units</span></h2>
-    <div class="tiles">
-      <div class="tile"><div class="v">${money(M.perQuarter,2)}</div><div class="l">Per quarter</div><div class="d">${money(M.managementFund,2)} management + ${money(M.sinkingFund,2)} sinking</div></div>
-      <div class="tile"><div class="v">${money(M.annual,0)}</div><div class="l">A year</div><div class="d">${money(M.monthly,2)} a month &middot; four quarters</div></div>
-      <div class="tile"><div class="v ${M.pctOfRent!=null&&M.pctOfRent>0?'neg':''}">${M.pctOfRent!=null?pct(M.pctOfRent,2):'n/a'}</div><div class="l">Of the gross rent</div><div class="d">${M.rentY>0?`${money(M.rentY,0)} a year in`:'no rent recorded'}</div></div>
-      <div class="tile"><div class="v ${M.daysToDue!=null&&M.daysToDue<=21?'neg':''}">${M.daysToDue!=null?fmt(M.daysToDue,0):'—'}</div><div class="l">Days to the next due date</div><div class="d">${M.dueDate?esc(dayLabel(M.dueDate)):'not stated'}</div></div>
-    </div>
-    <table style="margin-top:10px"><thead><tr><th>Billing period</th><th class="r">Total</th></tr></thead><tbody>
-      ${M.periods.map(q=>`<tr><td>${esc(dayLabel(q.begin))} &ndash; ${esc(dayLabel(q.end))}<br><span class="k" style="font-size:11px">${money(q.mgmt,2)} management + ${money(q.sink,2)} sinking &middot; ${q.kind==='broughtForward'?'brought forward':`due ${esc(dayLabel(q.dueDate))}`}</span></td><td class="r"><b>${money(q.total,2)}</b></td></tr>`).join('')}
-      <tr><td><b>Total due</b><br><span class="k" style="font-size:11px">as shown on the invoice</span></td><td class="r"><b>${money(M.totalDue,2)}</b></td></tr>
-    </tbody></table>
-    ${M.balanceBF>0?`<div class="banner b-warn" style="margin-top:10px"><span class="ic">&#9888;</span><div><b>${money(M.balanceBF,2)} shows as brought forward.</b>The ${esc(dayLabel(M.bf.begin))}&ndash;${esc(dayLabel(M.bf.end))} quarter is unpaid <em>on this statement</em>. That may only be timing: <em>&ldquo;${esc(M.cutoffRule)}&rdquo;</em> &mdash; so a payment made on or after ${esc(dayLabel(M.cutoff))} would not appear. <b>Fortress does not assume you are in arrears</b>; it reports what the document says. If it is genuinely outstanding, interest has run since ${esc(dayLabel(M.bfTrigger))} &mdash; ${fmt(M.daysPastTrigger,0)} days &mdash; at ${money(M.dailyIfUnpaid,2)} a day.</div></div>`:''}
-    <p class="note"><b>${pct(M.lateInterestPct,2)} is the most expensive money in your structure.</b> ${esc(M.lateRule)} ${M.vsMortgage!=null?`That is <b>${fmt(M.vsMortgage,2)} points</b> above your mortgage`:''}${M.vsMargin!=null?` and <b>${fmt(M.vsMargin,2)} points</b> above your margin loan`:''}. Nothing else you owe comes close, so this is the one bill where paying on the day is worth more than the cash is worth anywhere else.</p>
-    <p class="note"><b>The yearly figure is one quarter multiplied by four.</b> Fortress has seen a single invoice, not a year of them. Contributions are set by the MCST's budget and can be revised at a general meeting, so ${money(M.annual,0)} is the current run rate, not a commitment. GST is shown on the invoice at ${pct(M.gstPct,2)} &mdash; if that ever changes, this figure moves with it.</p>
-    <p class="note"><b>What this does and does not cover.</b> It is the management fund and the sinking fund only. Property tax, insurance, agent commission, repairs and vacancy are still not in Fortress, so the net yield it shows remains better than the truth &mdash; by less than it was, but still. Source: ${esc(M.source)}.</p>
-  </div>`; })()}
-
   <div class="card"><h2>What the house cost you</h2>
     <p class="note" style="margin-top:0">Without a purchase price Fortress can show what the property is worth but not what it has returned. Nothing here is guessed — leave a field blank and Fortress says the figure is unavailable rather than estimating it.</p>
     <label class="fld">Purchase price (S$)</label>
@@ -4827,7 +4875,11 @@ function plainSummary(tab){
     prop: {
       lead:`The house is worth about <b>${M(state.settings.homeValue||0)}</b>. You still owe <b>${M(mm?.mortgageBalance||0)}</b>, so your share of it is roughly <b>${M((state.settings.homeValue||0)-(mm?.mortgageBalance||0))}</b>.`,
       points:[
-        instal!=null?`You pay <b>${money(instal,0)}</b> a month.${inc?` The rent brings in <b>${money(inc,0)}</b>, which covers <b>${pct(inc/instal*100,0)}</b> of it.`:''}`:null,
+        (()=>{ const N=(typeof rentNet==='function')?rentNet():null;
+          if(instal==null) return null;
+          if(!N) return `You pay <b>${money(instal,0)}</b> a month.${inc?` The rent brings in <b>${money(inc,0)}</b>, which covers <b>${pct(inc/instal*100,0)}</b> of it.`:''}`;
+          const c = N.coverAll ?? N.coverNet;
+          return `You pay <b>${money(instal,0)}</b> a month and the rent brings in <b>${money(N.gross,0)}</b>. That looks like <b>${pct(N.coverGross,0)}</b> cover — but the building charges <b>${money(N.mcstM,0)}</b> a month in maintenance, and after that the rent covers <b>${pct(c,0)}</b>. ${c>=100?`You keep about <b>${money((N.netAfterAll??N.net)-instal,0)}</b> a month.`:`<b>You put in about ${money(instal-(N.netAfterAll??N.net),0)} a month of your own money.</b>`}`; })(),
         eff.ratePct!=null?`The interest rate is <b>${pct(eff.ratePct,2)}</b> and it is <b>floating</b> — it can change, and the bank writes to tell you when it does.`:null,
         `Every payment splits two ways: part is interest, which is gone, and part reduces what you owe. Only the second part builds your wealth.`,
         (typeof cpfHomeClaim==='function'&&cpfHomeClaim())?`You used <b>${M(cpfHomeClaim().principal)}</b> of CPF to buy it. If you sell, <b>${M(cpfHomeClaim().claim)}</b> goes back to CPF, not to your bank account.`:null,
