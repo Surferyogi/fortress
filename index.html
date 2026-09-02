@@ -141,7 +141,7 @@ details.gap[open]>summary::after{content:'  \2212'}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:SEP:02-23:15';
+const VERSION = 'v2026:SEP:03-09:20';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -432,6 +432,7 @@ const CPF_RULES = {
   medisaveCashException:'Singaporeans with severe disability aged 30 and above may withdraw up to $200 per month in cash from their own and/or their spouse\u2019s MediSave account(s)',
   medisaveCashSource:'CPF Board, "Can I withdraw my MediSave in cash?"',
   bhsSource:'CPF Board — Basic Healthcare Sum for 2026 is $79,000 for members below 65',
+  salesProceedsSource:'CPF Board, "What happens to the sales proceeds after selling your home"',
   brs:110200, frs:220400, ers:440800, sumsYear:2026,
   // published cohorts only — CPF has announced nothing beyond 2027
   frsByYear:{ 2023:198800, 2024:205800, 2025:213000, 2026:220400, 2027:228200 },
@@ -493,6 +494,12 @@ const PURCHASE_SEED = {
   vendorAgentCommission:29400, vendorAgentCommissionInclGst:32046, vendorPaysAgent:true,
   /* NOT known and not guessed */
   buyerLegalFees:null, buyerAgentCommission:null,
+  /* The one sale fee that IS documented: the rate the vendor of this very unit paid.
+     29,400 / 2,450,000 = 1.2%, and 32,046 / 29,400 confirms 9% GST on top. Used as the
+     default for a future sale, with the derivation stated and overridable. */
+  agentPctExGst:1.2, agentPctInclGst:1.308, gstPctImplied:9,
+  agentSource:'derived from your own Option to Purchase: the vendor pays PropNex S$29,400 on a S$2,450,000 sale (1.2%), S$32,046 with GST (1.308%) — the implied GST rate is 9%',
+  legalNote:'Neither your legal fees on the purchase nor the fees for a future sale appear on any document Fortress holds. The Option names the VENDOR\u2019s solicitor and states no fee.',
   source:'Option to Purchase, sale price S$2,450,000, option granted 10 Feb 2026, completion 20 May 2026',
   exerciseDateKnown:false,
   exerciseNote:'The Option was granted on 10 Feb 2026 and expires 8 Apr 2026. Fortress does not hold the date it was exercised, and that date - not completion - starts the Seller’s Stamp Duty clock.'
@@ -1330,8 +1337,15 @@ function breakEven(opts){
   const legalBuy = P.buyerLegalFees;                  // null unless supplied
   const acquiredOn = o.acquiredOn || state.settings.acquiredOn || P.optionGranted;
   const saleDate = o.saleDate || new Date().toISOString().slice(0,10);
+  /* He asked for the fees from his own purchase. Commission IS documented — the rate the
+     vendor of this unit paid — so it is the default rather than a blank. Legal fees are
+     not documented anywhere and stay null: unavailable, never estimated. */
+  const commissionDefault = P.agentPctInclGst != null ? P.agentPctInclGst : null;
   const commissionPct = o.commissionPct != null ? o.commissionPct
-                      : (state.settings.saleCommissionPct != null ? state.settings.saleCommissionPct : null);
+                      : (state.settings.saleCommissionPct != null ? state.settings.saleCommissionPct
+                      : commissionDefault);
+  const commissionFromDoc = (o.commissionPct == null && state.settings.saleCommissionPct == null
+                             && commissionDefault != null);
   const legalSell = o.legalSell != null ? o.legalSell : (state.settings.saleLegalFees ?? null);
 
   /* the carry, from completion to the sale date, on the figures Fortress actually holds */
@@ -1392,9 +1406,24 @@ function breakEven(opts){
     const cash    = out(capitalIn - (c ? c.carry : 0));
     const yrs     = yearsTo(when);
     const real    = inflPct!=null ? out(capitalIn * Math.pow(1+inflPct/100, yrs)) : null;
+    /* What he would actually walk away with at THAT price: the sale, less everything the
+       lawyers pay out on completion. The CPF refund is in here because it leaves the
+       proceeds - even though it is not a loss of wealth, since it lands in his own CPF. */
+    const cl = (typeof cpfClaimOn==='function') ? cpfClaimOn(when) : null;
+    /* If the loan cannot be projected, the cheque is NOT computed with a zero balance -
+       that silently turns a S$1.3m debt into nothing and overstates the cash by that much.
+       It is refused instead, and the card shows no cheque. */
+    const mb = (typeof mortgageBalanceOn==='function') ? mortgageBalanceOn(when) : null;
+    const owing = mb ? mb.balance : null;
+    const proceedsAt = P0 => { const ssd = P0*(ssdPct||0)/100, com = P0*(commissionPct||0)/100;
+      const ok = owing!=null && cl!=null;
+      return { gross:P0, ssd, com, legal:(legalSell||0), mortgage:owing, mortgageProjected:mb,
+               cpf: cl?cl.claim:0, cpfAccrued: cl?cl.accrued:0, computable:ok,
+               cash: ok ? (P0 - ssd - com - (legalSell||0) - owing - cl.claim) : null }; };
     return { price:capital, capital, cash, real, yrs,
              capitalIn, inCost:capitalIn, denom,
              carry: c?c.carry:null, carryMonths: c?c.months:null,
+             cpfClaim: cl, proceedsAt, atCapital: proceedsAt(capital),
              vsPurchase:(capital/price-1)*100,
              cashVsPurchase:(cash/price-1)*100,
              realVsPurchase: real!=null ? (real/price-1)*100 : null };
@@ -1429,7 +1458,13 @@ function breakEven(opts){
              return { ...st, ...solve(price*chosenAbsd.pct/100, st.pct, st.from||st.until) }; })()
     : null;
 
+  /* each S$1,000 of legal fees adds S$1,000 / (1 - ssd - commission) to the break-even,
+     which at the SSD-free rung is barely more than S$1,000 and at 16% is over S$1,200 */
+  const legalSensitivity = ssd => 1000 / (1 - (ssd||0)/100 - (commissionPct||0)/100);
+
   return { P, price, bsd, legalBuy, acquiredOn, saleDate, commissionPct, legalSell,
+    commissionFromDoc, commissionDefault, legalSensitivity,
+    claimNow: (typeof cpfClaimOn==='function') ? cpfClaimOn(saleDate) : null,
     refValue, chosenAbsd, firstAffordable, everAffordable, floorRow, inflPct,
     /* the least a sale can ever break even at, once SSD is gone */
     capitalFloor: floorRow ? floorRow.capital : null,
@@ -1439,9 +1474,9 @@ function breakEven(opts){
     absdKnown: state.settings.absdKey ? STAMP_DUTY.absdRates.find(a=>a.key===state.settings.absdKey) : null,
     unknowns: [ state.settings.absdKey ? null : 'how many residential properties you owned when you bought — this sets ABSD',
                 P.exerciseDateKnown ? null : 'the date the Option was exercised, which starts the SSD clock',
-                legalBuy==null ? 'your legal fees on the purchase' : null,
+                legalBuy==null ? 'your legal fees on the purchase — not on any document Fortress holds' : null,
                 commissionPct==null ? 'the agent commission you would pay to sell' : null,
-                legalSell==null ? 'your legal fees on a sale' : null,
+                legalSell==null ? 'your legal fees on a sale — not on any document Fortress holds' : null,
                 'property tax, insurance and repairs' ].filter(Boolean) };
 }
 
@@ -1454,6 +1489,59 @@ function cpfHomeClaim(onDate){
   const monthsRun = prin>0 ? accr / monthly : null;
   return { asOf:h.asOf, properties:h.properties, principal:prin, accrued:accr, claim, monthlyAccrual:monthly,
            monthsRun, yearlyAccrual:prin*CPF_RULES.oaPct/100, source:h.source };
+}
+/* The loan on a future date. Showing what he walks away with in 2030 against TODAY's
+   balance would understate the cash by four years of principal, so it is amortised at the
+   current rate and instalment - both floating, which is stated wherever this is used.
+   If either is missing the projection is refused rather than guessed. */
+function mortgageBalanceOn(iso){
+  const mm = latestManual(); if(!mm || mm.mortgageBalance==null) return null;
+  const eff = effectiveLoanTerms();
+  const rate = eff.ratePct ?? mm.mortgageRatePct ?? null;
+  const inst = eff.instalment ?? mm.mortgagePayment ?? null;
+  const from = (mm.month||'') + '-01';
+  if(rate==null || inst==null || !/^\d{4}-\d{2}-01$/.test(from))
+    return { balance:mm.mortgageBalance, projected:false, months:0 };
+  const months = Math.max(0, Math.round((new Date(iso+'T00:00:00') - new Date(from+'T00:00:00'))/86400000/30.4375));
+  let b = mm.mortgageBalance;
+  for(let i=0;i<months && b>0;i++){ b = b*(1+rate/100/12) - inst; }
+  return { balance: Math.max(0,b), projected:true, months, rate, inst, from,
+           paidDown: mm.mortgageBalance - Math.max(0,b) };
+}
+
+/* What the CPF refund will be on a given date.
+
+   THIS WAS WRONG in v2026:SEP:03-01:40. It re-derived the accrued interest from the
+   withdrawal date and produced S$4,470 where CK's own CPF statement says S$3,140.64 -
+   a modelled number quietly overriding a documented one. CPF's figure is exactly three
+   months of accrual at the OA rate on the principal, so the accrual clock does not start
+   on the withdrawal day the way a naive model assumes.
+
+   The statement is the authority. The claim is anchored to it and grown FORWARD from its
+   own as-of date at the OA rate, compounded annually, which is CPF's stated basis:
+   "It uses CPF's prevailing interest rates, compounded annually throughout this period."
+   cpfClaimOn(statementDate) therefore returns the statement figure to the cent. */
+function cpfClaimOn(iso){
+  const h = latestCpfHome(); if(!h) return null;
+  const prin = h.principalWithdrawn||0, accrAt = h.accruedInterest||0;
+  if(!(prin>0)) return null;
+  const asOf = h.asOf, r = CPF_RULES.oaPct/100;
+  const claimAt = prin + accrAt;
+  const years = asOf ? Math.max(0,
+    (new Date(iso+'T00:00:00') - new Date(asOf+'T00:00:00'))/86400000/365.25) : 0;
+  const claim = claimAt * Math.pow(1+r, years);
+  /* the withdrawal row is kept for context - it explains WHEN the clock started - but it
+     is never used to recompute a figure CPF has already published */
+  const hse = cpfTxns().filter(t=>t.code==='HSE' && (t.oa||0) < 0)
+                       .sort((a,b)=>a.date.localeCompare(b.date))[0];
+  const monthly = prin*r/12;
+  return { principal:prin, accrued: claim - prin, claim,
+           accruedAtStatement: accrAt, claimAtStatement: claimAt, asOf,
+           withdrawnOn: hse ? hse.date : null,
+           monthsAccruedAtStatement: monthly>0 ? accrAt/monthly : null,
+           years, perMonthNow: monthly, ratePct: CPF_RULES.oaPct,
+           anchoredToStatement: true, source: h.source||null,
+           basis:'CPF Board: "It uses CPF’s prevailing interest rates, compounded annually throughout this period." The calculation runs from the date you first used your CPF savings until you make the refund.' };
 }
 function cpfClaimIn(years){
   const h = latestCpfHome(); if(!h) return null;
@@ -3609,16 +3697,34 @@ function viewProp(){
     <label class="fld">Inflation rate to test (% a year) &mdash; optional, yours not Fortress's</label>
     <input type="number" id="bkInfl" step="0.1" inputmode="decimal" value="${state.settings.inflationPct ?? ''}" placeholder="e.g. 2">
     <button class="btn ghost" style="margin-top:8px;width:auto;padding:6px 14px" onclick="setInflation()">Apply</button>
+    <div class="warnbox" style="margin-top:12px"><b>The fees, and which of them Fortress actually has</b>
+      <p style="margin:6px 0"><b>Agent commission &mdash; ${pct(B.commissionPct,3)}, and it is documented.</b> ${esc(B.P.agentSource)}. That rate is in every figure above${B.commissionFromDoc?'':' (you have overridden it below)'}. A different agent or a negotiated rate would change it.</p>
+      <p style="margin:6px 0"><b>Legal fees &mdash; not available, either side.</b> ${esc(B.P.legalNote)} Fortress will not estimate them. What it can tell you is the sensitivity: <b>every ${money(1000,0)} of legal fees adds ${money(B.legalSensitivity(0),0)} to the break-even once stamp duty is gone, and ${money(B.legalSensitivity(16),0)} while it is still ${pct(16,0)}</b> &mdash; because the fee is recovered out of a sale that is itself taxed. Enter either figure below and every row moves.</p>
+    </div>
+
+    ${(()=>{ const cl=B.claimNow; if(!cl||!B.chosenAbsd) return '';
+      const row=B.table.find(t=>t.key===B.chosenAbsd.key).rows[B.table.find(t=>t.key===B.chosenAbsd.key).rows.length-1];
+      const a=row.atCapital;
+      return `<div class="warnbox" style="margin-top:12px"><b>The CPF refund, and its interest</b>
+      <p style="margin:6px 0"><b>Two figures, and the gap between them is interest.</b> You took <b>${money(cl.principal,2)}</b> of CPF out${cl.withdrawnOn?` on ${esc(dayLabel(cl.withdrawnOn))}`:''}. Your CPF statement of ${esc(dayLabel(cl.asOf))} shows <b>${money(cl.accruedAtStatement,2)}</b> of accrued interest on it, so the refund then stood at <b>${money(cl.principal,2)} + ${money(cl.accruedAtStatement,2)} = ${money(cl.claimAtStatement,2)}</b>. CPF charges itself interest on money you take out as though it had never left, at ${pct(cl.ratePct,1)} a year &mdash; about <b>${money(cl.perMonthNow,2)} a month</b> on this principal, which is why CPF's figure is exactly ${fmt(cl.monthsAccruedAtStatement,0)} months' worth. It grows whether you sell or not: <b>${money(cl.claim,2)}</b> today, and <b>${money(row.cpfClaim.claim,0)}</b> by ${esc(dayLabel(row.from||row.until))}, of which <b>${money(row.cpfClaim.accrued,0)}</b> would be interest.</p>
+      <p class="note" style="margin:6px 0">Projected forward from your statement, not re-derived from the withdrawal date &mdash; ${esc(cl.basis)} An earlier build recomputed it from scratch and produced ${money(4470,0)} where CPF says ${money(cl.accruedAtStatement,2)}; the statement wins, and ${'cpfClaimOn'}(${esc(dayLabel(cl.asOf))}) now returns CPF's own figure to the cent.</p>
+      <p style="margin:6px 0"><b>None of that is in the break-even, deliberately.</b> The refund leaves the sale proceeds but lands in <em>your own CPF account</em> &mdash; it moves between your pockets rather than out of them, so it changes what you <em>receive</em>, not what you are <em>worth</em>. Adding it to the break-even would count the same money twice, since the ${money(cl.principal,0)} already sits inside the ${money(B.price,0)} you paid.</p>
+      <p style="margin:6px 0"><b>What it does change is the cheque.</b> ${a.computable
+        ? `Selling at the ${esc(dayLabel(row.from||row.until))} break-even of ${money(row.capital,0)} would pay out roughly: ${money(a.gross,0)} less ${money(a.ssd,0)} stamp duty, less ${money(a.com,0)} commission, less <b>${money(a.mortgage,0)}</b> still owing on the loan${a.mortgageProjected&&a.mortgageProjected.projected?` (amortised from today's ${money(latestManual().mortgageBalance,0)} at the current rate and instalment &mdash; both floating)`:''}, less <b>${money(a.cpf,0)}</b> to CPF &mdash; leaving about <b>${money(a.cash,0)}</b> in cash${a.legal?'':' before legal fees'}. The CPF portion is still yours; it is simply not spendable until you meet the withdrawal conditions.`
+        : `Fortress cannot project the loan balance to that date, so it will not show a cheque rather than compute one against a zero mortgage.`}</p>
+      <p style="margin:6px 0"><b>And there is a floor under the downside.</b> CPF: <em>&ldquo;If the selling price after paying your outstanding housing loan is not enough to cover the required CPF refund, you do not need to top up the shortfall in cash if you have sold the property at market value.&rdquo;</em> ${esc(CPF_RULES.salesProceedsSource||'CPF Board, "What happens to the sales proceeds after selling your home"')}</p>
+      </div>`; })()}
+
     <p class="note" style="margin-top:12px"><b>How this is worked out.</b> Selling costs are charged on the sale price, so the sum rearranges to <b>P = (what went in &minus; what the property has thrown off) &divide; (1 &minus; SSD &minus; commission)</b>. That division is why the Seller's Stamp Duty dominates every other line: at ${pct(B.now.pct,0)} you must find ${pct(B.now.pct,0)} more than the shortfall, not ${pct(B.now.pct,0)} of it.</p>
     <p class="note"><b>Stamp duty is computed, not remembered.</b> BSD on ${money(B.price,0)}: ${B.bsd.lines.map(l=>`${money(l.amount,0)} at ${pct(l.pct,0)}`).join(' + ')} = <b>${money(B.bsd.total,2)}</b>. ${esc(SD.bsdSource)}. ${esc(B.now.reg.source)}. ${esc(SD.absdSource)}. Checked ${esc(SD.checkedOn)}.</p>
     <p class="note"><b>The carry is held at today's rate, and it will not stay there.</b> ${B.carryPerMonth!=null?`Rent ${money(B.rentM,0)} less MCST ${money(B.mcstM,0)} less loan interest ${money(B.interestM,0)} is ${money(B.carryPerMonth,0)} a month, and each row above accrues it to that row's own date rather than to today.`:''} Mortgage interest falls as the loan amortises, which would <em>raise</em> the carry; the rate is floating and the tenancy is not permanent, which could lower it. Property tax, insurance and repairs are not in Fortress at all, so the true carry is lower and every break-even here is <b>too low</b>.</p>
     <p class="note"><b>The SSD clock does not start at completion.</b> ${esc(Pu.exerciseNote)} Fortress uses ${esc(dayLabel(B.acquiredOn))}; if the Option was exercised later the whole ladder shifts with it, by up to ${fmt(Math.round((new Date(Pu.optionExpiry)-new Date(Pu.optionGranted))/86400000),0)} days.</p>
     <p class="note"><b>What Fortress still does not know:</b> ${B.unknowns.map(u=>esc(u)).join('; ')}. Each one makes the real break-even higher, not lower.</p>
-    <label class="fld">Agent commission on a sale (%)</label>
-    <input type="number" id="bkComm" step="0.01" inputmode="decimal" value="${state.settings.saleCommissionPct ?? ''}" placeholder="e.g. 2">
-    <label class="fld">Legal fees on a sale (S$)</label>
+    <label class="fld">Agent commission on a sale (%) &mdash; ${B.commissionFromDoc?`using ${pct(B.commissionDefault,3)} from your Option`:'your override'}</label>
+    <input type="number" id="bkComm" step="0.001" inputmode="decimal" value="${state.settings.saleCommissionPct ?? ''}" placeholder="${fmt(B.commissionDefault,3)} from the Option">
+    <label class="fld">Legal fees on a sale (S$) &mdash; not available to Fortress</label>
     <input type="number" id="bkLegal" step="0.01" inputmode="decimal" value="${state.settings.saleLegalFees ?? ''}" placeholder="optional">
-    <label class="fld">Your legal fees on the purchase (S$)</label>
+    <label class="fld">Your legal fees on the purchase (S$) &mdash; not available to Fortress</label>
     <input type="number" id="bkLegalBuy" step="0.01" inputmode="decimal" value="${(state.settings.purchase||{}).buyerLegalFees ?? ''}" placeholder="optional">
     <button class="btn" style="margin-top:12px" onclick="saveSaleCosts()">Save</button>
     <p class="note"><b>This is arithmetic, not advice.</b> It says what a sale must fetch to leave you no worse off on the figures Fortress holds. Whether to sell turns on things it does not model.</p>
@@ -5213,7 +5319,9 @@ function plainSummary(tab){
           return `You pay <b>${money(instal,0)}</b> a month and the rent brings in <b>${money(N.gross,0)}</b>. That looks like <b>${pct(N.coverGross,0)}</b> cover — but the building charges <b>${money(N.mcstM,0)}</b> a month in maintenance, and after that the rent covers <b>${pct(c,0)}</b>. ${c>=100?`You keep about <b>${money((N.netAfterAll??N.net)-instal,0)}</b> a month.`:`<b>You put in about ${money(instal-(N.netAfterAll??N.net),0)} a month of your own money.</b>`}`; })(),
         eff.ratePct!=null?`The interest rate is <b>${pct(eff.ratePct,2)}</b> and it is <b>floating</b> — it can change, and the bank writes to tell you when it does.`:null,
         `Every payment splits two ways: part is interest, which is gone, and part reduces what you owe. Only the second part builds your wealth.`,
-        (typeof cpfHomeClaim==='function'&&cpfHomeClaim())?`You used <b>${M(cpfHomeClaim().principal)}</b> of CPF to buy it. If you sell, <b>${M(cpfHomeClaim().claim)}</b> goes back to CPF, not to your bank account.`:null,
+        (()=>{ const c=(typeof cpfClaimOn==='function')?cpfClaimOn(new Date().toISOString().slice(0,10)):null;
+          if(!c) return null;
+          return `You used <b>${money(c.principal,2)}</b> of CPF to buy it. If you sell, <b>${money(c.claimAtStatement,2)}</b> goes back to CPF. <b>The difference is interest:</b> ${money(c.principal,2)} + ${money(c.accruedAtStatement,2)} of accrued interest = ${money(c.claimAtStatement,2)}, the figures on your CPF statement of ${esc(dayLabel(c.asOf))}${c.claim>c.claimAtStatement?` (about ${money(c.claim,0)} by today)`:''}. CPF charges itself interest on money you take out, as though it had never left \u2014 ${pct(c.ratePct,1)} a year, about <b>${money(c.perMonthNow,2)} a month</b>, and it keeps growing whether you sell or not. <b>It is still your money</b>: it lands in your own CPF account rather than your bank account, so it changes what you <em>receive</em>, not what you are <em>worth</em>.`; })(),
         state.settings.homePurchasePrice?null:`<b>Not known:</b> what you paid for it. Without that, Fortress cannot say whether the house has been a good investment.`
       ]},
     cpf: {

@@ -551,11 +551,81 @@ The card now computes three figures and leads with the strict one:
 
 | Sell by | SSD | Capital break-even | counting rent |
 | --- | --- | --- | --- |
-| 10 Feb 2027 | 16% | **$3,026,310** (+23.5%) | $2,984,100 |
-| 10 Feb 2028 | 12% | $2,888,750 (+17.9%) | $2,793,172 |
-| 10 Feb 2029 | 8% | $2,763,152 (+12.8%) | $2,618,702 |
-| 10 Feb 2030 | 4% | $2,648,021 (+8.1%) | $2,458,910 |
-| from 10 Feb 2030 | none | **$2,542,100** (+3.8%) | $2,360,554 |
+| 10 Feb 2027 | 16% | **$3,074,179** (+25.5%) | $3,031,301 |
+| 10 Feb 2028 | 12% | $2,932,335 (+19.7%) | $2,835,315 |
+| 10 Feb 2029 | 8% | $2,803,004 (+14.4%) | $2,656,470 |
+| 10 Feb 2030 | 4% | $2,684,598 (+9.6%) | $2,492,876 |
+| from 10 Feb 2030 | none | **$2,575,791** (+5.1%) | $2,391,839 |
+
+(These include the 1.308% commission derived below. Without it the floor is $2,542,100.)
+
+### The fees: one is documented, two are not
+
+CK asked for the fees from his own purchase. One of the three is genuinely on the paper:
+
+- **Agent commission — 1.308%, documented.** The OTP records the vendor paying PropNex
+  **$29,400** on a **$2,450,000** sale = **1.2%**, and **$32,046** with GST, which implies a
+  **9%** GST rate. That is now the default in every row, with the derivation printed so it
+  can be checked, and overridable.
+- **Legal fees, purchase and sale — not available.** Neither appears on any document
+  Fortress holds; the OTP names the *vendor's* solicitor and states no fee. Fortress refuses
+  to estimate them. What it gives instead is the **sensitivity**: every $1,000 of legal fees
+  adds **$1,013** to the break-even once SSD is gone and **$1,209** while it is still 16% —
+  because the fee has to be recovered out of a sale that is itself taxed. Both input labels
+  read "not available to Fortress".
+
+### The CPF accrued interest — asked about, and deliberately excluded
+
+$502,500 went in; $505,640.64 comes back. **The gap is accrued interest: $502,500.00 +
+$3,140.64 = $505,640.64.** CPF charges itself interest on money taken out as though it had
+never left — 2.5% a year, **$1,046.88 a month** on this principal, growing whether he sells
+or not. The plain-English line and the break-even card now spell that addition out, because
+the two figures sitting side by side with no bridge is exactly what prompted the question.
+
+**A modelled number was overriding a documented one.** The first version of `cpfClaimOn()`
+re-derived the accrual from the withdrawal date (24 Apr 2026) and produced **$4,470** where
+his CPF statement says **$3,140.64**. CPF's figure is exactly *three* months of accrual at
+2.5% on the principal — the clock does not start on the withdrawal day the way a naive model
+assumes. The statement is the authority: the claim is now **anchored to it** and grown
+forward from its own as-of date at the OA rate, compounded annually, which is CPF's stated
+basis. `cpfClaimOn(statementDate)` returns CPF's own figure **to the cent**, and a test
+asserts that invariant rather than any particular projection.
+
+**None of it is in the break-even, and that is a decision, not an omission.** The refund
+leaves the sale proceeds but lands in his own CPF — it moves between his pockets rather than
+out of them, so it changes what he *receives*, not what he is *worth*. Adding it would also
+**double-count**, because the $502,500 principal already sits inside the $2,450,000 price.
+
+What it does change is the cheque, so the card now shows one: at the 10 Feb 2030 break-even,
+gross less SSD less commission less the **amortised** loan balance (projected from today's
+$1,334,491 at the current rate and instalment, both floating — not frozen, which would have
+understated the cash by four years of principal) less the CPF refund.
+
+### A silent regression, and the guard that hid it
+
+Rewriting `cpfClaimOn()` with a block replace **deleted `mortgageBalanceOn()`** along with
+it. There was no error, because the call site was written defensively as
+`(typeof mortgageBalanceOn === 'function') ? mortgageBalanceOn(when) : null` with the balance
+then defaulting to `0` — so a missing $1.3m mortgage silently became no mortgage at all, and
+the cheque overstated the cash by that much. **A guard that substitutes a plausible default
+for a missing input is worse than no guard**: it converts a loud failure into a quiet wrong
+answer. The function is restored, and the fallback now yields `null`, with the card printing
+*"Fortress cannot project the loan balance to that date, so it will not show a cheque rather
+than compute one against a zero mortgage."* `betest.js` stubs the projector out and asserts
+both the refusal and the message. And the downside has a
+floor, quoted from CPF: *"If the selling price after paying your outstanding housing loan is
+not enough to cover the required CPF refund, you do not need to top up the shortfall in cash
+if you have sold the property at market value."*
+
+The plain-English line he quoted was silent on all of this and now carries the interest, the
+monthly growth rate, and the point that it is still his money.
+
+### Two test bugs of mine
+
+- `B.legalSensitivity(...)` was called on a value returned from `page.evaluate` — **functions
+  do not survive that serialisation**. The sensitivity is now computed inside the page.
+- The 2.5%-inflation floor was pinned to a literal that moved the moment commission entered
+  the denominator. It is derived from the row's own inputs now.
 
 ### The answer changed with the definition
 
@@ -617,7 +687,7 @@ data point and it is his own purchase, not because the market has been flat. A h
 gap now says this, and the value card carries a banner above the hero figure. Every
 break-even percentage on the tab is measured against that same number.
 
-`betest.js` — 97 assertions, at `Asia/Singapore`. Two of them exist because I got the
+`betest.js` — 129 assertions, at `Asia/Singapore`. Two of them exist because I got the
 arithmetic wrong first: the option window is 57 days, not the 58 I asserted from memory, and
 it is now derived rather than restated.
 
