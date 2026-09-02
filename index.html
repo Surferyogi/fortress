@@ -141,7 +141,7 @@ details.gap[open]>summary::after{content:'  \2212'}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:SEP:02-15:35';
+const VERSION = 'v2026:SEP:02-23:15';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -342,7 +342,11 @@ const HOME_SEED = {
   avm:{ value:2390000, low:2150000, high:2630000, asOf:'2026-08',
         source:'Property portal estimated value, last updated Aug 2026, with a low\u2013high range' },
   comps:[
-    { date:'2026-03', sqft:915, price:2450000 },
+    /* CONFIRMED by CK on 2 Sep 2026: this row is his own purchase, not an arm's-length
+       comparable from someone else. It stays as the reference because it IS the last
+       equivalent transaction - but it can never corroborate the price he paid. */
+    { date:'2026-03', sqft:915, price:2450000, own:true,
+      ownNote:'your own purchase — Option granted 10 Feb 2026, completed 20 May 2026' },
     { date:'2026-02', sqft:872, price:2200000 },
     { date:'2023-06', sqft:872, price:2370000 },
     { date:'2023-06', sqft:872, price:2200000 },
@@ -475,6 +479,53 @@ const CPF_RULES = {
 /* ---- MCST maintenance, straight off the tax invoice. Every figure below is printed on
    the document; nothing is derived, annualised or rounded at the seed. The annualisation
    happens in mcstPosition(), which labels it as an annualisation of the current quarter. */
+/* ---- The purchase itself, off the Option to Purchase. Facts only; every derived
+   figure (stamp duty, break-even) is computed and labelled where it is shown. ---- */
+const PURCHASE_SEED = {
+  address:'2 Makeway Avenue #07-04, The Atelier, Singapore 228599',
+  vendor:'the vendor named on the Option', purchaserIsSole:true, purchaserNric:true,
+  price:2450000,
+  optionMoney:24500, optionMoneyPct:1,
+  optionGranted:'2026-02-10', optionExpiry:'2026-04-08',
+  deposit:98000, depositPct:5, depositRule:'5% of the purchase price less the Option Money',
+  completion:'2026-05-20',
+  subjectToTenancy:true, furnitureIncluded:true,
+  vendorAgentCommission:29400, vendorAgentCommissionInclGst:32046, vendorPaysAgent:true,
+  /* NOT known and not guessed */
+  buyerLegalFees:null, buyerAgentCommission:null,
+  source:'Option to Purchase, sale price S$2,450,000, option granted 10 Feb 2026, completion 20 May 2026',
+  exerciseDateKnown:false,
+  exerciseNote:'The Option was granted on 10 Feb 2026 and expires 8 Apr 2026. Fortress does not hold the date it was exercised, and that date - not completion - starts the Seller’s Stamp Duty clock.'
+};
+
+/* ---- Stamp duty, re-read from IRAS and MOF on 2 Sep 2026 ---- */
+const STAMP_DUTY = {
+  checkedOn:'2026-09-02',
+  bsdTiers:[
+    { band:180000,  pct:1 }, { band:180000,  pct:2 }, { band:640000,  pct:3 },
+    { band:500000,  pct:4 }, { band:1500000, pct:5 }, { band:Infinity, pct:6 }],
+  bsdFrom:'2023-02-15',
+  bsdSource:'Ministry of Finance, "Buyer’s Stamp Duty (BSD) Rates to be Raised for Higher-Value Properties" — from 15 Feb 2023: first $180,000 1%, next $180,000 2%, next $640,000 3%, next $500,000 4%, next $1,500,000 5%, amount exceeding $3,000,000 6%',
+  absdFrom:'2023-04-27',
+  absdRates:[
+    { key:'sc1',  label:'Singapore Citizen, 1st residential property',            pct:0  },
+    { key:'sc2',  label:'Singapore Citizen, 2nd residential property',            pct:20 },
+    { key:'sc3',  label:'Singapore Citizen, 3rd and subsequent',                  pct:30 },
+    { key:'spr1', label:'Permanent Resident, 1st residential property',           pct:5  },
+    { key:'spr2', label:'Permanent Resident, 2nd residential property',           pct:30 },
+    { key:'spr3', label:'Permanent Resident, 3rd and subsequent',                 pct:35 },
+    { key:'for',  label:'Foreigner, any residential property',                    pct:60 }],
+  absdSource:'IRAS, "Additional Buyer’s Stamp Duty (ABSD) Declaration Form" — acquisitions on or after 27 Apr 2023',
+  absdCountNote:'The count includes residential property owned wholly or partially before this purchase, including property held as beneficial owner under a trust or acquired by inheritance or matrimonial proceedings.',
+  /* SSD: the regime that applies turns on the ACQUISITION date */
+  ssdRegimes:[
+    { from:'2025-07-04', years:4, steps:[16,12,8,4],
+      source:'IRAS, "Seller’s Stamp Duty for Residential Properties", updated 4 Jul 2025 — acquired on or after 4 Jul 2025: holding period 1 year or less 16%, 2 years or less 12%, 3 years or less 8%, 4 years or less 4%, more than 4 years no SSD' },
+    { from:'2017-03-11', years:3, steps:[12,8,4],
+      source:'IRAS — acquired between 11 Mar 2017 and 3 Jul 2025: 12% / 8% / 4%, no SSD after 3 years' }],
+  ssdBasis:'of consideration or market value, whichever is higher'
+};
+
 const MCST_SEED = {
   mcst:'MCST Plan No. 4940', regNo:'T25MC0009B', project:'The Atelier',
   unit:'#07-04', shareUnits:6,
@@ -596,7 +647,7 @@ if(!state.al){ state.al = AL_SEED; store.set('fortress.al', state.al); }
    readings needs those to reach devices that already installed an older build,
    WITHOUT touching anything the user entered. Each migration is additive and
    idempotent: it fills gaps and repairs missing fields, and never deletes.  */
-const SEED_VERSION = 13;
+const SEED_VERSION = 14;
 function runSeedMigrations(){
   const from = store.get('fortress.seedVersion', 0);
   if(from >= SEED_VERSION) return 0;
@@ -648,6 +699,17 @@ function runSeedMigrations(){
   // v7 — figures CK gave directly: the property valuation and his date of birth.
   // Only filled when empty, so anything he has since typed always wins.
   if(state.settings.homeValue == null){ state.settings.homeValue = 2450000; changed++; }
+  /* the Option to Purchase supplies what he paid and when - previously the tab's one
+     major gap. homePurchasePrice is seeded only if he has not entered his own. */
+  if(state.settings.homePurchasePrice == null){ state.settings.homePurchasePrice = PURCHASE_SEED.price; changed++; }
+  if(state.settings.homeBoughtYear == null){ state.settings.homeBoughtYear = +PURCHASE_SEED.completion.slice(0,4); changed++; }
+  if(!state.settings.purchase){ state.settings.purchase = { ...PURCHASE_SEED }; changed++; }
+  /* CONFIRMED by CK on 2 Sep 2026: this is his only residential property, so ABSD is the
+     Singapore Citizen first-property rate of 0%. Recorded as HIS statement, not as a
+     document Fortress read, and changeable on the Property tab. */
+  if(state.settings.absdKey == null){ state.settings.absdKey = 'sc1';
+    state.settings.absdSource = 'confirmed by you on 2 Sep 2026: this is your only residential property';
+    changed++; }
   if(!state.settings.birthDate){ state.settings.birthDate = '1973-08-27'; changed++; }
 
   // v8 — the Air Liquide shareholding
@@ -1210,6 +1272,177 @@ function rentNet(){
     /* the honest caveat: this is the best case until the rest of the costs are known */
     incomplete: other==null,
     missing:['property tax','insurance','agent commission','repairs','vacancy'] };
+}
+
+/* ---- Stamp duty, computed from the published tiers rather than a remembered total --- */
+function bsdOn(price){
+  if(!(price>0)) return null;
+  let rem = price, total = 0; const lines = [];
+  for(const t of STAMP_DUTY.bsdTiers){
+    const amt = Math.min(rem, t.band); if(amt <= 0) break;
+    const duty = amt * t.pct/100; total += duty; lines.push({ amount:amt, pct:t.pct, duty }); rem -= amt;
+  }
+  return { total, lines, price, source:STAMP_DUTY.bsdSource };
+}
+/* Which SSD regime applies is decided by the ACQUISITION date, and the rate by how long
+   the property has been held on the day of sale. Both are inputs, neither is assumed. */
+function ssdRegimeFor(acquiredOn){
+  const r = STAMP_DUTY.ssdRegimes.slice().sort((a,b)=>b.from.localeCompare(a.from));
+  return r.find(x => acquiredOn >= x.from) || null;
+}
+function ssdRateAt(acquiredOn, saleDate){
+  const reg = ssdRegimeFor(acquiredOn); if(!reg) return null;
+  const held = (new Date(saleDate+'T00:00:00') - new Date(acquiredOn+'T00:00:00')) / 86400000 / 365.25;
+  if(held > reg.years) return { pct:0, year:reg.years+1, held, reg };
+  const yr = Math.min(reg.years, Math.floor(held) + 1);           // year 1 = held <= 1 year
+  return { pct: reg.steps[yr-1], year:yr, held, reg };
+}
+/* the date each SSD step ends, so the card can show WHEN the rate drops */
+function ssdSteps(acquiredOn){
+  const reg = ssdRegimeFor(acquiredOn); if(!reg) return [];
+  const out = [];
+  for(let y=1; y<=reg.years; y++){
+    const [yy,mm,dd] = acquiredOn.split('-').map(Number);
+    const until = new Date(Date.UTC(yy+y, mm-1, dd)).toISOString().slice(0,10);
+    out.push({ year:y, pct:reg.steps[y-1], until, days:daysUntil(until) });
+  }
+  const [yy,mm,dd] = acquiredOn.split('-').map(Number);
+  const freeFrom = new Date(Date.UTC(yy+reg.years, mm-1, dd)).toISOString().slice(0,10);
+  out.push({ year:reg.years+1, pct:0, until:null, from:freeFrom,
+             days:daysUntil(freeFrom), free:true });
+  return out;
+}
+
+/* ---- What the property must sell for to leave him no worse off ---------------------
+   P - SSD(P) - selling costs(P) = everything put in, less the net carry taken out.
+   With SSD and commission both charged ON the sale price, that rearranges to
+        P = netIn / (1 - ssd - commission)
+   which is why the SSD rate dominates everything else on this card.
+
+   ABSD is deliberately NOT resolved: it turns on how many residential properties he
+   already owned, which Fortress does not know and will not infer. Every figure is
+   returned per scenario instead. */
+function breakEven(opts){
+  const o = opts || {};
+  const P = state.settings.purchase || PURCHASE_SEED;
+  const price = P.price; if(!(price>0)) return null;
+  const bsd = bsdOn(price);
+  const legalBuy = P.buyerLegalFees;                  // null unless supplied
+  const acquiredOn = o.acquiredOn || state.settings.acquiredOn || P.optionGranted;
+  const saleDate = o.saleDate || new Date().toISOString().slice(0,10);
+  const commissionPct = o.commissionPct != null ? o.commissionPct
+                      : (state.settings.saleCommissionPct != null ? state.settings.saleCommissionPct : null);
+  const legalSell = o.legalSell != null ? o.legalSell : (state.settings.saleLegalFees ?? null);
+
+  /* the carry, from completion to the sale date, on the figures Fortress actually holds */
+  const M  = (typeof mcstPosition==='function') ? mcstPosition() : null;
+  const N  = (typeof rentNet==='function') ? rentNet() : null;
+  const mm = latestManual(), eff = effectiveLoanTerms();
+  const bal  = mm ? mm.mortgageBalance : null;
+  const rate = eff.ratePct ?? (mm ? mm.mortgageRatePct : null);
+  const monthsHeld = Math.max(0,
+    (new Date(saleDate+'T00:00:00') - new Date(P.completion+'T00:00:00')) / 86400000 / 30.4375);
+  const rentM   = N ? N.gross : 0;
+  const mcstM   = M ? M.monthly : 0;
+  const interestM = (bal!=null && rate!=null) ? bal*rate/100/12 : null;
+  const carryPerMonth = (interestM!=null) ? rentM - mcstM - interestM : null;
+  const carryToDate   = carryPerMonth!=null ? carryPerMonth*monthsHeld : null;
+
+  const absdScenarios = STAMP_DUTY.absdRates.map(a=>({
+    ...a, amount: price*a.pct/100 }));
+
+  /* The carry must be taken to the date each row actually implies. Applying today's
+     3-month carry to a sale four years out would understate it by years, so each row
+     accrues its own. The rate is held at today's - stated as an assumption, because
+     mortgage interest falls as the loan amortises and the rent is not guaranteed. */
+  const carryTo = onDate => {
+    if(carryPerMonth==null) return null;
+    const months = Math.max(0,
+      (new Date(onDate+'T00:00:00') - new Date(P.completion+'T00:00:00')) / 86400000 / 30.4375);
+    return { months, carry: carryPerMonth*months };
+  };
+
+  /* ---- THREE break-evens, because they answer three different questions -------------
+     CK pushed back on this and he was right: the first version netted the rent off the
+     capital and called the result "the" break-even, which produced a figure BELOW what he
+     paid. Rent is the RETURN on the money, not a discount on its cost - and netting it
+     silently assumes the same capital would have earned nothing anywhere else.
+
+       capital - recovers what went in. The conservative, defensible number, and the
+                 headline. Rent is excluded entirely.
+       cash    - capital less the net rent collected by that date. Answers "am I down
+                 overall", not "what must it fetch". Always the flattering one.
+       real    - capital indexed for inflation to the sale date, so the money coming out
+                 buys what the money going in would have. Needs a rate Fortress does not
+                 hold and will not invent.
+     Selling costs sit in the numerator; SSD and commission are charged ON the sale price,
+     so they divide. */
+  const inflPct = state.settings.inflationPct;      // null unless he supplies one
+  const yearsTo = onDate => Math.max(0,
+    (new Date(onDate+'T00:00:00') - new Date(P.completion+'T00:00:00')) / 86400000 / 365.25);
+
+  const solve = (absdAmt, ssdPct, onDate) => {
+    const when = onDate || saleDate;
+    const c = carryTo(when);
+    const capitalIn = price + bsd.total + absdAmt + (legalBuy||0);
+    const denom = 1 - (ssdPct||0)/100 - (commissionPct||0)/100;
+    if(!(denom>0)) return null;
+    const out = amt => (amt + (legalSell||0)) / denom;
+    const capital = out(capitalIn);
+    const cash    = out(capitalIn - (c ? c.carry : 0));
+    const yrs     = yearsTo(when);
+    const real    = inflPct!=null ? out(capitalIn * Math.pow(1+inflPct/100, yrs)) : null;
+    return { price:capital, capital, cash, real, yrs,
+             capitalIn, inCost:capitalIn, denom,
+             carry: c?c.carry:null, carryMonths: c?c.months:null,
+             vsPurchase:(capital/price-1)*100,
+             cashVsPurchase:(cash/price-1)*100,
+             realVsPurchase: real!=null ? (real/price-1)*100 : null };
+  };
+
+  const steps = ssdSteps(acquiredOn);
+  const now = ssdRateAt(acquiredOn, saleDate);
+  const table = absdScenarios.map(a=>({
+    ...a, rows: steps.map(st=>({ ...st, ...solve(a.amount, st.pct, st.free ? st.from : st.until) })),
+    nowRow: solve(a.amount, now ? now.pct : 0, saleDate) }));
+
+  /* Now that ABSD is settled, one number becomes answerable: the first date on which the
+     break-even falls to what the flat is worth today. Before that date a sale at today's
+     price loses money no matter how the costs are sliced. */
+  const refValue = state.settings.homeValue || price;
+  const chosenKey = state.settings.absdKey;
+  const chosenAbsd = chosenKey ? (STAMP_DUTY.absdRates.find(a=>a.key===chosenKey)||null) : null;
+  let firstAffordable = null, everAffordable = true;
+  if(chosenAbsd){
+    const amt = price*chosenAbsd.pct/100;
+    for(const st of ssdSteps(acquiredOn)){
+      const r = solve(amt, st.pct, st.free ? st.from : st.until);
+      if(r && r.capital <= refValue){ firstAffordable = { ...st, ...r }; break; }
+    }
+    /* If even the SSD-free rung sits above today's value, no date on the ladder recovers
+       the capital - the price itself has to move. Saying "it breaks even in 2030" when
+       that is only true after netting off the rent would be the same mistake again. */
+    everAffordable = !!firstAffordable;
+  }
+  const floorRow = chosenAbsd
+    ? (()=>{ const steps=ssdSteps(acquiredOn); const st=steps[steps.length-1];
+             return { ...st, ...solve(price*chosenAbsd.pct/100, st.pct, st.from||st.until) }; })()
+    : null;
+
+  return { P, price, bsd, legalBuy, acquiredOn, saleDate, commissionPct, legalSell,
+    refValue, chosenAbsd, firstAffordable, everAffordable, floorRow, inflPct,
+    /* the least a sale can ever break even at, once SSD is gone */
+    capitalFloor: floorRow ? floorRow.capital : null,
+    gapToFloor: floorRow ? floorRow.capital - refValue : null,
+    monthsHeld, rentM, mcstM, interestM, carryPerMonth, carryToDate,
+    absdScenarios, steps, now, table,
+    absdKnown: state.settings.absdKey ? STAMP_DUTY.absdRates.find(a=>a.key===state.settings.absdKey) : null,
+    unknowns: [ state.settings.absdKey ? null : 'how many residential properties you owned when you bought — this sets ABSD',
+                P.exerciseDateKnown ? null : 'the date the Option was exercised, which starts the SSD clock',
+                legalBuy==null ? 'your legal fees on the purchase' : null,
+                commissionPct==null ? 'the agent commission you would pay to sell' : null,
+                legalSell==null ? 'your legal fees on a sale' : null,
+                'property tax, insurance and repairs' ].filter(Boolean) };
 }
 
 function cpfHomeClaim(onDate){
@@ -2033,6 +2266,11 @@ function propertyValue(){
   const comps = (H && H.comps ? H.comps : []).map(c=>({ ...c, psf:c.price/c.sqft,
     sameSize: sqft!=null && c.sqft===sqft }));
   const sameSize = comps.filter(c=>c.sameSize);
+  /* Which of these is his own, and what is left once it is set aside? That remainder is
+     the only independent evidence there is about what the flat is worth. */
+  const own = comps.filter(c=>c.own);
+  const independent = comps.filter(c=>!c.own);
+  const independentSame = sameSize.filter(c=>!c.own);
   const allPsf = comps.map(c=>c.psf);
   const meanPsf = allPsf.length ? allPsf.reduce((a,b)=>a+b,0)/allPsf.length : null;
   const newest = comps.length ? comps.slice().sort((a,b)=>b.date.localeCompare(a.date))[0] : null;
@@ -2062,6 +2300,12 @@ function propertyValue(){
   return { ...(H||{}), value:v, sqft, psf:psf(v), lowPsf:psf(H&&H.low), highPsf:psf(H&&H.high),
     isTxn, monthsSince, avm, evid,
     comps, sameSize, meanPsf, newest, newestSame,
+    own, independent, independentSame,
+    /* Once his own purchase is set aside, what is actually left to test the price
+       against? For an equivalent-size unit that is a single older sale, plus the AVM. */
+    independentSameNewest: independentSame.length
+      ? independentSame.slice().sort((a,b)=>b.date.localeCompare(a.date))[0] : null,
+    refIsOwn: !!(newestSame && newestSame.own),
     vsNewestSame: newestSame ? (psf(v)/newestSame.psf-1)*100 : null,
     abovePsf: allPsf.filter(x=>psf(v)>x).length, belowPsf: allPsf.filter(x=>psf(v)<x).length,
     band, netWorth:nwAt(v), pctOfNet: nwAt(v)? v/nwAt(v)*100 : null,
@@ -2405,6 +2649,15 @@ function gaps(){
   /* The MCST invoice narrows this gap; it does not close it. But if the remaining costs
      HAVE been entered, the gap must close - an unconditional gap would tell him a figure
      is missing after he has supplied it. */
+  /* The "last equivalent transaction" reference and the price he paid are the same
+     number. Either it IS his own caveat or an identical one - either way the property
+     shows no gain BY CONSTRUCTION, and that must not pass as market evidence. */
+  { const pp = state.settings.homePurchasePrice, hv = state.settings.homeValue;
+    if(pp!=null && hv!=null && Math.abs(pp-hv) < 1)
+      add('prop','high','The valuation is your own purchase, confirmed',
+        'You have confirmed the recorded transaction is the one you bought. So the '+money(hv,0)+' Fortress shows as the value and the '+money(pp,0)+' you paid are the same event, not two. The property shows neither gain nor loss by construction. Setting your own trade aside, the only independent evidence is one equivalent-size sale from Jun 2023 and an automated estimate \u2014 and neither is above what you paid.',
+        'Add a later transaction of an equivalent unit under \u201cA newer equivalent sale\u201d as soon as one appears. Until one does, treat the figure as your cost, not as a valuation.',
+        'confirmed by you on 2 Sep 2026'); }
   { const Mc = (typeof mcstPosition==='function') ? mcstPosition() : null;
     if(state.settings.homeAnnualCosts!=null){ /* answered - no gap */ }
     else if(Mc) add('prop','medium','Only one of the property\u2019s running costs is known',
@@ -3202,6 +3455,17 @@ function viewProp(){
   <div class="card">
     <h2>What it's worth${V.project?`<span class="pill">${esc(V.project)}${V.unit?' &middot; '+esc(V.unit):''}</span>`:''}</h2>
     <div class="hero">${money(V.value,0)}</div>
+    ${(()=>{ const pp=state.settings.homePurchasePrice;
+      return (pp!=null && Math.abs(pp-V.value)<1)
+        ? `<div class="banner b-warn" style="margin-top:10px"><span class="ic">&#9888;</span><div><b>This is the price you paid &mdash; confirmed.</b>The reference transaction is your own purchase, so this figure is your cost and cannot corroborate itself. ${(()=>{ const I=V.independentSameNewest, A=V.avm;
+            if(!I && !A) return 'Nothing independent is on file to test it against.';
+            const bits=[];
+            if(I){ const g=(()=>{ const [ay,am]=String(V.valueDate||'').split('-').map(Number),
+                                       [by,bm]=I.date.split('-').map(Number);
+                     return (ay&&by) ? (ay-by)*12 + (am-bm) : null; })();
+              bits.push(`the one other ${fmt(I.sqft,0)} sqft sale on file went for <b>${money(I.price,0)}</b> in ${esc(dayMonthLabel(I.date))} &mdash; ${pct(Math.abs(I.price/V.value-1)*100,1)} ${I.price>V.value?'<b>above</b>':'below'} what you paid${g?`, and ${fmt(g,0)} months earlier`:''}`); }
+            if(A) bits.push(`the automated estimate is <b>${money(A.value,0)}</b>, ${pct(Math.abs(A.vsRef),1)} ${A.vsRef<0?'below':'above'} it`);
+            return `Set your own trade aside and this is what remains: ${bits.join('; ')}. <b>Neither supports the flat being worth more than you paid.</b>`; })()}</div></div>` : ''; })()}
     <div class="hero-sub">${V.sqft?`${fmt(V.sqft,0)} sqft &middot; ${money(V.psf,0)} psf &middot; `:''}${V.isTxn?`last equivalent sale, ${esc(dayMonthLabel(V.valueDate))}`:`estimated ${esc(dayMonthLabel(V.asOf||''))}`}</div>
 
     ${V.isTxn?`
@@ -3308,6 +3572,56 @@ function viewProp(){
     <p class="note"><b>${pct(M.lateInterestPct,2)} is the most expensive money in your structure.</b> ${esc(M.lateRule)} ${M.vsMortgage!=null?`That is <b>${fmt(M.vsMortgage,2)} points</b> above your mortgage`:''}${M.vsMargin!=null?` and <b>${fmt(M.vsMargin,2)} points</b> above your margin loan`:''}. Nothing else you owe comes close, so this is the one bill where paying on the day is worth more than the cash is worth anywhere else.</p>
     <p class="note"><b>The yearly figure is one quarter multiplied by four.</b> Fortress has seen a single invoice, not a year of them. Contributions are set by the MCST's budget and can be revised at a general meeting, so ${money(M.annual,0)} is the current run rate, not a commitment. GST is shown on the invoice at ${pct(M.gstPct,2)} &mdash; if that ever changes, this figure moves with it.</p>
     <p class="note"><b>What this does and does not cover.</b> It is the management fund and the sinking fund only. Property tax, insurance, agent commission, repairs and vacancy are still not in Fortress, so the net yield it shows remains better than the truth &mdash; by less than it was, but still. Source: ${esc(M.source)}.</p>
+  </div>`; })()}
+
+  ${(()=>{ const B=breakEven(); if(!B) return '';
+    const Pu=B.P, SD=STAMP_DUTY;
+    const chosen = B.absdKnown;
+    const rows = chosen ? B.table.find(t=>t.key===chosen.key) : null;
+    const scen = B.table.filter(t=>t.key.startsWith('sc'));
+    return `<div class="card">
+    <h2>What it must sell for to break even<span class="pill">SSD ${pct(B.now.pct,0)} today</span></h2>
+    <div class="tiles">
+      <div class="tile"><div class="v">${money(B.price,0)}</div><div class="l">You paid</div><div class="d">option ${esc(dayLabel(Pu.optionGranted))} &middot; completed ${esc(dayLabel(Pu.completion))}</div></div>
+      <div class="tile"><div class="v">${money(B.bsd.total,0)}</div><div class="l">Buyer's Stamp Duty</div><div class="d">computed from the published tiers</div></div>
+      <div class="tile"><div class="v ${B.now.pct>0?'neg':'pos'}">${pct(B.now.pct,0)}</div><div class="l">Seller's Stamp Duty today</div><div class="d">year ${fmt(B.now.year,0)} of ${fmt(B.now.reg.years,0)} &middot; ${B.steps[0].days>0?`drops ${esc(dayLabel(B.steps[0].until))}`:''}</div></div>
+      <div class="tile"><div class="v ${B.carryPerMonth>0?'pos':'neg'}">${B.carryPerMonth!=null?money(B.carryPerMonth,0):'n/a'}</div><div class="l">Net carry a month</div><div class="d">rent less MCST and loan interest</div></div>
+    </div>
+    ${B.chosenAbsd?`<div class="banner ${B.everAffordable?'b-good':'b-warn'}" style="margin-top:10px"><span class="ic">&#9888;</span><div>${B.everAffordable
+      ? `<b>At today's price, a sale first recovers your capital on ${esc(dayLabel(B.firstAffordable.from||B.firstAffordable.until))}.</b>${fmt(B.firstAffordable.days,0)} days away.`
+      : `<b>No date on this ladder breaks even at today's price.</b>Even once Seller's Stamp Duty is gone \u2014 ${esc(dayLabel(B.floorRow.from||B.floorRow.until))}, ${fmt(B.floorRow.days,0)} days away \u2014 the sale must fetch <b>${money(B.capitalFloor,0)}</b> to return what you put in. That is <b>${money(B.gapToFloor,0)} above</b> the ${money(B.refValue,0)} the flat is currently marked at, or ${pct(B.gapToFloor/B.refValue*100,1)}. <b>The price has to move; waiting alone does not get there.</b> Waiting only removes the stamp duty on top of it.`}</div></div>`:''}
+
+    ${!chosen?`<div class="banner b-warn" style="margin-top:10px"><span class="ic">&#9888;</span><div><b>One number decides this card, and Fortress does not know it.</b>Additional Buyer's Stamp Duty depends on how many residential properties you already owned when you bought. On a ${money(B.price,0)} purchase the difference between your first property and your second is <b>${money(B.price*0.20,0)}</b> — larger than every other figure here combined. The Option names you as sole purchaser on a Singapore NRIC, so the citizen rates apply; the count does not follow from any document Fortress holds. <b>Pick it and the card resolves to one answer.</b><div style="margin-top:8px">${scen.map(a=>`<button class="btn ghost" style="width:auto;padding:4px 10px;font-size:12px;margin:2px 4px 2px 0" onclick="setAbsd('${a.key}')">${esc(a.label.replace('Singapore Citizen, ',''))} &middot; ${pct(a.pct,0)}</button>`).join('')}</div></div></div>`:``}
+
+    ${chosen?`<div class="kv"><span class="k">ABSD applied<br><span style="font-size:11px;opacity:.72">${esc(chosen.label)}</span></span><span class="v">${money(B.price*chosen.pct/100,0)} <button class="btn ghost" style="width:auto;padding:2px 8px;font-size:11px;margin-left:8px" onclick="setAbsd('')">change</button></span></div>`:''}
+
+    ${(chosen?[rows]:scen).map(t=>`
+    <div style="margin-top:14px"><span class="k" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">${esc(t.label)} &middot; ABSD ${money(t.amount,0)}</span></div>
+    ${t.rows.map(r=>`<div class="kv" style="align-items:flex-start"><span class="k">${r.free?`From ${esc(dayLabel(r.from))} &mdash; no SSD`:`Sell by ${esc(dayLabel(r.until))}`}<br><span style="font-size:11px;opacity:.72">SSD ${pct(r.pct,0)}${r.days>0?` &middot; ${fmt(r.days,0)} days away`:''}${B.inflPct!=null&&r.real!=null?` &middot; in ${pct(B.inflPct,1)} money: <b>${money(r.real,0)}</b>`:''}</span></span><span class="v" style="text-align:right"><b>${money(r.capital,0)}</b><br><span style="font-size:11px;font-weight:400" class="${r.vsPurchase>0?'neg':'pos'}">${r.vsPurchase>0?'+':''}${fmt(r.vsPurchase,1)}% on what you paid</span><br><span style="font-size:10.5px;font-weight:400;opacity:.6">${money(r.cash,0)} counting rent</span></span></div>`).join('')}`).join('')}
+
+    <div class="warnbox" style="margin-top:12px"><b>Three break-evens, and the headline is the strict one</b>
+      <p style="margin:6px 0">The bold figure in each row is the <b>capital break-even</b>: what a sale must fetch to return the ${money(B.price,0)} price plus ${money(B.bsd.total,0)} of Buyer's Stamp Duty${B.chosenAbsd&&B.chosenAbsd.pct?` and ${money(B.price*B.chosenAbsd.pct/100,0)} of ABSD`:''}${B.legalBuy?` and ${money(B.legalBuy,0)} of legal fees`:''}, after paying the Seller's Stamp Duty${B.commissionPct?' and commission':''} on the way out. ${B.capitalFloor!=null?`Once the stamp duty is gone that number cannot fall below <b>${money(B.capitalFloor,0)}</b> &mdash; you cannot get back more than everything by selling for less than everything.`:`Once the stamp duty is gone it settles at whatever went in &mdash; you cannot get back more than everything by selling for less than everything.`}</p>
+      <p style="margin:6px 0">The grey figure beneath it nets off the rent collected by that date. <b>It is the flattering number and it is not the headline</b>, because rent is the <em>return</em> on the money, not a discount on its cost: netting it silently assumes the same ${money(B.price,0)} would have earned nothing anywhere else. Use it to answer &ldquo;am I down overall&rdquo;, never &ldquo;what must it fetch&rdquo;.</p>
+      <p style="margin:6px 0"><b>Neither is adjusted for inflation${B.inflPct!=null?' unless you set a rate':''}.</b> ${B.inflPct!=null
+        ? `You have set ${pct(B.inflPct,1)}, so each row also shows what the sale must fetch for the money coming out to buy what the money going in would have. Fortress does not forecast inflation and does not endorse this rate \u2014 it is yours.`
+        : `A dollar in ${esc(B.P.completion.slice(0,4))} is not a dollar in ${esc((B.floorRow ? (B.floorRow.from||B.floorRow.until) : B.steps[B.steps.length-1].from||B.steps[B.steps.length-1].until).slice(0,4))}, so ${B.capitalFloor!=null?`even the ${money(B.capitalFloor,0)} floor is`:'every figure here is'} a nominal figure that quietly loses ground every year. Fortress could not verify a current Singapore inflation rate from a primary source and will not invent one \u2014 enter the rate you want to test below and every row will show the real figure too.`}</p>
+    </div>
+    <label class="fld">Inflation rate to test (% a year) &mdash; optional, yours not Fortress's</label>
+    <input type="number" id="bkInfl" step="0.1" inputmode="decimal" value="${state.settings.inflationPct ?? ''}" placeholder="e.g. 2">
+    <button class="btn ghost" style="margin-top:8px;width:auto;padding:6px 14px" onclick="setInflation()">Apply</button>
+    <p class="note" style="margin-top:12px"><b>How this is worked out.</b> Selling costs are charged on the sale price, so the sum rearranges to <b>P = (what went in &minus; what the property has thrown off) &divide; (1 &minus; SSD &minus; commission)</b>. That division is why the Seller's Stamp Duty dominates every other line: at ${pct(B.now.pct,0)} you must find ${pct(B.now.pct,0)} more than the shortfall, not ${pct(B.now.pct,0)} of it.</p>
+    <p class="note"><b>Stamp duty is computed, not remembered.</b> BSD on ${money(B.price,0)}: ${B.bsd.lines.map(l=>`${money(l.amount,0)} at ${pct(l.pct,0)}`).join(' + ')} = <b>${money(B.bsd.total,2)}</b>. ${esc(SD.bsdSource)}. ${esc(B.now.reg.source)}. ${esc(SD.absdSource)}. Checked ${esc(SD.checkedOn)}.</p>
+    <p class="note"><b>The carry is held at today's rate, and it will not stay there.</b> ${B.carryPerMonth!=null?`Rent ${money(B.rentM,0)} less MCST ${money(B.mcstM,0)} less loan interest ${money(B.interestM,0)} is ${money(B.carryPerMonth,0)} a month, and each row above accrues it to that row's own date rather than to today.`:''} Mortgage interest falls as the loan amortises, which would <em>raise</em> the carry; the rate is floating and the tenancy is not permanent, which could lower it. Property tax, insurance and repairs are not in Fortress at all, so the true carry is lower and every break-even here is <b>too low</b>.</p>
+    <p class="note"><b>The SSD clock does not start at completion.</b> ${esc(Pu.exerciseNote)} Fortress uses ${esc(dayLabel(B.acquiredOn))}; if the Option was exercised later the whole ladder shifts with it, by up to ${fmt(Math.round((new Date(Pu.optionExpiry)-new Date(Pu.optionGranted))/86400000),0)} days.</p>
+    <p class="note"><b>What Fortress still does not know:</b> ${B.unknowns.map(u=>esc(u)).join('; ')}. Each one makes the real break-even higher, not lower.</p>
+    <label class="fld">Agent commission on a sale (%)</label>
+    <input type="number" id="bkComm" step="0.01" inputmode="decimal" value="${state.settings.saleCommissionPct ?? ''}" placeholder="e.g. 2">
+    <label class="fld">Legal fees on a sale (S$)</label>
+    <input type="number" id="bkLegal" step="0.01" inputmode="decimal" value="${state.settings.saleLegalFees ?? ''}" placeholder="optional">
+    <label class="fld">Your legal fees on the purchase (S$)</label>
+    <input type="number" id="bkLegalBuy" step="0.01" inputmode="decimal" value="${(state.settings.purchase||{}).buyerLegalFees ?? ''}" placeholder="optional">
+    <button class="btn" style="margin-top:12px" onclick="saveSaleCosts()">Save</button>
+    <p class="note"><b>This is arithmetic, not advice.</b> It says what a sale must fetch to leave you no worse off on the figures Fortress holds. Whether to sell turns on things it does not model.</p>
   </div>`; })()}
 
   ${(()=>{ const h=cpfHomeClaim(); if(!h) return '';
@@ -4136,6 +4450,23 @@ function cpfForms(){
 function setCpfYears(v){ state.settings.cpfYears = +v||10; saveAll(); render(); }
 function setCpfContrib(on){ state.settings.cpfContrib = !!on; saveAll(); render(); }
 function setCpf55(v){ state.settings.cpfAge55Year = v===''?null:+v; saveAll(); render(); }
+function setAbsd(key){ state.settings.absdKey = key||null; saveAll(); render(); }
+function setInflation(){
+  const e=document.getElementById('bkInfl'); if(!e) return;
+  const v = e.value===''? null : +e.value;
+  if(v!=null && !(v>=0 && v<=20)){ alert('Enter an inflation rate as a percentage, e.g. 2.5.'); return; }
+  state.settings.inflationPct = v; saveAll(); render();
+}
+function saveSaleCosts(){
+  const n=id=>{ const e=document.getElementById(id); if(!e) return undefined;
+                return e.value===''? null : +e.value; };
+  const c=n('bkComm'), l=n('bkLegal'), lb=n('bkLegalBuy');
+  if(c!=null && c!==undefined && (c<0||c>10)){ alert('Commission looks wrong — enter a percentage, e.g. 2.'); return; }
+  if(c!==undefined) state.settings.saleCommissionPct = c;
+  if(l!==undefined) state.settings.saleLegalFees = l;
+  if(lb!==undefined){ state.settings.purchase = { ...(state.settings.purchase||PURCHASE_SEED), buyerLegalFees: lb }; }
+  saveAll(); render();
+}
 function setBirthDate(v){
   if(!/^\d{4}-\d{2}-\d{2}$/.test(v)){ alert('Date of birth must be a real date.'); return; }
   const y = +v.slice(0,4), now = new Date().getFullYear();

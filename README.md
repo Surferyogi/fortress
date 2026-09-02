@@ -491,6 +491,143 @@ reminder-tone assertion was rewritten the same way: it asserts the *rule*
 `mcsttest.js` — 56 assertions, including no horizontal overflow at 360px and 390px, that the
 brought-forward line declines to call arrears, and that nothing else on the Property tab moved.
 
+## What it must sell for to break even
+
+The Option to Purchase closed the tab's oldest major gap — what he paid. Sale price
+**$2,450,000**, option granted 10 Feb 2026, expiring 8 Apr 2026, completed 20 May 2026,
+sold subject to the existing tenancy (which is where the rent comes from). Option money
+$24,500 = 1%; deposit $98,000 = 5% less the option money. Both check out against the price.
+The PropNex commission of $29,400 + GST on the OTP is the **vendor's**, and is recorded as
+such so it never lands in his costs.
+
+**Stamp duty is computed from the published tiers, not remembered.** BSD on $2,450,000:
+$180,000@1% + $180,000@2% + $640,000@3% + $500,000@4% + $950,000@5% = **$92,100.00**. The
+bands are printed on the card so the total can be checked by hand.
+
+**SSD is the number that dominates everything.** He acquired in 2026, so the regime is the
+one that took effect 4 Jul 2025: a **four-year** holding period at **16 / 12 / 8 / 4%**, not
+the older three-year 12 / 8 / 4%.
+
+The break-even solves `P − SSD(P) − commission(P) = what went in − what the property threw
+off`, which rearranges to **P = netIn ÷ (1 − SSD − commission)**. It is a division, not a
+subtraction, which is the whole point: at 16% he must find 16% *more than* the shortfall,
+not 16% of it.
+
+| Sell by | SSD | Break-even (1st property) |
+| --- | --- | --- |
+| 10 Feb 2027 | 16% | **$2,984,100** (+21.8%) |
+| 10 Feb 2028 | 12% | $2,793,172 (+14.0%) |
+| 10 Feb 2029 | 8% | $2,618,702 (+6.9%) |
+| 10 Feb 2030 | 4% | $2,458,910 (+0.4%) |
+| from 10 Feb 2030 | none | $2,360,554 (−3.7%) |
+
+### ABSD — settled by him, and attributed to him
+
+CK confirmed on 2 Sep 2026 that this is his only residential property, so ABSD is the
+Singapore Citizen first-property rate: **0%, or $0**. It is stored as `absdSource:
+"confirmed by you on 2 Sep 2026"` — his statement, never dressed up as something Fortress
+read in a document, because the OTP says nothing about how many properties he owns. Clearing
+the setting restores all three citizen scenarios, so a change of circumstance stays
+expressible; a test asserts both directions.
+
+### The break-even was defined wrongly, and CK caught it
+
+The first version netted the accumulated rent off the capital and called the result *the*
+break-even. That produced **$2,360,554** at the SSD-free date — **below the $2,542,100 he
+actually put in**. He challenged it, and he was right. Rent is the **return** on the money,
+not a discount on its cost; netting it silently assumes the same $2,450,000 would have
+earned nothing anywhere else, which is false on the face of his own portfolio.
+
+The card now computes three figures and leads with the strict one:
+
+- **Capital break-even** (headline) — what a sale must fetch to return the price, BSD, ABSD
+  and legal fees, after SSD and commission on the way out. Rent excluded.
+- **Cash break-even** (grey, secondary) — the same net of rent collected. Explicitly
+  labelled *"the flattering number and not the headline"*, and framed as answering "am I
+  down overall", never "what must it fetch".
+- **Real break-even** — the capital figure indexed to the sale date at a rate **he** sets.
+  Off by default. MAS blocks automated fetching, so Fortress could not verify a current
+  Singapore inflation figure and says so rather than seeding one.
+
+| Sell by | SSD | Capital break-even | counting rent |
+| --- | --- | --- | --- |
+| 10 Feb 2027 | 16% | **$3,026,310** (+23.5%) | $2,984,100 |
+| 10 Feb 2028 | 12% | $2,888,750 (+17.9%) | $2,793,172 |
+| 10 Feb 2029 | 8% | $2,763,152 (+12.8%) | $2,618,702 |
+| 10 Feb 2030 | 4% | $2,648,021 (+8.1%) | $2,458,910 |
+| from 10 Feb 2030 | none | **$2,542,100** (+3.8%) | $2,360,554 |
+
+### The answer changed with the definition
+
+Under the corrected headline, **no date on the ladder breaks even at today's price.** The
+floor — once SSD is gone entirely — is $2,542,100, and the gap to the $2,450,000 the flat is
+marked at is **exactly $92,100, the Buyer's Stamp Duty**. That falls straight out of the
+arithmetic: the reference value *is* the purchase price, so the shortfall is precisely the
+duty paid on top of it. A test asserts the identity rather than the number.
+
+The banner now says the thing that matters: **the price has to move; waiting alone does not
+get there.** Waiting only removes the stamp duty sitting on top of the shortfall. At a 2.5%
+inflation rate — his input, not Fortress's — the floor becomes $2,787,285, +13.8% on what he
+paid.
+
+### A crash the new test caught
+
+Clearing the ABSD selection took the entire Property tab down: the explanatory box read
+`floorRow`, which only exists once a profile is chosen. `betest.js` now asserts the tab still
+renders with no page errors after clearing, in both directions.
+
+### His own trade, separated from the evidence
+
+CK also confirmed the recorded transaction *is* his purchase. `propertyValue()` now splits
+the comparables into `own` and `independent`, and the value card sets his own trade aside to
+show what is actually left:
+
+| | | |
+| --- | --- | --- |
+| His purchase | Feb 2026 | **$2,450,000** |
+| Only other 915 sqft sale on file | Jun 2023 | $2,480,000 — 1.2% **above**, 33 months earlier |
+| Automated estimate | Aug 2026 | $2,390,000 — 2.4% **below** |
+
+**Neither supports the flat being worth more than he paid**, and the card says so in those
+words. The gap was rewritten from a suspicion ("the same number") to a confirmed fact ("the
+valuation is your own purchase, confirmed"), sourced to him.
+
+### Two modelling errors caught before shipping
+
+- **The carry was frozen at today.** The first version applied 3.4 months of net carry to a
+  sale four years out, understating the carry by years and overstating every distant rung.
+  Each row now accrues the carry to its own date. The rate is still held at today's, and the
+  card says so: mortgage interest falls as the loan amortises (which would raise the carry),
+  the rate floats and the tenancy is not permanent (which could lower it).
+- **The SSD-free row was labelled "sell by".** It is a *from* date, not a deadline. Fixed in
+  the engine, and asserted.
+
+Every unknown is listed on the card with the direction it pushes: purchase legal fees, sale
+legal fees, sale commission, property tax, insurance and repairs all make the real break-even
+**higher**, never lower. The SSD clock also starts on the date the Option was *exercised* —
+not completion — which Fortress does not hold; the whole ladder can shift by up to the 57-day
+option window.
+
+### The valuation was circular, and now says so
+
+Fortress valued the property at $2,450,000 on "the last equivalent transaction". He bought at
+$2,450,000. Those are the same number — either it *is* his own caveat or an identical one.
+Either way the property shows neither gain nor loss **by construction**, because there is one
+data point and it is his own purchase, not because the market has been flat. A high-severity
+gap now says this, and the value card carries a banner above the hero figure. Every
+break-even percentage on the tab is measured against that same number.
+
+`betest.js` — 97 assertions, at `Asia/Singapore`. Two of them exist because I got the
+arithmetic wrong first: the option window is 57 days, not the 58 I asserted from memory, and
+it is now derived rather than restated.
+
+### A test that pinned a constant
+
+`maxtest.js` and `mcsttest.js` both asserted `seedVersion === 13`, which broke the moment a
+migration was legitimately needed for the purchase seed. They now assert the *relationship* —
+that the stored version tracks the app's own `SEED_VERSION` — so a real migration passes and
+a missing one still fails.
+
 ## Reminders
 
 The Overview tab carries a **Reminders** card in two halves.
