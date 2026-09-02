@@ -307,12 +307,86 @@ Three things this required care over:
   $1,000 of monthly shortfall**. The old "contributions are unknown" gap was retired and
   replaced with a `low` one naming the projected months, so no gap contradicts the card.
 
-The ledger also confirms the MediSave overflow from the contribution side: 3 of 7 months
-show $0 to MediSave, the last non-zero being APR 2026 at $703.98, with the OA share rising
-by exactly that amount. At his balances that is **$126.72 a year of forgone interest** on a
-full year of redirection — 4% in MediSave becoming 2.5% in the OA.
+### Why MediSave stopped taking its share
 
-`maxtest.js` (169 assertions) covers all of this: every figure, every lever verdict, the
+The first version of this said *"$703.98 a month is $126.72 a year on a full year of
+redirection"*. **Both halves were wrong.** $703.98 was the *partial* transition month — the
+top-up that landed MediSave exactly on the cap — not the ongoing monthly redirect. And a
+full year of redirection never happens, because every January the cap rises and MediSave
+refills. `medisaveCycle()` now derives the mechanism from the ledger instead.
+
+**The mechanism.** MediSave is the only CPF account with a hard ceiling. Contributions split
+by fixed allocation rates — for the 50-to-55 band, OA 40.55% / SA 31.08% / MA 28.37% — so a
+$8,000 month sends **$839.75** towards MediSave. At the cap that share cannot fit and is
+redirected; because his SA is already past the FRS it lands in the **OA at 2.5%, not the SA
+at 4%** — a 1.5pp gap.
+
+**Dated off his own ledger.** 12 May 2026 is the month it filled: MediSave took $703.98 of
+the $839.75 due — precisely the room left — and the other $135.77 went to the OA, landing
+MediSave on $79,000 to the cent. From 11 Jun 2026 the whole share is redirected. 2026 to
+date: **$3,284.84 redirected, costing $49.27 a year**, rising $12.60 a year per further
+month. The bonus month redirects more than a normal one ($1,469.57), which a flat monthly
+figure would have missed.
+
+**A sawtooth, not a cliff.** Room reopens three ways, and the ledger shows all three:
+
+| Source | Amount | Ledger |
+| --- | --- | --- |
+| Year-end interest sweep to the *old* cap | $2,926.39 out | TFR, 1 Jan 2026, to the OA |
+| January rise in the cap | +$3,500 | $75,500 → $79,000 |
+| Deductions during the year | $500.00 out | code `MED`, 19 Jan 2026 |
+
+**The reconciliation is the proof.** Room opened = $3,500 + $500 = **$4,000.00**. MediSave
+took in **$4,000.00**. They match to the cent, and `maxtest.js` asserts they do — if they
+ever stop matching, the explanation is a story fitted to the numbers rather than a reading
+of them, and the card says so on its face.
+
+**Why it recurs.** A $3,500 rise absorbs about **4.2 months** of an $839.75 share against a
+full-year share of $10,077. Unless the BHS starts rising by more than that, most of every
+year is redirected. No forecast of the next rise is made; CPF has published none.
+
+### It is a trade, not a loss — a correction
+
+The first version of this section called the redirect *"forgone interest"* and stopped
+there. That was one-sided and the card now says so explicitly. What is given up is 1.5pp a
+year. What is gained is liquidity, and CPF's own words settle it: *"MediSave cannot be
+withdrawn in cash and are instead paid directly to MediSave-accredited medical
+institutions."* MediSave money is healthcare-only for life. The Ordinary Account money it
+becomes is — because his Special Account already covers the retirement sum unaided —
+**withdrawable in cash from 27 Aug 2028**. So $3,284.84 has moved from an account he could
+never take cash from into one he can, at a cost of $49.27 a year.
+
+Whether that is a good trade turns on whether he would ever spend $79,000 of MediSave on
+healthcare. Fortress does not know, says it does not know, and declines to weigh the two
+sides. It notes the one narrow cash exception CPF publishes (severe disability, $200/month,
+age 30+).
+
+Two absolute claims were also narrowed to what is actually true:
+
+- *"MediSave is the only CPF account with a hard ceiling"* → **"of your three accounts, the
+  only one with a ceiling on the balance itself"**. The OA and SA have none; the RA's ERS is
+  a top-up cap and does not exist before 55.
+- *"nothing you can do redirects it back"* → **"money already redirected cannot be moved
+  back"**, plus the one real lever on the *flow*: paying an eligible medical bill from
+  MediSave rather than in cash reopens that much room, so the next contributions land at 4%
+  instead of 2.5% — worth $15.00 a year per $1,000. The card immediately notes this cuts
+  against the liquidity point, and states both without picking.
+
+A test in `maxtest.js` had been **pinning the overclaim** (`/nothing you can do redirects it
+back/`) rather than testing a fact. A test that locks in a claim is worse than no test. It
+was removed and replaced with assertions on the accurate wording.
+
+The allocation rates, previously carried as a constant, were re-read from CPF's published
+table on 1 Sep 2026: *"Above 50 – 55"* — OA 0.4055, SA 0.3108, MA 0.2837, summing to 1.
+`maxtest.js` now also checks, row by row against the raw ledger rather than against the
+engine, that what MediSave lost the OA gained, to the cent.
+
+One deliberate omission: Fortress reports the transaction **codes** (`CSL`, `MED`, `DPS`)
+and what each did to the balance, and does not expand them into scheme names. CPF publishes
+no code glossary that could be cited, and a plausible expansion is still a guess. A test
+asserts no scheme name appears on the card.
+
+`maxtest.js` (206 assertions) covers all of this: every figure, every lever verdict, the
 verbatim CPF quotes, plain-English collapse behaviour, no horizontal overflow at 360px, and
 a surgical check that `cpfPlan()`, `retireAt55()`, `retireLevers()` and the seed version are
 all untouched. One assertion in it was written wrong first — it claimed three of the seven

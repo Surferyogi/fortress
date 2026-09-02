@@ -141,7 +141,7 @@ details.gap[open]>summary::after{content:'  \2212'}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:SEP:01-18:40';
+const VERSION = 'v2026:SEP:01-21:50';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -414,6 +414,13 @@ const CPF_RULES = {
   alloc50to55:{ oa:0.4055, sa:0.3108, ma:0.2837 },
   allocSource:'CPF Board, "CPF Allocation Rates from 1 January 2026" — above 50 to 55: OA 0.4055, SA 0.3108, MA 0.2837 of contributions',
   overflowSource:'CPF Board — MediSave above the BHS overflows to the SA below 55, but goes to the OA instead once the SA exceeds the Full Retirement Sum',
+  overflowQuote:'If your SA or RA exceeds the Full Retirement Sum, excess MediSave contributions will instead flow to your OA.',
+  /* The other half of the trade, verified 1 Sep 2026. MediSave money is healthcare-only
+     for life; OA money above the retirement sum is cash at 55. The redirect is therefore
+     not a pure loss, and Fortress must not present it as one. */
+  medisaveCashQuote:'MediSave cannot be withdrawn in cash and are instead paid directly to MediSave-accredited medical institutions.',
+  medisaveCashException:'Singaporeans with severe disability aged 30 and above may withdraw up to $200 per month in cash from their own and/or their spouse\u2019s MediSave account(s)',
+  medisaveCashSource:'CPF Board, "Can I withdraw my MediSave in cash?"',
   bhsSource:'CPF Board — Basic Healthcare Sum for 2026 is $79,000 for members below 65',
   brs:110200, frs:220400, ers:440800, sumsYear:2026,
   // published cohorts only — CPF has announced nothing beyond 2027
@@ -3396,7 +3403,68 @@ function cpfContributions(year){
     roomPerThousandShort: 1000*rate,
     /* MediSave has stopped taking its share - the ledger says where it goes instead */
     maStopped: rows.filter(p=>p.ma===0).length,
-    maLastNonZero: [...rows].reverse().find(p=>p.ma>0) || null };
+    maLastNonZero: [...rows].reverse().find(p=>p.ma>0) || null,
+    medisave: medisaveCycle(Y) };
+}
+
+/* ---- Why MediSave stopped taking its share, and why that is a sawtooth not a cliff ----
+   MediSave is the only CPF account with a hard ceiling. Contributions are split by fixed
+   allocation rates; when the MediSave share will not fit under the Basic Healthcare Sum it
+   is redirected, and where it lands depends on whether the SA is already past the FRS.
+   Room reopens three ways - the January BHS rise, any premium or claim deducted, and the
+   year-end interest sweep - so the account refills for part of each year and redirects for
+   the rest. Everything below is read off the ledger by POSTING date, because that is when
+   the balance actually moved; the Annual Limit above is read by WAGE month, which is a
+   different question and a different basis. */
+function medisaveCycle(year){
+  const R = CPF_RULES, A = R.alloc50to55;
+  const Y = year || new Date().getFullYear();
+  const inYear = d => String(d).slice(0,4) === String(Y);
+  const t = cpfTxns();
+
+  /* every contribution posted this calendar year: what MediSave's share should have been,
+     what it actually took, and therefore what was pushed elsewhere */
+  const con = t.filter(x=>x.code==='CON' && inYear(x.date)).map(x=>{
+    const total = (x.oa||0)+(x.sa||0)+(x.ma||0);
+    const due = total * A.ma, got = x.ma||0;
+    /* CPF rounds allocations to the cent, so `due` and `got` differ by fractions of a cent
+       in a normal month. Anything under a cent is rounding, not a redirect. */
+    const short = due - got;
+    return { date:x.date, forMonth:x.forMonth||null, total, due, got,
+             redirected: short > 0.01 ? short : 0, full: got<=0, partial: got>0 && short>0.01 };
+  });
+  if(!con.length) return null;
+
+  const redirected = con.reduce((a,c)=>a+c.redirected, 0);
+  const credited   = con.reduce((a,c)=>a+c.got, 0);
+  const transition = con.find(c=>c.partial) || null;      // the month it hit the cap exactly
+  const firstFull  = con.find(c=>c.full) || null;         // the first fully redirected month
+  const stillOn    = con.length ? con[con.length-1].full || con[con.length-1].partial : false;
+
+  /* what OPENED room this year: the January rise in the cap, plus anything taken out */
+  const outs = t.filter(x=>inYear(x.date) && (x.ma||0) < 0 && x.code!=='TFR')
+                .map(x=>({ date:x.date, code:x.code, amount:Math.abs(x.ma) }));
+  const outTotal = outs.reduce((a,o)=>a+o.amount, 0);
+  const bhsRise = R.bhs - R.prevBhs;
+  const roomOpened = bhsRise + outTotal;
+
+  /* the year-end sweep: interest took MediSave above the OLD cap and the excess moved out */
+  const sweep = t.find(x=>x.code==='TFR' && inYear(x.date) && (x.ma||0)<0) || null;
+
+  const monthlyShare = R.owCeiling * (R.contribRateTo55/100) * A.ma;   // a normal month
+  const gap = (R.maPct - R.oaPct)/100;
+  return { year:Y, con, redirected, credited, transition, firstFull, stillOn,
+    outs, outTotal, bhsRise, roomOpened,
+    /* credits should equal the room that was opened, to the cent */
+    reconciles: Math.abs(credited - roomOpened) < 0.01,
+    sweep: sweep ? { date:sweep.date, amount:Math.abs(sweep.ma), toOa:(sweep.oa||0)>0 } : null,
+    monthlyShare, monthsCovered: monthlyShare>0 ? bhsRise/monthlyShare : null,
+    yearlyShare: monthlyShare*12,
+    /* the redirect costs the MediSave-to-OA rate gap on everything redirected, per year */
+    gapPct: R.maPct - R.oaPct,
+    forgonePerYear: redirected * gap,
+    forgonePerMonthAdded: monthlyShare * gap,
+    toOa: (typeof cpfSaOverFrs==='function') ? cpfSaOverFrs() : null };
 }
 
 /* Open/closed is a verdict for today. It says nothing about whether today is the only
@@ -3742,7 +3810,15 @@ function viewCpf(){
     <div class="banner ${C.headroomProjected<=0.005?'b-warn':''}" style="margin-top:10px"><span class="ic">&#8505;</span><div><b>${pct(Rr.contribRateTo55,0)} of ${money(Rr.annualSalaryCeiling,0)} is ${money(C.maxMandatory,0)} &mdash; the Annual Limit exactly.</b>A full year at the Ordinary Wage ceiling uses the entire limit on compulsory contributions, leaving nothing for voluntary ones. Your ledger shows ${money(C.ytd,2)} for ${fmt(C.months,0)} months and ${fmt(C.monthsLeft,0)} more at ${money(C.owMax,2)} would be ${money(C.projRemaining,2)} &mdash; ${money(C.projTotal,2)} for the year, against a limit of ${money(Rr.annualLimit,0)}.</div></div>
     <p class="note"><b>These wages are implied, not told to Fortress.</b> It holds no payslip. Each contribution row divided by the ${pct(Rr.contribRateTo55,0)} rate recovers the wage that produced it: every ${C.year} month comes back at ${money(Rr.owCeiling,0)}, and ${awRow?`${esc(awRow.label)} at ${money(awRow.impliedWage,0)} — ${money(Rr.owCeiling,0)} of Ordinary Wage plus ${money(awRow.impliedWage-Rr.owCeiling,0)} of Additional Wage`:'no month carries Additional Wage'}. That is a floor on your wage, not your wage: anything above the ceiling produces the same contribution and is invisible here.</p>
     <p class="note"><b>The ceiling has been moving.</b> ${Rr.owCeilingHistory.map(h=>`${esc(dayLabel(h.from))} ${money(h.ceiling,0)} (+${money(h.step,0)})`).join(' &middot; ')}. The Annual Salary Ceiling stayed at ${money(Rr.annualSalaryCeiling,0)} throughout. ${esc(Rr.annualSalaryCeilingSource)} Fortress does not forecast the next step and CPF has published none.</p>
-    ${C.maStopped>0?`<p class="note"><b>MediSave has stopped taking its share.</b> ${fmt(C.maStopped,0)} of your ${fmt(C.months,0)} posted months show ${money(0,0)} to MediSave${C.maLastNonZero?`, the last non-zero being ${esc(C.maLastNonZero.label)} at ${money(C.maLastNonZero.ma,2)}`:''} — MediSave is at the Basic Healthcare Sum, so its share is redirected. Because your Special Account is already above the Full Retirement Sum it goes to the <b>Ordinary Account at ${pct(Rr.oaPct,1)}</b>, not the Special Account at ${pct(Rr.saPct,1)}: ${C.maLastNonZero?`${money(C.maLastNonZero.ma,2)} a month now earning ${pct(Rr.oaPct,1)} instead of ${pct(Rr.saPct,1)} is ${money(C.maLastNonZero.ma*12*(Rr.saPct-Rr.oaPct)/100,2)} a year of forgone interest on a full year of it`:''}. Nothing can redirect it back.</p>`:''}
+    ${(()=>{ const M=C.medisave; if(!M||!M.transition&&!M.firstFull) return '';
+      return `<div class="warnbox" style="margin-top:12px"><b>Why MediSave stopped taking its share</b>
+      <p style="margin:6px 0">Of your three accounts, MediSave is the only one with a ceiling on the <em>balance itself</em> — the Ordinary and Special Accounts have none. Every contribution is split by fixed allocation rates — for your age band ${pct(Rr.alloc50to55.oa*100,2)} OA, ${pct(Rr.alloc50to55.sa*100,2)} SA, ${pct(Rr.alloc50to55.ma*100,2)} MediSave — so a normal ${money(Rr.owCeiling,0)} month sends <b>${money(M.monthlyShare,2)}</b> towards MediSave. Once MediSave is at the Basic Healthcare Sum that share will not fit, and it is redirected. <b>Because your Special Account is already past the Full Retirement Sum it goes to the Ordinary Account at ${pct(Rr.oaPct,1)}, not the Special Account at ${pct(Rr.saPct,1)}</b> — a gap of ${pct(M.gapPct,1)} on everything redirected.</p>
+      <p style="margin:6px 0"><b>Your ledger dates it exactly.</b> ${M.transition?`${esc(dayLabel(M.transition.date))} was the month it filled: MediSave took ${money(M.transition.got,2)} of the ${money(M.transition.due,2)} due — precisely the room left — and the other ${money(M.transition.redirected,2)} went to the OA, landing MediSave on ${money(Rr.bhs,0)} to the cent. `:''}${M.firstFull?`From ${esc(dayLabel(M.firstFull.date))} the whole share is redirected. `:''}So far in ${M.year} that is <b>${money(M.redirected,2)}</b>, earning ${pct(Rr.oaPct,1)} where it would have earned ${pct(Rr.maPct,1)} — <b>${money(M.forgonePerYear,2)} a year</b> of interest difference, growing ${money(M.forgonePerMonthAdded,2)} a year for every further month it runs.</p>
+      <p style="margin:6px 0"><b>But this is a trade, not simply a loss — and Fortress will not call it for you.</b> ${pct(M.gapPct,1)} a year is what you give up. What you get is liquidity: <em>&ldquo;${esc(Rr.medisaveCashQuote)}&rdquo;</em> MediSave money is healthcare-only for life. The Ordinary Account money it becomes is, because your Special Account already covers the retirement sum on its own, <b>withdrawable in cash from ${A?esc(dayLabel(A.date55)):'55'}</b>. So ${money(M.redirected,2)} has moved from an account you could never take cash from into one you can. Whether that is worth ${money(M.forgonePerYear,2)} a year turns on whether you would ever have spent ${money(Rr.bhs,0)} of MediSave on healthcare — which Fortress does not know and will not assume. ${Rr.medisaveCashException?`(The one cash exception CPF publishes is narrow: ${esc(Rr.medisaveCashException)}.)`:''}</p>
+      <p style="margin:6px 0"><b>It is a sawtooth, not a cliff — room reopens three ways.</b> ${M.sweep?`On ${esc(dayLabel(M.sweep.date))} the year-end interest sweep moved ${money(M.sweep.amount,2)} out of MediSave${M.sweep.toOa?' into the OA':''}, resetting it to the <em>old</em> cap. `:''}The cap then rose ${money(M.bhsRise,0)} on 1 January (${money(Rr.prevBhs,0)} to ${money(Rr.bhs,0)}). ${M.outs.length?`And ${M.outs.length===1?'one deduction':M.outs.length+' deductions'} took ${money(M.outTotal,2)} out — ${M.outs.map(o=>`${money(o.amount,2)} on ${esc(dayLabel(o.date))} coded <code>${esc(o.code)}</code>`).join(', ')} — each dollar of which reopened a dollar of room.`:''} ${M.reconciles?`Those add to <b>${money(M.roomOpened,2)}</b>, and MediSave took in <b>${money(M.credited,2)}</b> this year. <b>They match to the cent</b>, which is how Fortress knows this reading is right and not a story fitted to the numbers.`:`<b>Fortress computes ${money(M.roomOpened,2)} of room opened against ${money(M.credited,2)} taken in — these should match and do not, so treat this reading with suspicion.</b>`}</p>
+      <p style="margin:6px 0"><b>Why it will keep happening.</b> A ${money(M.bhsRise,0)} rise in the cap absorbs about <b>${fmt(M.monthsCovered,1)} months</b> of your ${money(M.monthlyShare,2)} share. Your full year's share is ${money(M.yearlyShare,0)}. Unless the Basic Healthcare Sum starts rising by more than that in a year, most of every year will be redirected. <b>Money already redirected cannot be moved back</b> — but the flow is not entirely beyond your reach: paying an eligible medical bill from MediSave rather than in cash reopens that much room, so the next contributions land at ${pct(Rr.maPct,1)} instead of ${pct(Rr.oaPct,1)} — worth ${money(1000*(Rr.maPct-Rr.oaPct)/100,2)} a year per ${money(1000,0)}. Note that this cuts against the liquidity point above: it deliberately keeps money in the healthcare-only account. Fortress states both and picks neither. It does not forecast the next rise; CPF has published none.</p>
+      <p class="note" style="margin:6px 0 0">Fortress reads the transaction codes and amounts from your CPF history. It does <b>not</b> hold CPF's glossary for codes like <code>${esc(M.outs.length?M.outs[0].code:'MED')}</code>, so it reports what each row did to the balance and does not expand the abbreviation into a scheme name it cannot source.</p>
+      </div>`; })()}
     <p class="note">Sources: ${esc(Rr.contribRateSource)}; ${esc(Rr.owCeilingHistorySource)}; ${esc(Rr.awCeilingSource)}; ${esc(Rr.annualLimitSource)} — <em>&ldquo;${esc(Rr.annualLimitQuote)}&rdquo;</em>. Wage months are read from your own CPF transaction history. Checked ${esc(Rr.checkedOn)}.</p>
   </div>`; })()}
   ${A?`<div class="banner ${A.days55<=1095?'b-warn':''}"><span class="ic">&#9200;</span><div><b>${A.age} years old &middot; 55 on ${esc(dayLabel(A.date55))}</b>${A.days55>0?`That is <b>${fmt(A.days55,0)} days</b> — ${fmt(A.days55/365.25,1)} years. On that date the Special Account closes, ${money(frsFor(A.year55).value,0)} moves to a Retirement Account and the rest of it drops from ${pct(CPF_RULES.saPct,1)} to ${pct(CPF_RULES.oaPct,1)} in the OA. Your SA is ${money(latestCpf().sa,0)} today, so most of the excess is already built.`:'You have passed 55; the projection below uses the post-55 rules.'} MediSave's Basic Healthcare Sum stops rising for you at 65, in ${esc(String(A.year65))}.</div></div>`:''}
