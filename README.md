@@ -530,6 +530,91 @@ read in a document, because the OTP says nothing about how many properties he ow
 the setting restores all three citizen scenarios, so a change of circumstance stays
 expressible; a test asserts both directions.
 
+### Two scenarios over the five years
+
+CK asked for the sale priced two ways: **all costs and fees excluding rent**, and **all costs
+and fees including it**. `propertyCarryTo()` accumulates the running costs month by month
+from completion — mortgage interest **observed** from the real balances where Fortress has
+them and modelled beyond, MCST at $486/month, rent at $5,800/month kept as its own line
+rather than netted — so the two scenarios differ in exactly one row.
+
+The cost stack to the SSD-free date, 45 months after completion:
+
+| | |
+| --- | --- |
+| Purchase price | $2,450,000.00 |
+| Buyer's Stamp Duty | $92,100.00 |
+| ABSD (1st property) | $0.00 |
+| Mortgage interest | $52,882.00 *(2,345.23 observed, 50,536.77 modelled)* |
+| MCST maintenance | $21,870.00 |
+| Legal fees, purchase leg | $2,500.00 |
+| **Scenario 1 — all costs, no rent** | **$2,619,352.00** |
+| Rent collected | −$261,000.00 |
+| **Scenario 2 — all costs, less rent** | **$2,358,352.00** |
+| *(plus $2,180.00 sale legal, charged on exit)* | |
+
+Each is grossed up for what the sale itself costs — SSD and the 1.308% commission come off
+the price, so the figure is *divided*, not reduced:
+
+| Sell by | SSD | 1 · excl. rent | 2 · incl. rent |
+| --- | --- | --- | --- |
+| 10 Feb 2027 | 16% | **$3,098,545** (+26.5%) | $3,035,419 (+23.9%) |
+| 10 Feb 2028 | 12% | $2,979,056 (+21.6%) | $2,838,559 (+15.9%) |
+| 10 Feb 2029 | 8% | $2,869,456 (+17.1%) | $2,658,412 (+8.5%) |
+| 10 Feb 2030 | 4% | $2,768,483 (+13.0%) | $2,492,853 (+1.7%) |
+| from 10 Mar 2030 | none | **$2,677,191** (+9.3%) | **$2,406,855** (−1.8%) |
+
+**Excluding rent, every rung is above what he paid.** Including it, only the SSD-free rung
+drops below — and that single crossing is the whole difference between the two questions.
+Scenario 1 asks whether the *property* paid for itself; Scenario 2 asks whether *he* came
+out whole. Scenario 2 is the lower by $264,459 because it credits rent against the cost of
+the asset, which quietly assumes the same $2,450,000 would have earned nothing anywhere
+else. The card says that in those words.
+
+Both remain optimistic: property tax, insurance, letting commission, repairs and vacancy are
+not in Fortress, and each raises both scenarios. Interest past Aug 2026 is modelled at the
+current rate and instalment, both floating — the observed/modelled split is printed so a
+projection is never mistaken for a fact.
+
+### Both legal fees, from two different letters
+
+**Purchase leg — $2,500.00.** From the agent's instruction to CK's own solicitor, 18 Feb
+2026, subject *"Purchase of 2 Makeway Avenue #07-04 The Atelier"*: *"the legal fees will be
+$2500 nett inclusive of Gst and mortgage stamp fee."* The word **inclusive** matters — the
+mortgage duty is already inside that figure, so Fortress does not add it again. IRAS:
+*"Mortgage duty of 0.2% to 0.4% is payable on the loan amount, subject to a maximum duty of
+$500"*, which on a $1.35m loan is the $500 cap, comfortably absorbed by a $2,500 nett quote.
+
+**Sale leg — $2,180.00**, from the earlier letter described below.
+
+Together the two fees lift the SSD-free rung by **$4,742**, not their $4,680 face value,
+because each is recovered out of a sale that is itself taxed. Neither legal fee is a declared
+gap any more; only the option exercise date and the untracked running costs remain.
+
+### The legal fee that was for the wrong leg
+
+CK sent a conveyancing letter and asked for "the legal fees for the property purchase" to be
+noted. **The letter says something different from the request**: *"the legal fee for acting
+in the **sale** of your property is $2,180.00 nett"*, on a transaction whose Option expired
+**8 Aug 2025** — a different property, sold the year before he bought The Atelier.
+
+So it is recorded as what it is. The **sale leg** is now a documented $2,180.00 from his own
+paperwork, and it is in every scenario; a test asserts it lifts the SSD-free rung by
+**$2,209**, not $2,180, because the fee has to be recovered out of a sale that is itself
+taxed. The **purchase leg stays null** — carrying a sale fee across to it would be inventing
+a figure from an unrelated transaction, and both the card and the gap list say so explicitly.
+
+The same letter also describes a completion apportionment that runs in his favour: *"the
+purchasers are required to reimburse you their share of the property tax … as well as any
+management and sinking fund (MCST) contributions paid by you"*. That credit is **noted and
+deliberately not modelled** — Fortress does not hold his property tax at all — with the card
+saying both scenarios are that much too pessimistic on this one line, and considerably too
+optimistic on the costs still missing.
+
+One incidental corroboration: a property sold in 2025, before the Feb 2026 purchase, is
+consistent with the first-property ABSD rate he confirmed. Fortress records it as
+corroboration, not as proof — the ABSD setting still rests on his own statement.
+
 ### The break-even was defined wrongly, and CK caught it
 
 The first version netted the accumulated rent off the capital and called the result *the*
@@ -708,7 +793,7 @@ data point and it is his own purchase, not because the market has been flat. A h
 gap now says this, and the value card carries a banner above the hero figure. Every
 break-even percentage on the tab is measured against that same number.
 
-`betest.js` — 140 assertions, at `Asia/Singapore`. Two of them exist because I got the
+`betest.js` — 167 assertions, at `Asia/Singapore`. Two of them exist because I got the
 arithmetic wrong first: the option window is 57 days, not the 58 I asserted from memory, and
 it is now derived rather than restated.
 
@@ -718,6 +803,486 @@ it is now derived rather than restated.
 migration was legitimately needed for the purchase seed. They now assert the *relationship* —
 that the stored version tracks the app's own `SEED_VERSION` — so a real migration passes and
 a missing one still fails.
+
+## The exercise date — and the 28 days it moved
+
+APEX Law LLC's letter of **10 March 2026** (ref `PTE.Pur.26.JO.280747`) encloses the
+*"original Option to Purchase dated 10 February 2026 duly exercised by our client(s) **on
+even date**"* — the standard conveyancing phrase for *the same date as this letter*.
+
+**This closed the single largest hole in the property model, and it moved the answer the
+wrong way.**
+
+Fortress had been running the Seller's Stamp Duty ladder from **10 Feb 2026, the date the
+Option was granted**, because the exercise date was unknown and `optionGranted` was the
+fallback. [IRAS's own SSD declaration form](https://www.iras.gov.sg/docs/default-source/uploadedfiles/pdf/declaration-form-ssd-for-residential-properties.pdf?sfvrsn=eef90150_21)
+(updated 4 Jul 2025) defines it plainly:
+
+> Date of Purchase / Acquisition refers to: a) **Date of exercise of Option to Purchase** or
+> b) Date of Sale and Purchase Agreement or c) Date of Agreement for Lease … or d) Date of
+> Transfer where (a), (b) and (c) are not available nor applicable
+
+Every SSD milestone was **28 days too early** — including the one CK plans against:
+
+| | Fortress used to say | Correct |
+|---|---|---|
+| SSD-free from | 10 Feb 2030 | **10 Mar 2030** |
+
+He has to hold it **28 days longer** than the app was telling him. `acquiredOn` now reads
+the exercise date first and keeps the grant only as the fallback it always should have been;
+`acquiredFrom` reports which one is in force, so this cannot silently regress.
+
+### The rungs, re-anchored
+
+Every rung is dated the **10th of March** now, and carries 28 more days of interest, MCST,
+insurance and CPF accrual:
+
+| Sell by | SSD | 1 · excl. rent | 2 · incl. rent |
+|---|---|---|---|
+| 10 Mar 2027 | 16% | $3,113,176 | $3,043,036 |
+| 10 Mar 2028 | 12% | $2,996,393 | $2,849,205 |
+| 10 Mar 2029 | 8% | $2,882,698 | $2,665,259 |
+| 10 Mar 2030 | 4% | $2,790,282 | $2,508,526 |
+| from 10 Mar 2030 | none | **$2,677,191** | **$2,406,855** |
+
+The CPF refund on the SSD-free rung rose with it, from S$551,302.67 to **S$552,448.83**.
+
+### What else the letter carried
+
+S$98,000 balance of the 5% deposit (matching the Option's own figure), title
+**SSCT Vol. 2689 Fol. 174**, both firms named, and a S$10 admin charge per cashier's order
+beyond four. The CPF charge `IH/567698R` and mortgage `IH/503818U` on it are the
+**vendor's**, being discharged so clean title could pass — not CK's UOB mortgage — and the
+card says so, because two encumbrance numbers on a purchase letter invite exactly that
+confusion.
+
+### The question it opened, now settled
+
+The same letter recorded an instruction to **request** that completion be brought forward
+from **20 May 2026** to **5 May 2026**. It recorded the request, not the answer — so
+Fortress held the Option's date and refused to move on circumstantial evidence, even though
+two documents already on file fitted the earlier date better:
+
+| | vs 5 May | vs 20 May |
+|---|---|---|
+| Fire cover incepted 4 May 2026 | **1 day** before | 16 days before |
+| CPF drawn 24 Apr 2026 | **11 days** before | 26 days before |
+
+**CK confirmed it on 3 Sep 2026: completion happened on 5 May.** Both dates are kept — the
+one the Option set and the one that happened — because the 15-day difference is why several
+other dates moved:
+
+| | Was | Now |
+|---|---|---|
+| Plan-year anniversaries | 20 May | **5 May** |
+| Loan lock-in ends | 19 May 2028 | **4 May 2028** |
+| Free rate conversion from | 20 May 2028 | **5 May 2028** |
+| Fire cover head start | 16 days | **1 day** |
+
+That last line is the satisfying one: the fire policy incepting the day before completion is
+the ordinary pattern, and it was the clue all along. The `prop` gap has closed, and
+`completionQuestion()` now returns a **resolved** record rather than `null` — the question
+is not deleted, because a reader six months from now needs to see why the dates moved.
+
+**The break-even rungs did not move.** The carry is built from the first month Fortress
+holds a mortgage balance, not from completion, so bringing completion forward changed the
+`cash` figures and the months-held count but left every break-even figure exactly where it
+was. That is worth stating plainly rather than leaving a reader to wonder why a date change
+moved nothing.
+
+## The loan plan, and the two things it changes
+
+From UOB's approval email and its rate table. Two structures were approved -
+**SGD 1,700,000 over 13 years** or **SGD 1,347,500 over 23 years** - and the one taken
+matches `MORTGAGE_META` exactly (1,347,500; 276 months = 23 years), which is a useful
+cross-check on a record that had never been tied to its own offer letter.
+
+**CK confirmed the selection: Plan C, the floating rate.** All three plans are stored
+anyway - the terms of the two he did not take are what make the one he did legible.
+
+| | A · 2y Fixed | B · 3y Fixed | **C · Floating** |
+|---|---|---|---|
+| Year 1 | 1.52% | 1.60% | **SORA + 0.00%** |
+| Year 2 | 1.52% | 1.60% | **SORA + 0.30%** |
+| Year 3 | SORA + 0.50% | 1.60% | **SORA + 0.55%** |
+| Thereafter | SORA + 1.00% | SORA + 1.00% | **SORA + 0.75%** |
+| Lock-in | 2y | 3y | **2y** |
+| Free prepay/yr | — | 10% | **20%** |
+
+### 1. The spread steps up by contract, and the projection now says so
+
+Fortress used to project the mortgage forward **at today's rate for ever**. Under Plan C
+that understates every year after the first, by 0.30, then 0.55, then 0.75 points,
+*regardless of what SORA does*.
+
+Because the year-1 spread is **zero**, the 1.1302% on the 4 Aug 2026 letter **is** 3-month
+compounded SORA - that is arithmetic on two facts, not a market observation. Hold SORA
+still and the contractual rate runs **1.1302 → 1.4302 → 1.6802 → 1.8802**. Holding SORA
+still is the single assumption in the projection, and it is labelled that way everywhere it
+surfaces.
+
+**The instalment is re-amortised at each step rather than held flat**, because UOB
+demonstrably does that: the 4 Aug 2026 letter raised the rate *and* set a new instalment of
+S$5,546.93. Feeding that letter's rate and the counted remaining tenor into the standard
+annuity formula reproduces S$5,546.93 to well within half a percent - which is what
+justifies using the same formula forward, and a test pins that reproduction.
+
+The step lands on the first modelled month **after** each anniversary (June, not May),
+because the projection walks whole months. That is a one-month lag worth about half a
+month of the spread increase, it errs on the cheap side, and it is asserted in the suite so
+it stays a recorded decision rather than an accident.
+
+### 2. Selling inside the lock-in costs 1.50%, halved to 0.75%
+
+This was missing entirely, and it is thirty times the size of the lease duty. The lock-in
+runs to **19 May 2028**, so the first two break-even rungs are inside it. Full redemption
+costs 1.50% of the amount redeemed - but the table grants its own waiver: *"50% redemption
+fee waived if due to property sale within lock in period"*, so **0.75%** applies.
+
+| Sell | Outstanding | Fee at 0.75% | Lifts the break-even by |
+|---|---|---|---|
+| 10 Feb 2027 | S$1,309,058 | **S$9,818** | S$11,873 |
+| 10 Feb 2028 | S$1,258,545 | **S$9,439** | S$10,888 |
+| 10 Feb 2029 onward | — | **nil** | — |
+
+Two months' notice is required. Fortress does not model giving less notice, because the
+table does not say what happens.
+
+### What the rungs became
+
+Three documented items entered at once - the S$163.50 valuation fee, the fire premium, and
+the redemption fee - and Plan C's spread step-up raised modelled interest from May 2027,
+which is why **2029 and 2030 moved despite carrying no redemption fee at all**:
+
+| Sell by | SSD | 1 · excl. rent | 2 · incl. rent |
+|---|---|---|---|
+| 10 Feb 2027 | 16% | $3,111,120 | $3,047,994 |
+| 10 Feb 2028 | 12% | $2,994,124 | $2,853,627 |
+| 10 Feb 2029 | 8% | $2,880,283 | $2,669,239 |
+| 10 Feb 2030 | 4% | $2,787,838 | $2,512,207 |
+| from 10 Feb 2030 | none | **$2,674,846** | **$2,410,387** |
+
+Every figure was recomputed by hand from `(costs + sale legal + redemption fee) / denominator`
+and checked against the app to the cent before being pinned. `betest.js` now asserts that
+**identity** rather than a delta against a frozen baseline, so the next documented cost does
+not break five assertions for no reason.
+
+### The 20% prepayment allowance is the sweetener Plan C carries
+
+20% of S$1,347,500 is **S$269,500** he can put against the loan each year of the lock-in
+with no fee - the largest allowance of the three plans. Plan A has none; Plan B has half.
+
+**Fortress passes no verdict on the choice.** On today's SORA both fixed plans (1.52%,
+1.60%) sit above the 1.1302% he is paying; what he gave up is certainty. Where SORA goes
+is not something this app knows, and the card says so.
+
+### Two more items off the same email
+
+**Property valuation fee S$163.50** - a documented acquisition cost, now in `capitalIn`
+alongside the price, BSD and legal fees. **Legal fees** were quoted only as *"To check
+directly with APEX law/WLaw"*, so Fortress keeps the S$2,500 from the solicitor's own
+instruction, which is a real number.
+
+And a **S$10,522.07 refund** of a redemption fee paid on an *earlier* UOB loan, conditional
+on this one being at least S$720,000 - which it is. It is **recorded and deliberately not
+netted off this flat**: it relates to a different loan on a different property, and Fortress
+does not know whether it has been received. A test asserts `capitalIn` is untouched by it.
+
+### The anniversary basis is declared, not implied
+
+The plan years are counted from **20 May 2026, completion**. The approval email does not
+state the anniversary, so Fortress uses completion and says so on the card. If the letter of
+offer counts from first disbursement, the step dates move by days and nothing material
+changes.
+
+`loantest.js` - 62 assertions, at `Asia/Singapore`.
+
+## Fire insurance premium
+
+UOB's approval email closed a gap this project had been flagging for two releases:
+*"UOI fire insurance premium = approximately SGD 160 per annum"*.
+
+**It is recorded as approximate, because that is the word the source uses** - and it is
+still recorded that the *policy schedule* does not carry it, since page 1 of 3 was never
+supplied. The premium now flows into net rent, the carry and both sale scenarios, at
+S$13.33 a month.
+
+The honest footnote, which the card carries: at S$160 a year this is the smallest running
+cost on the flat by a wide margin - the MCST is **36 times** it - so even a sizeable error
+in it moves nothing that matters.
+
+**Net rent cover fell from 96.87% to 96.63%**, a shortfall of S$185.00 a month against the
+instalment. The old figure was not wrong; it was incomplete. Every suite that pinned 96.87%
+was re-pointed rather than loosened.
+
+## Tenancy stamp duty
+
+From the IRAS **Certificate of Stamp Duty**, ref `164039-83LA4-1-598004626`, issued
+25 Jul 2026 against a Tenancy Agreement of the same date: **S$297.00** of lease duty on
+2 Makeway Ave #07-04, CK as landlord, his tenant as lessee.
+
+### Two identifiers are deliberately not stored
+
+The certificate carries an NRIC and the tenant's FIN. **Neither is anywhere in this file** -
+not in a seed, not in a comment, not rendered. `index.html` is built to be served from
+**GitHub Pages, which is public**, and a government ID - a third party's above all - has no
+business in a file that might be. `tenancytest.js` greps the source for both, and for any
+NRIC-shaped string on the record, and fails if one appears. The omission is stated on the
+card rather than left silent.
+
+### Who paid is not on the document
+
+Singapore market practice puts lease duty on the **tenant**; the tenancy agreement decides,
+and the two parties are jointly liable in law. The certificate names a landlord and a lessee
+and says nothing about who paid. CK asked for it to be treated as his cost, so it is - and
+the card says plainly that the document does not support that, with **a one-tap toggle** to
+take it out. Flipping it removes the S$297 from the carry and returns every break-even rung
+to its pre-duty figure; a test asserts exactly that, in both directions.
+([Winfred Quek](https://winfredquek.com/insights/tenancy-agreement-stamp-duty-singapore):
+*"the tenant customarily pays the stamp duty on a tenancy agreement"*, and *"do not assume,
+read the clause."*)
+
+### The reconciliation, and the conclusion it refuses to draw
+
+Lease duty is **0.4% of the total rent for the whole period of the lease** (leases of 4 years
+or less), **rounded down to the nearest dollar**. So one duty figure maps to a *range*:
+
+- S$297 implies a chargeable base of **S$74,250 to just under S$74,500**
+- the rent on file, S$5,800 x 12 = S$69,600, would have produced **S$278**
+- the base is therefore about **S$4,650** higher - roughly 7%
+
+A 7% gap is exactly the shape of *"his rent went up"*, and **Fortress does not say that**.
+Three documented reasons a chargeable base legitimately exceeds bare rent, any one of which
+covers it:
+
+1. the base includes consideration for **furniture and fittings, maintenance, service,
+   advertising and promotion and any other charges** - and this flat was let furnished;
+2. IRAS charges on *"the contractual rental or the market rental, **whichever is higher**"*
+   ([IRAS, *Renting a Property*](https://www.iras.gov.sg/taxes/stamp-duty/for-property/renting-a-property));
+3. **the lease term is not on the certificate**, so the base need not cover twelve months.
+
+Because of (3), the base is never divided into a monthly rent. `termMonths`, `leaseStart`,
+`leaseEnd` and `monthlyRent` are all **null** on the record, and a test pins them null. The
+twelve-month reading (S$6,187.50/month) appears once, in prose, labelled *"a conditional,
+not a figure Fortress holds"*.
+
+### The gap it does open
+
+The agreement is dated **25 Jul 2026**. The rent Fortress uses was read off the **May and
+June 2026** bank credits - both before it. That is a dating fact, not a suspicion, and it is
+cheap to close: import a statement from July onwards. A new `prop` gap says so, and says in
+terms that it is *not* inferring a rent change from the duty.
+
+### Where the S$297 lands
+
+As a **one-off in the month it fell**, not smeared across the term. `propertyCarryTo` now
+carries a `lettingOneOffs()` list and charges each entry in its own month, so a S$297 duty on
+25 Jul 2026 is S$297 in July and nothing in the other 44 months.
+
+Every break-even rung rose by exactly **297 / that rung's denominator** - more than S$297,
+because the cost has to be recovered out of a sale that is itself taxed:
+
+| Sell by | SSD | Δ | 1 · excl. rent | 2 · incl. rent |
+|---|---|---|---|---|
+| 10 Feb 2027 | 16% | +359 | $3,098,904 | $3,035,778 |
+| 10 Feb 2028 | 12% | +343 | $2,979,399 | $2,838,901 |
+| 10 Feb 2029 | 8% | +327 | $2,869,783 | $2,658,739 |
+| 10 Feb 2030 | 4% | +314 | $2,768,797 | $2,493,166 |
+| from 10 Feb 2030 | none | +301 | $2,656,577 | $2,392,118 |
+
+The four suites that pinned the old figures were **re-pointed with the new ones verified
+first**: each rung was predicted by hand as `old + 297/denominator` and only then compared
+against the app. `betest.js` also gained a structural assertion that holds the whole vector
+to that identity, so a future change to the duty cannot silently move a rung by the wrong
+amount. The "two legal fees lift the rung by S$4,742" assertion had its baseline moved by the
+same 300.94, so it still isolates the legal fees instead of quietly absorbing the duty.
+
+### What the certificate corroborates
+
+It is the **first document Fortress holds that names 2 Makeway Ave #07-04 against CK**, and
+its lessee matches the payer on the rent credits. Neither was in doubt; both had been
+inferred rather than documented - including in the fire-insurance card, which still notes
+that its own schedule pages do not name the property.
+
+`tenancytest.js` - 46 assertions, at `Asia/Singapore`.
+
+## Property tax
+
+CK supplied the non-owner-occupied rates and asked for them to be verified before they were
+used. **They check out, and they are still the live schedule.**
+
+| Annual Value | Rate |
+|---|---|
+| First $30,000 | 12% |
+| Next $15,000 | 20% |
+| Next $15,000 | 28% |
+| Above $60,000 | 36% |
+
+Effective **1 January 2024**, confirmed against [gov.sg, *Property Tax on Residential
+Property*](https://www.gov.sg/explainers/property-tax-on-residential-property/) - whose table
+still carries that heading on a page last updated **1 September 2026** - and corroborated by
+the [Ministry of Finance, 3 February 2026](https://www.mof.gov.sg/news-resources/newsroom/property-tax-increment-on-non-owner-occupied-properties-to-address-wealth-inequality/):
+*"we increased non-owner-occupier residential tax rates in 2023 and 2024, from 10% to 20% to
+the current 12% to 36%."* The date of that check is stored in the seed and printed on the card,
+so a future reader knows how old the verification is.
+
+**Why 2024 figures are still current.** Budget 2024 raised the AV bands from 1 January 2025 -
+**for owner-occupier rates only**. The non-owner-occupied bands were not touched.
+
+**The 2026 rebate does not reach him.** The one-off rebate (15% owner-occupied HDB, 10% capped
+at $500 owner-occupied private) is owner-occupied only. A let flat gets nothing, and the card
+says so rather than leaving him to assume he is in it.
+
+### The one number Fortress refuses to invent
+
+The tax is a fixed function of the **Annual Value**, and Fortress does not hold it. The
+obvious shortcut - use the S$69,600 of rent it already has - is **wrong**, and the card says
+why in IRAS's own words. The AV is *"the estimated gross annual rent of the property if it
+were to be rented out, excluding furniture, furnishings and maintenance fees"*, assessed from
+*"estimated market rentals of similar or comparable residential properties"*. IRAS does not
+use the owner's actual rent. CK's tenancy **includes furniture** and he pays the MCST himself -
+two of the things the AV explicitly excludes - so the two are different quantities, and
+Fortress does not claim to know which is larger.
+([IRAS via ask.gov.sg](https://ask.gov.sg/iras/questions/clq62nu5f000ao2f4bm0pntdz))
+
+So `state.settings.annualValue` starts **null**, `propertyTaxOn(null)` returns **null and not
+zero**, and `rentNet().taxM` stays null. Nothing downstream moves: net rent cover is still
+96.63%, the break-even is still S$2,677,191. A test asserts each of those is unchanged, because
+the failure mode here is a cost quietly becoming S$0 and *improving* the yield.
+
+### What it does show while the AV is missing
+
+A table of what the bill *would* be at several AVs, explicitly headed **"at Annual Values it
+does not claim are yours"** and **"not an estimate of your AV"**. His annualised contract rent
+appears as one row, labelled *a reference point, not a prediction* - it is a real number he
+knows, which makes the order of magnitude legible without pretending to be his assessment.
+
+| AV | Tax | A month |
+|---|---|---|
+| S$30,000 | S$3,600 | S$300 |
+| S$45,000 | S$6,600 | S$550 |
+| S$60,000 | S$10,800 | S$900 |
+| S$69,600 *(= rent annualised)* | S$14,256 | S$1,188 |
+| S$75,000 | S$16,200 | S$1,350 |
+
+### What happens when he enters it
+
+One field on the Settings tab turns the whole thing on: the card shows the band-by-band
+workings, and the tax is deducted from net rent and from the carry behind **both** sale
+scenarios. Tested end to end - at AV 60,000 the tax is S$900/month, net rent falls by exactly
+S$900, rent cover falls by exactly `900 / instalment`, the carry falls by S$900, and the
+break-even **rises**, because a real cost was added.
+
+**Double-counting is guarded.** The old "running costs per year" field said *tax, maintenance,
+agent, insurance*. Once an AV is present the label drops "tax" and the card warns that putting
+it in both would count it twice.
+
+**Owner-occupier rates are deliberately absent.** This flat was bought subject to a tenancy and
+is let, so the non-owner-occupied schedule applies. The owner-occupier tables were not verified
+to the same standard, and a table added to look complete is worse than one that is missing.
+
+`taxtest.js` - 52 assertions, at `Asia/Singapore`.
+
+### Two test lessons from this change
+
+A first draft of `taxtest.js` contained two assertions whose arithmetic was unreadable and
+which ended in `|| after.cover < before.cover` - so they **could not fail for the right
+reason**. They were rewritten to read the instalment out of the app and assert the exact
+movement. Separately, `mcsttest.js` and `betest.js` both failed on copy that had legitimately
+changed; the assertions were **re-pointed at the new wording**, and the MCST gap title is now
+conditional (`only one` while the tax is unknown, `only some` once it is computable) rather
+than the test being loosened to accept either.
+
+## Fire insurance
+
+Read off the UOI policy schedule: **United Overseas Insurance Limited**, United Property
+Protection Plan, class **Fire Package**, policy **DHOF123043672600**, issued and accepted
+4 May 2026, replacing cover note 0002604462. **Period of insurance 4 May 2026 to 3 May 2027**,
+with **United Overseas Bank** named as mortgagee.
+
+**Page 2 of the schedule arrived after the first pass, and it corrected something already
+shipped.** What it added:
+
+| | |
+|---|---|
+| Total sum insured, all items in this risk | **S$426,800.00** |
+| Item 004 - building improvements, fixtures, fittings, furniture and other contents | S$20,000.00 |
+| The balance, on the page not supplied | S$406,800.00 |
+| Section B - legal liability to the public | S$100,000 any one accident |
+| Renewal | **automatic** |
+
+**The premium is still not recorded, because page 1 of 3 has not been supplied.** Neither is
+the insured address - the link to The Atelier rests on the mortgagee named on the schedule
+and on the dates lining up with the purchase, and the card says so rather than asserting the
+document names the flat. The old `sumInsured: null` placeholder was **removed** from the seed
+rather than left sitting beside the real total, where it would have read as a second, phantom
+unknown; a test asserts the key is gone.
+
+Only item **004** is itemised. The schedule numbers it 004 but does not say how many items
+precede it, so Fortress reports the S$406,800 balance as *contents unknown* and does not
+enumerate what it covers.
+
+**S$426,800 is 17.4% of the S$2,450,000 purchase price - and the card says in the same breath
+that this is not a shortfall.** The building is not this policy's job; the MCST insures it.
+Shown without that sentence, the ratio invites exactly the wrong conclusion.
+
+The perils, warranties, endorsements and clauses are all stated as *"as per blanket policy"*,
+so the operative wording sits in a master policy Fortress does not hold. The card says
+outright that it can tell him **what the sums are and not what is covered or excluded**.
+SDIC protection is noted as automatic, requiring nothing from him.
+
+### The renewal reminder was wrong, and page 2 is what proved it
+
+Version `v2026:SEP:03-21:40` shipped a dated reminder reading *"the lender requires it while
+the loan is outstanding, so a lapse is a breach as well as an exposure"*, and *"Fortress does
+not hold the premium or the sum insured"*. Page 2 falsified both halves. The schedule states:
+
+> THIS INSURANCE WILL BE RENEWED AUTOMATICALLY EACH YEAR DURING THE TERMS OF THE MORTGAGE
+> WITH THE MORTGAGEE, UNLESS THE INSURANCE IS TERMINATED OR CANCELLED
+
+So nothing lapses if he ignores the date, and the sum insured *is* known. Three changes:
+
+1. The title now reads **"Fire insurance renews itself"** and the detail says outright that
+   the date is not a task.
+2. **The tone no longer escalates with proximity.** It used to go `info` -> `warn` at 60 days
+   -> `serious` at 14. Escalating urgency for something that requires no action is a false
+   alarm, so with `autoRenewal === true` the tone stays `info`; only an *expired* schedule
+   turns it `warn`, and then to say Fortress's copy is stale, not that cover has gone.
+3. It names **the premium, and only the premium**, as what is missing. A test asserts the old
+   "premium or the sum insured" string is *absent*, so the wrong copy cannot come back.
+
+The clause carries a consequence worth having in writing: automatic renewal runs *"during the
+terms of the mortgage with the mortgagee"*. **Redeem the loan or sell, and the mechanism that
+renews this policy stops applying** - on a sale, that is the same day the loan is discharged.
+Both the reminder and the card state it.
+
+The stale assertions in `firetest.js` were **deleted, not patched around**. A test that pins
+wrong copy keeps the wrong copy alive; that lesson has now cost this project twice.
+
+**It does not duplicate the MCST cover, and the card explains why.** The building is insured
+by the management corporation out of the $5,832/year he already pays; what that leaves out is
+the point of this policy. GIA: *"The MCST fire insurance policy may not cover the homeowners'
+improvements and/or renovations made to their individual properties"*, and *"The insurance
+coverage for a MIP and a MCST policy will not overlap."* So he is covering two different
+things, not paying twice.
+
+Cover began **16 days before completion** (4 May against 20 May). That is ordinary where a
+cover note is issued ahead of handover, and Fortress states the fact rather than explaining
+it away.
+
+The running-costs gap was rewritten accordingly: the policy is on file **with its sums
+insured**, the **premium** is not, and both sale scenarios plus the rent-cover figure remain
+better than the truth by whatever it costs.
+
+### A rendering bug the suite could not see
+
+Two seeds were inserted through a Python raw-string block, which left literal `\u2019` and
+`\u2014` escapes in the JavaScript source. The page then printed the **escape sequence
+instead of the character** - valid syntax, no error, no failing test, and only a person
+reading the screen would notice. `firetest.js` now walks **all nine tabs** and fails on any
+`\uXXXX` appearing in rendered text.
+
+`firetest.js` - 52 assertions, at `Asia/Singapore`.
 
 ## Reminders
 

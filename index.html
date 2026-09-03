@@ -141,7 +141,7 @@ details.gap[open]>summary::after{content:'  \2212'}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:SEP:03-12:45';
+const VERSION = 'v2026:SEP:03-20:42';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -489,20 +489,74 @@ const PURCHASE_SEED = {
   optionMoney:24500, optionMoneyPct:1,
   optionGranted:'2026-02-10', optionExpiry:'2026-04-08',
   deposit:98000, depositPct:5, depositRule:'5% of the purchase price less the Option Money',
-  completion:'2026-05-20',
+  /* CONFIRMED by CK on 3 Sep 2026. The Option provided for 20 May 2026; APEX's exercise
+     letter recorded an instruction to REQUEST it be brought forward to 5 May, and Fortress
+     held 20 May and refused to move on circumstantial evidence alone. CK has now settled
+     it: completion happened on 5 May. Both dates are kept - the one the Option set and the
+     one that actually happened - because the difference is the reason several dates moved. */
+  completion:'2026-05-05',
+  completionPerOption:'2026-05-20',
+  completionBroughtForward:true,
+  completionConfirmedBy:'CK, 3 Sep 2026: \u201cIt was done on the 5/May\u201d',
   subjectToTenancy:true, furnitureIncluded:true,
   vendorAgentCommission:29400, vendorAgentCommissionInclGst:32046, vendorPaysAgent:true,
   /* NOT known and not guessed */
-  buyerLegalFees:null, buyerAgentCommission:null,
+  /* CK's own solicitor's engagement, for THIS property: "Kindly act for my purchaser Mr
+     Chow Kok Sum and as discussed the legal fees will be $2500 nett inclusive of Gst and
+     mortgage stamp fee." Note "inclusive": the mortgage duty is INSIDE this figure and
+     must not be added again anywhere. */
+  buyerLegalFees:2500.00,
+  buyerLegalSource:'the agent\u2019s instruction to CK\u2019s solicitor, 18 Feb 2026, subject "Purchase of 2 Makeway Avenue #07-04 The Atelier": "the legal fees will be $2500 nett inclusive of Gst and mortgage stamp fee"',
+  buyerLegalInclusive:['the conveyancing fee','GST','the mortgage stamp duty'],
+  buyerAgentCommission:null,
   /* The one sale fee that IS documented: the rate the vendor of this very unit paid.
      29,400 / 2,450,000 = 1.2%, and 32,046 / 29,400 confirms 9% GST on top. Used as the
      default for a future sale, with the derivation stated and overridable. */
   agentPctExGst:1.2, agentPctInclGst:1.308, gstPctImplied:9,
   agentSource:'derived from your own Option to Purchase: the vendor pays PropNex S$29,400 on a S$2,450,000 sale (1.2%), S$32,046 with GST (1.308%) — the implied GST rate is 9%',
-  legalNote:'Neither your legal fees on the purchase nor the fees for a future sale appear on any document Fortress holds. The Option names the VENDOR\u2019s solicitor and states no fee.',
-  source:'Option to Purchase, sale price S$2,450,000, option granted 10 Feb 2026, completion 20 May 2026',
-  exerciseDateKnown:false,
-  exerciseNote:'The Option was granted on 10 Feb 2026 and expires 8 Apr 2026. Fortress does not hold the date it was exercised, and that date - not completion - starts the Seller’s Stamp Duty clock.'
+  /* A conveyancing quote CK supplied is for the SALE leg of a DIFFERENT property, sold in
+     2025 - not the purchase of this one. It is recorded as what it is: a documented fee of
+     his own for selling, usable as the sale-leg figure, and no evidence at all about what
+     he paid to buy The Atelier. */
+  saleLegalFee:2180.00,
+  saleLegalSource:'a conveyancing firm\u2019s letter to CK: "the legal fee for acting in the sale of your property is $2,180.00 nett". It relates to the sale of a previous property (Option expiring 8 Aug 2025), not to The Atelier, so it is a benchmark from his own dealings rather than a quote for this flat.',
+  purchaseLegalKnown:true,
+  legalNote:'Both legs are now documented, from two different letters: S$2,500 nett for buying this flat, and S$2,180 nett for selling a different one in 2025.',
+  /* the completion apportionment the same letter describes - it works in his favour */
+  apportionment:'On completion the purchaser reimburses the seller for their share of the property tax from the day after completion to 31 December, and for any management and sinking fund (MCST) contributions the seller has already paid.',
+  apportionmentSource:'the same conveyancing letter, paragraph 5(a)',
+  source:'Option to Purchase, sale price S$2,450,000, option granted 10 Feb 2026, completion set at 20 May 2026 and brought forward to 5 May 2026',
+  /* ---- THE EXERCISE, from APEX Law LLC's letter of 10 Mar 2026 ------------------------
+     This closed the single largest hole in the whole property model. The letter encloses
+     "original Option to Purchase dated 10 February 2026 duly exercised by our client(s)
+     ON EVEN DATE" - the standard conveyancing phrase for "the same date as this letter",
+     which is 10 March 2026.
+
+     Fortress had been running the Seller's Stamp Duty ladder from 10 Feb 2026, the date
+     the Option was GRANTED. IRAS runs it from the date it was EXERCISED. Every SSD
+     milestone was therefore 28 days too early, including the date SSD disappears
+     altogether - the one CK has been planning against. ---- */
+  exerciseDateKnown:true,
+  exerciseDate:'2026-03-10',
+  exerciseBasis:'the letter is dated 10 Mar 2026 and states the Option was exercised “on even date”, which means the same date as the letter',
+  exerciseLetterRef:'PTE.Pur.26.JO.280747',
+  exerciseLetterDate:'2026-03-10',
+  daysGrantToExercise:28,
+  withinOptionWindow:true,
+  buyerSolicitor:'APEX Law LLC',
+  buyerSolicitorPerson:'Jonathan Ow Kim Chuan',
+  vendorSolicitor:'BR Law Corporation',
+  balanceDepositPaid:98000.00,
+  balanceDepositNote:'a cashier’s order for S$98,000.00, the balance of the 5% deposit, held by the vendor’s solicitors as stakeholders',
+  title:'SSCT Vol. 2689 Fol. 174',
+  /* these are the VENDOR's encumbrances being discharged on completion, not CK's */
+  vendorCpfCharge:'IH/567698R', vendorMortgage:'IH/503818U',
+  cashierOrderAdminFee:10.00, cashierOrderFreeCount:4,
+  cashierOrderRule:'an administrative charge of $10.00 per cashier’s order would be chargeable should there be more than four (4) cashier’s orders requested',
+  completionBroughtForwardRequest:'2026-05-05',
+  completionRequestNote:'APEX was instructed to REQUEST that completion be brought forward to 5 May 2026. The letter records the request, not the answer \u2014 CK confirmed separately that it was agreed and completion happened on that date.',
+  exerciseSource:'APEX Law LLC letter to BR Law Corporation, 10 Mar 2026, ref PTE.Pur.26.JO.280747, “EXERCISE OF OPTION”',
+  exerciseNote:'The Option was granted 10 Feb 2026 and exercised 10 Mar 2026, 28 days later and 29 days before it would have expired. It is the exercise date, not the grant and not completion, that starts the Seller’s Stamp Duty clock.'
 };
 
 /* ---- Stamp duty, re-read from IRAS and MOF on 2 Sep 2026 ---- */
@@ -530,7 +584,57 @@ const STAMP_DUTY = {
       source:'IRAS, "Seller’s Stamp Duty for Residential Properties", updated 4 Jul 2025 — acquired on or after 4 Jul 2025: holding period 1 year or less 16%, 2 years or less 12%, 3 years or less 8%, 4 years or less 4%, more than 4 years no SSD' },
     { from:'2017-03-11', years:3, steps:[12,8,4],
       source:'IRAS — acquired between 11 Mar 2017 and 3 Jul 2025: 12% / 8% / 4%, no SSD after 3 years' }],
-  ssdBasis:'of consideration or market value, whichever is higher'
+  ssdBasis:'of consideration or market value, whichever is higher',
+  /* recorded so the cap is visible - it is why a S$2,500 nett quote can absorb it */
+  mortgageDutyPct:0.4, mortgageDutyCap:500,
+  mortgageDutySource:'IRAS, "Mortgage Duty" FAQ: "Mortgage duty of 0.2% to 0.4% is payable on the loan amount, subject to a maximum duty of $500."'
+};
+
+/* ---- Fire insurance, off the UOI policy schedule. Facts only; the premium and the sum
+   insured are on a page Fortress has not seen and are NOT invented. ---- */
+const FIRE_SEED = {
+  insurer:'United Overseas Insurance Limited (UOI)', insurerGroup:'UOB Group',
+  coReg:'197100152R',
+  product:'United Property Protection Plan', classOfPolicy:'Fire Package',
+  policyNo:'DHOF123043672600',
+  issuedOn:'2026-05-04', acceptanceDate:'2026-05-04',
+  replacingCoverNote:'0002604462',
+  from:'2026-05-04', to:'2027-05-03',
+  mortgagee:'United Overseas Bank Limited',
+  reprintedOn:'2026-08-25',
+  /* --- from page 2 of the schedule --- */
+  sumInsuredTotal:426800.00,
+  items:[{ no:'004', label:'Building improvements, fixtures, fittings, furniture and other contents therein',
+           sumInsured:20000.00 }],
+  itemsShown:1, itemsPageMissing:'1 of 3',
+  publicLiability:100000.00,
+  publicLiabilityBasis:'any one accident',
+  publicLiabilityLabel:'Section B — Legal liability to the public',
+  autoRenewal:true,
+  autoRenewalQuote:'THIS INSURANCE WILL BE RENEWED AUTOMATICALLY EACH YEAR DURING THE TERMS OF THE MORTGAGE WITH THE MORTGAGEE, UNLESS THE INSURANCE IS TERMINATED OR CANCELLED',
+  sdic:true,
+  sdicQuote:'THIS POLICY IS PROTECTED UNDER THE POLICY OWNERS’ PROTECTION SCHEME WHICH IS ADMINISTERED BY THE SINGAPORE DEPOSIT INSURANCE CORPORATION (SDIC). COVERAGE FOR YOUR POLICY IS AUTOMATIC AND NO FURTHER ACTION IS REQUIRED FROM YOU.',
+  blanketPolicyNote:'Additional perils, warranties, endorsements and clauses are all stated as “as per blanket policy”, so the operative wording sits in a master policy Fortress does not hold.',
+
+  /* deliberately absent */
+  /* sumInsured is NOT listed here any more: page 2 supplied the real total
+     (sumInsuredTotal above), so a null placeholder alongside it would read as a
+     second, unknown figure. The premium and the address genuinely remain unknown. */
+  /* The premium is no longer missing. It is NOT on the policy schedule - page 1 of 3 was
+     never supplied - it comes from UOB's own approval email, which quotes it as
+     "approximately SGD 160 per annum". Recorded as approximate, and labelled that way
+     everywhere it is used, because "approximately" is what the source says. */
+  premium:160.00, premiumApprox:true,
+  premiumSource:'UOB housing loan approval email, "Fees to note": "UOI fire insurance premium = approximately SGD 160 per annum"',
+  premiumNotOnSchedule:true,
+  insuredAddress:null,
+  addressNote:'The schedule pages supplied do not show the insured address. The link to The Atelier rests on the mortgagee named on them — United Overseas Bank, the lender on this flat — and on the dates lining up with the purchase, not on the document naming the property.',
+  premiumNote:'Page 1 of 3 of the schedule has not been supplied. That is where the schedule\u2019s own premium sits, together with the further items that make up the balance of the total sum insured. The schedule numbers the one item Fortress can see as 004; it does not state how many items precede it, so Fortress does not say. The premium Fortress uses comes from UOB\u2019s approval email instead, quoted there as approximate.',
+  source:'UOI policy schedule DHOF123043672600, reprinted 25 Aug 2026',
+  /* what the MCST already insures, and what this does not duplicate */
+  mcstQuote:'The MCST fire insurance policy may not cover the homeowners’ improvements and/or renovations made to their individual properties.',
+  noOverlapQuote:'The insurance coverage for a MIP and a MCST policy will not overlap.',
+  giaSource:'General Insurance Association of Singapore, "What is the difference between MIP and MCST fire insurance?"'
 };
 
 const MCST_SEED = {
@@ -554,6 +658,96 @@ const MCST_SEED = {
   cutoff:'2026-08-31',
   cutoffRule:'Payments received after 31/08/2026 will not be reflected in this statement.',
   source:'MCST Plan No. 4940 (The Atelier) tax invoice dated 02/09/2026, unit #07-04, share unit 6'
+};
+
+/* ---- Singapore property tax -------------------------------------------------------
+   CK supplied the non-owner-occupied bands and asked them to be verified. They check out
+   against two government sources and they are still current - see rateSource/checkedOn.
+
+   The ONE input this needs, Fortress does not have: the Annual Value. It is NOT the rent
+   he collects. IRAS sets it from market rentals of comparable properties, whether the
+   flat is let, empty or lived in, and it EXCLUDES furniture, furnishings and maintenance
+   fees. His tenancy includes furniture and he pays the MCST himself, so his S$5,800 and
+   the AV are not the same quantity and Fortress will not substitute one for the other.
+   The AV is printed on his property tax bill; until he enters it, the tax reads
+   "not available" and nothing downstream moves.
+
+   Owner-occupier rates are deliberately NOT held here. This flat was bought subject to a
+   tenancy and is let, so the non-owner-occupied schedule is the one that applies. The
+   owner-occupier tables were not verified to the same standard and inventing them to
+   look complete is the exact failure this project guards against. ---- */
+const PROPERTY_TAX = {
+  /* progressive on AV, in order. `band` is the WIDTH of each slice, not a threshold. */
+  nonOwnerOccupied:[
+    { band:30000,   pct:12, label:'First $30,000' },
+    { band:15000,   pct:20, label:'Next $15,000'  },
+    { band:15000,   pct:28, label:'Next $15,000'  },
+    { band:Infinity,pct:36, label:'Above $60,000' }
+  ],
+  effectiveFrom:'2024-01-01',
+  rateSource:'gov.sg, "Property Tax on Residential Property", table headed "Effective 1 January 2024" (page last updated 1 September 2026)',
+  corroboration:'Ministry of Finance, "Property Tax Increment on Non-Owner-Occupied Properties to Address Wealth Inequality", 3 February 2026: "we increased non-owner-occupier residential tax rates in 2023 and 2024, from 10% to 20% to the current 12% to 36%."',
+  checkedOn:'2026-09-03',
+  /* Budget 2024 raised AV bands from 1 Jan 2025 - for OWNER-OCCUPIED rates only. The
+     non-owner-occupied bands were not touched, which is why CK's 2024 figures still stand. */
+  bandsUnchangedNote:'Budget 2024 raised the Annual Value bands from 1 January 2025, but only for owner-occupier rates. The non-owner-occupied bands were not changed, which is why the schedule effective 1 January 2024 is still the current one.',
+  bandsUnchangedSource:'EdgeProp, reporting Budget 2024: "all AV bands of owner-occupied residential property tax rates will be raised from Jan 1, 2025."',
+  /* the 2026 rebate exists and does not reach him */
+  rebate2026:{ ownerOccupiedOnly:true, hdbPct:15, privatePct:10, privateCap:500,
+    note:'The one-off 2026 rebate - 15% for owner-occupied HDB flats and 10% capped at $500 for owner-occupied private homes - applies to owner-occupied properties only. A let flat gets nothing.',
+    source:'gov.sg, "Property Tax on Residential Property"; 99.co, "One-off property tax rebate in 2026": rental properties "do not qualify for rebates".' },
+  avDefinition:'the estimated gross annual rent of the property if it were to be rented out, excluding furniture, furnishings and maintenance fees',
+  avBasis:'estimated market rentals of similar or comparable residential properties',
+  avNotRent:'IRAS does not use the owner’s actual rent. The assessment uses market comparables, whether the property is owner-occupied, vacant or rented out.',
+  avSource:'IRAS via ask.gov.sg, "How does IRAS determine the Annual Value (AV) of my residential property?"',
+  avWhereToFind:'the Annual Value is printed on your IRAS property tax bill, and on myTax Portal under Property'
+};
+
+/* ---- Tenancy agreement + IRAS lease duty ------------------------------------------
+   From the Certificate of Stamp Duty, ref 164039-83LA4-1-598004626.
+
+   DELIBERATELY NOT RECORDED: the NRIC on the certificate and the tenant's FIN. This file
+   is deployed to GitHub Pages, which is public. A name and a unit number are already in
+   here and are bad enough; adding two government ID numbers - one of them a third
+   party's - would put them on the open web. They are on the certificate if ever needed.
+
+   WHO PAYS is not on the certificate. Custom in Singapore puts lease duty on the TENANT,
+   and the tenancy agreement decides it. CK asked for this to be treated as his cost, so
+   it is - but the card says plainly that the certificate does not name a payer, and it
+   can be flipped in one tap. ---- */
+const TENANCY_SEED = {
+  certRef:'164039-83LA4-1-598004626',
+  certIssued:'2026-07-25',
+  docRef:'2607251457287 ver. 1.0',
+  docDescription:'Tenancy Agreement',
+  docDate:'2026-07-25',
+  property:'2 MAKEWAY AVE #07-04 SINGAPORE 228599',
+  landlord:'CHOW KOK SUM',
+  tenant:'PLOETNER MATHIAS ALEXANDER',
+  duty:297.00, totalAmount:297.00,
+  /* not on the certificate, and not inferred */
+  leaseStart:null, leaseEnd:null, termMonths:null, monthlyRent:null,
+  source:'IRAS Certificate of Stamp Duty 164039-83LA4-1-598004626, issued 25 Jul 2026'
+};
+
+/* The lease-duty rules, verified 3 Sep 2026. Held separately from the certificate so the
+   arithmetic can be checked against the document rather than assumed to agree with it. */
+const LEASE_DUTY = {
+  pct:0.4, upToYears:4,
+  base:'the total rent for the whole period of the lease',
+  roundedDown:true, minimumDuty:1,
+  /* this is why a duty can exceed 0.4% of the bare rent, and why Fortress does NOT read a
+     rent increase out of the number */
+  chargeableIncludes:['furniture and fittings','maintenance','service','advertising and promotion','any other charges'],
+  chargeableExcludes:['GST'],
+  higherOfRule:'Stamp Duty on leases is payable based on the contractual rental or the market rental, whichever is higher, at the Lease Duty rates.',
+  higherOfSource:'IRAS, "Renting a Property"',
+  liabilityCustom:'the tenant',
+  liabilityNote:'Singapore market practice puts lease duty on the tenant, but it is the tenancy agreement that decides. Do not assume — read the clause.',
+  liabilitySources:'Rently, "Stamp Duty for Rental in Singapore"; Winfred Quek, "Stamp Duty on a Tenancy Agreement Singapore": "the tenant customarily pays the stamp duty on a tenancy agreement" and "do not assume, read the clause."',
+  rateSource:'Stacked Homes, "Rental Stamp Duty in Singapore": "0.4% of total rent for the period of the lease" for leases of 4 years or less; Captain Legal: duty "rounded down to the nearest dollar, subject to a minimum of one dollar."',
+  deadline:'within 14 days of signing in Singapore (30 days if signed overseas)',
+  checkedOn:'2026-09-03'
 };
 
 const INCOME_SEED = [{
@@ -592,6 +786,67 @@ const LV_SEED = {
 };
 
 /* Floating-rate revisions, from UOB's "Update to your loan" letters */
+/* ---- The UOB loan offer, all three plans, and the one CK took ----------------------
+   From the approval email and its rate table. All three plans are recorded even though
+   only one was taken: the terms of the two he did NOT take are what make the one he did
+   legible, and a table that only holds the chosen row cannot show what was given up.
+
+   CK confirmed the selection: PLAN C, the floating rate.
+
+   The email is a screenshot without a visible date, so `offeredOn` stays null. What
+   anchors the schedule instead is completion - see planAnniversary below, which is
+   flagged in the app as a stated basis rather than a fact off the letter. ---- */
+const LOAN_OFFER = {
+  bank:'UOB',
+  /* two structures were approved; the one taken matches MORTGAGE_META exactly */
+  approvedOptions:[
+    { amount:1700000, tenorYears:13, taken:false },
+    { amount:1347500, tenorYears:23, taken:true  }
+  ],
+  minimumLoanAllPlans:1300000,
+  selected:'C',
+  selectedSource:'CK, 3 Sep 2026: "the Mortgage selection of option C"',
+  plans:[
+    { key:'A', name:'2 years Fixed Rate', lockInYears:2, minLoan:1300000,
+      kind:'fixed',
+      schedule:[ {year:1, fixedPct:1.52}, {year:2, fixedPct:1.52},
+                 {year:3, soraSpread:0.50}, {year:'thereafter', soraSpread:1.00} ],
+      freeConversionAfterYears:1, freeConversionMinOutstanding:200000,
+      partialPrepayPct:1.50, partialPrepayNoticeMonths:1, partialPrepayAnnualWaiverPct:null,
+      fullRedemptionPct:1.50, fullRedemptionNoticeMonths:2 },
+    { key:'B', name:'3 years Fixed Rate', lockInYears:3, minLoan:1300000,
+      kind:'fixed',
+      schedule:[ {year:1, fixedPct:1.60}, {year:2, fixedPct:1.60},
+                 {year:3, fixedPct:1.60}, {year:'thereafter', soraSpread:1.00} ],
+      freeConversionAfterYears:1, freeConversionMinOutstanding:200000,
+      partialPrepayPct:1.50, partialPrepayNoticeMonths:1, partialPrepayAnnualWaiverPct:10,
+      fullRedemptionPct:1.50, fullRedemptionNoticeMonths:2 },
+    { key:'C', name:'Floating Rate', lockInYears:2, minLoan:1300000,
+      kind:'floating',
+      schedule:[ {year:1, soraSpread:0.00}, {year:2, soraSpread:0.30},
+                 {year:3, soraSpread:0.55}, {year:'thereafter', soraSpread:0.75} ],
+      freeConversionAfterYears:2, freeConversionMinOutstanding:200000,
+      partialPrepayPct:1.50, partialPrepayNoticeMonths:1, partialPrepayAnnualWaiverPct:20,
+      fullRedemptionPct:1.50, fullRedemptionNoticeMonths:2 }
+  ],
+  /* identical across all three plans, quoted from the table */
+  saleWaiverPct:50,
+  saleWaiverQuote:'50% redemption fee waived if due to property sale within lock in period',
+  refinanceRefundQuote:'Refund of reduced redemption fee if borrower accepts new property loan within 6 months from loan redemption date subject to new loan amount is equal or higher than the redeemed loan amount',
+  soraDefinition:'SORA refers to the Singapore Overnight Rate Average. This is defined as the volume-weighted average rate of borrowing transactions in the unsecured overnight interbank SGD cash market in Singapore between 8:00am and 6:15pm.',
+  soraCompounding:'3-Month Compounded SORA is computed by compounding the published SORA rate over the historical 3-month period (known as \u201cCompounded in Advance\u201d). The 3-Month Compounded SORA is published by MAS at 9:00 am on all business days in Singapore.',
+  /* fees quoted in the same email */
+  valuationFee:163.50,
+  legalFeeNote:'To check directly with APEX law/WLaw',
+  firePremiumApprox:160.00,
+  /* a refund on the PREVIOUS loan, conditional on the size of this one */
+  redemptionRefund:{ amount:10522.07, condition:'new loan to be minimally SGD 720,000 or higher',
+    conditionMet:true, received:null,
+    note:'The refund relates to a redemption fee paid on an earlier UOB loan, not to this property. Fortress records it and does NOT net it off this flat\u2019s cost, and does not know whether it has been paid.' },
+  offeredOn:null,
+  source:'UOB housing loan approval email and its interest rate table, supplied 3 Sep 2026'
+};
+
 const RATE_CHANGE_SEED = [{
   id:'rc-2026-08', lender:'UOB', ratePct:1.13020, previousRatePct:1.02980,
   rateEffective:'2026-08-04', instalment:5546.93, instalmentEffective:'2026-10-01',
@@ -635,7 +890,7 @@ let state = {
   cpfHome: store.get('fortress.cpfHome', null),
   cpfTxns: store.get('fortress.cpfTxns', null),
   al: store.get('fortress.al', null),
-  settings: store.get('fortress.settings', { lendingValue:null, ltvAlert:35, homeValue:null, tab:'dash', fxCcy:'USD', fxBars:250, cpfYears:10, birthDate:null, frsOverride:null, remindersDone:{}, alChart:'daily', simple:true })
+  settings: store.get('fortress.settings', { lendingValue:null, ltvAlert:35, homeValue:null, annualValue:null, tenancyDutyPaidBy:'you', tab:'dash', fxCcy:'USD', fxBars:250, cpfYears:10, birthDate:null, frsOverride:null, remindersDone:{}, alChart:'daily', simple:true })
 };
 if(!state.snapshots){ state.snapshots = { [SEED.statementDate]: SEED }; store.set('fortress.snapshots', state.snapshots); }
 if(!state.manual){ state.manual = MANUAL_SEED; store.set('fortress.manual', state.manual); }
@@ -1213,6 +1468,343 @@ function cpfProject(years, withContrib, age55Year){
    revised budget would change it. The arrears line is reported exactly as the statement
    presents it - unpaid AS AT the stated cut-off - because a payment made after that date
    would not appear on it, and Fortress cannot tell the difference. */
+/* The fire policy, with the one date on it that needs acting on. */
+function firePolicy(){
+  const F = state.settings.fire || FIRE_SEED; if(!F || !F.to) return null;
+  const days = daysUntil(F.to);
+  const M = (typeof mcstPosition==='function') ? mcstPosition() : null;
+  return { ...F, daysToRenewal:days, expired: days!=null && days < 0,
+    termDays: Math.round((new Date(F.to+'T00:00:00') - new Date(F.from+'T00:00:00'))/86400000)+1,
+    /* it incepted before completion - stated, not explained away */
+    startedBeforeCompletion: (()=>{ const P=state.settings.purchase||PURCHASE_SEED;
+      return P && P.completion ? F.from < P.completion : null; })(),
+    daysBeforeCompletion: (()=>{ const P=state.settings.purchase||PURCHASE_SEED;
+      return P && P.completion
+        ? Math.round((new Date(P.completion+'T00:00:00')-new Date(F.from+'T00:00:00'))/86400000) : null; })(),
+    mcstAnnual: M ? M.annual : null,
+    premiumKnown: F.premium != null,
+    premiumMonthly: F.premium != null ? F.premium/12 : null,
+    premiumPctOfRent: (F.premium != null && typeof monthlyIncome==='function' && monthlyIncome()>0)
+      ? F.premium/(monthlyIncome()*12)*100 : null,
+    /* what page 2 shows against what it does not */
+    itemsShownSum: (F.items||[]).reduce((a,i)=>a+(i.sumInsured||0), 0),
+    itemsUnshownSum: F.sumInsuredTotal != null
+      ? F.sumInsuredTotal - (F.items||[]).reduce((a,i)=>a+(i.sumInsured||0), 0) : null,
+    /* the sum insured against the flat's value - context, not a verdict */
+    pctOfValue: (F.sumInsuredTotal != null && state.settings.homeValue)
+      ? F.sumInsuredTotal/state.settings.homeValue*100 : null,
+    homeValue: state.settings.homeValue || null };
+}
+
+/* The exercise letter asked for completion to be brought FORWARD, and Fortress cannot
+   tell whether it was. This assembles the question and the circumstantial evidence
+   without answering it - two documents sit more naturally with the earlier date, and
+   "more naturally" is not proof of anything. */
+function completionQuestion(){
+  const P = state.settings.purchase || PURCHASE_SEED;
+  const req = P.completionBroughtForwardRequest; if(!req) return null;
+  /* Once the date is settled this stops being a question and becomes a record of one.
+     It is NOT deleted: the two dates and the evidence are why several other dates moved,
+     and a reader six months from now needs to see that rather than wonder. */
+  const resolved = (req === P.completion);
+  if(resolved){
+    const F0 = (typeof firePolicy==='function') ? firePolicy() : null;
+    const g0 = (a,b) => (a&&b) ? Math.round((new Date(b+'T00:00:00')-new Date(a+'T00:00:00'))/86400000) : null;
+    return { resolved:true, settled:P.completion, perOption:P.completionPerOption||null,
+      daysApart: g0(P.completion, P.completionPerOption),
+      confirmedBy:P.completionConfirmedBy||null,
+      fireFrom: F0 ? F0.from : null, fireBefore: F0 ? g0(F0.from, P.completion) : null,
+      note:P.completionRequestNote, source:P.exerciseSource };
+  }
+  const F = (typeof firePolicy==='function') ? firePolicy() : null;
+  const flows = (typeof cpfHousingFlows==='function') ? cpfHousingFlows() : null;
+  const draw = flows ? flows.groups.filter(g=>g.amount<0).slice(-1)[0] : null;
+  const gap = (a,b) => (a&&b) ? Math.round((new Date(b+'T00:00:00')-new Date(a+'T00:00:00'))/86400000) : null;
+  return { recorded:P.completion, requested:req,
+    daysApart: gap(req, P.completion),
+    note:P.completionRequestNote,
+    fireFrom: F ? F.from : null,
+    fireBeforeRecorded: F ? gap(F.from, P.completion) : null,
+    fireBeforeRequested: F ? gap(F.from, req) : null,
+    cpfDrawnOn: draw ? draw.date : null,
+    cpfBeforeRecorded: draw ? gap(draw.date, P.completion) : null,
+    cpfBeforeRequested: draw ? gap(draw.date, req) : null,
+    /* what moves if the earlier date turns out to be right */
+    affects:['the plan-year anniversaries and the lock-in end date',
+             'how long the property has been carried in both sale scenarios',
+             'how far ahead of completion the fire cover incepted'],
+    source:P.exerciseSource };
+}
+
+/* ---- The loan CK actually took, and what its plan does to every forward figure -----
+
+   He is on PLAN C: floating, 3M SORA plus a spread that STEPS UP on schedule -
+   +0.00% in year 1, +0.30% in year 2, +0.55% in year 3, +0.75% thereafter - with a
+   two-year lock-in.
+
+   Two consequences that were not in Fortress before, and both are large.
+
+   1. THE SPREAD STEP-UP IS CONTRACTUAL, NOT A FORECAST. Fortress used to project the
+      mortgage forward at today's rate for ever. That understates every year after the
+      first, by 0.30, then 0.55, then 0.75 points, regardless of what SORA does. The
+      rate is now built as impliedSora + the spread for that month. SORA itself is held
+      at its last observed level - that IS an assumption, it is the only one here, and
+      it is labelled as such everywhere it surfaces.
+
+   2. SELLING INSIDE THE LOCK-IN COSTS 1.50% OF THE REDEEMED AMOUNT, halved to 0.75%
+      by the table's own sale waiver. On a balance near S$1.3m that is roughly S$9,800 -
+      thirty times the lease duty, and it was missing from the first two break-even rungs.
+
+   The instalment is recomputed at each step-up rather than held flat, because UOB
+   demonstrably re-amortises: the 4 Aug 2026 letter raised the rate AND set a new
+   instalment. Feeding that letter's rate and the remaining tenor into the annuity
+   formula reproduces its S$5,546.93 to within about a tenth of a percent, which is
+   what justifies using the same formula forward. ---- */
+
+/* the anniversary the plan's years are counted from. The email does not state it, so
+   completion is used and the app says so rather than implying the letter fixed it. */
+function planAnniversary(){
+  const P = state.settings.purchase || PURCHASE_SEED;
+  return state.settings.loanAnniversary || (P ? P.completion : null);
+}
+
+function selectedPlan(){
+  const O = state.settings.loanOffer || LOAN_OFFER; if(!O) return null;
+  const key = state.settings.loanPlan || O.selected;
+  return O.plans.find(p=>p.key===key) || null;
+}
+
+/* Which plan year a date falls in, counting from the anniversary. Year 1 is the first
+   twelve months; "thereafter" is year 4 onward. */
+function planYearOn(iso){
+  const base = planAnniversary(); if(!base || !iso) return null;
+  const [by,bm,bd] = base.split('-').map(Number);
+  const [y,m,d] = iso.split('-').map(Number);
+  let yrs = y - by; if(m < bm || (m===bm && d < bd)) yrs--;
+  return Math.max(1, yrs + 1);
+}
+
+/* The contractual rate for a date: a fixed coupon, or SORA plus that year's spread. */
+function planRateOn(iso, sora){
+  const pl = selectedPlan(); if(!pl) return null;
+  const yr = planYearOn(iso); if(yr==null) return null;
+  const row = pl.schedule.find(r=>r.year===yr)
+           || pl.schedule.find(r=>r.year==='thereafter');
+  if(!row) return null;
+  if(row.fixedPct != null) return { pct:row.fixedPct, fixed:true, spread:null, year:yr };
+  if(sora == null) return null;
+  return { pct: sora + row.soraSpread, fixed:false, spread:row.soraSpread, year:yr };
+}
+
+/* SORA implied by the rate UOB actually charged, backed out through today's spread.
+   This is arithmetic on two facts - the rate on the letter and the spread on the table -
+   not a market observation, and it is named that way. */
+function impliedSora(){
+  const mm = latestManual(); const eff = effectiveLoanTerms();
+  const observed = eff.ratePct ?? (mm ? mm.mortgageRatePct : null);
+  if(observed == null) return null;
+  const on = eff.rateFrom || (mm && mm.month ? mm.month+'-01' : null);
+  const pl = selectedPlan(); if(!pl || pl.kind !== 'floating') return null;
+  const yr = on ? planYearOn(on) : null;
+  const row = yr!=null ? (pl.schedule.find(r=>r.year===yr) || pl.schedule.find(r=>r.year==='thereafter')) : null;
+  if(!row || row.soraSpread == null) return null;
+  return { sora: observed - row.soraSpread, observed, spreadThen:row.soraSpread,
+           on, year:yr };
+}
+
+/* Standard annuity instalment - the formula whose output matches UOB's own re-quote. */
+function annuity(principal, annualPct, months){
+  if(!(principal>0) || months<=0) return null;
+  const r = annualPct/100/12;
+  if(r === 0) return principal/months;
+  return principal * r / (1 - Math.pow(1+r, -months));
+}
+
+/* Months of tenor left at a given month, from the first instalment month. */
+function tenorLeftOn(iso){
+  const ms = manualMonths().filter(m=>state.manual[m].mortgageBalance!=null);
+  if(!ms.length) return null;
+  const firstPay = ms.length>1 ? ms[1] : ms[0];      // first month a payment reduced it
+  const [fy,fm] = firstPay.split('-').map(Number);
+  const [y,m] = iso.split('-').map(Number);
+  const elapsed = (y-fy)*12 + (m-fm);
+  return Math.max(0, MORTGAGE_META.tenorMonths - elapsed);
+}
+
+/* The whole picture in one object, for the card and for the engines. */
+function loanPlan(){
+  const O = state.settings.loanOffer || LOAN_OFFER; if(!O) return null;
+  const pl = selectedPlan(); if(!pl) return null;
+  const base = planAnniversary();
+  const IS = impliedSora();
+  const today = new Date().toISOString().slice(0,10);
+  const anniv = n => { if(!base) return null; const [y,m,d]=base.split('-').map(Number);
+    return `${y+n}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`; };
+  const lockInEnd = base ? addDays(anniv(pl.lockInYears), -1) : null;
+  const steps = pl.schedule.map((r,i)=>({
+    year: r.year, from: anniv(i), to: (r.year==='thereafter') ? null : addDays(anniv(i+1), -1),
+    fixedPct: r.fixedPct ?? null, soraSpread: r.soraSpread ?? null,
+    pct: r.fixedPct != null ? r.fixedPct : (IS ? IS.sora + r.soraSpread : null),
+    current: (()=>{ const f=anniv(i), t=(r.year==='thereafter')?null:addDays(anniv(i+1),-1);
+      return f!=null && today>=f && (t==null || today<=t); })() }));
+  const taken = O.approvedOptions.find(o=>o.taken) || null;
+  const notTaken = O.approvedOptions.filter(o=>!o.taken);
+  return { offer:O, plan:pl, planKey:pl.key, base, anniversaryIsCompletion: !state.settings.loanAnniversary,
+    lockInEnd, lockInYears:pl.lockInYears,
+    inLockIn: lockInEnd ? today <= lockInEnd : null,
+    daysToLockInEnd: lockInEnd ? daysUntil(lockInEnd) : null,
+    impliedSora: IS, steps, currentStep: steps.find(x=>x.current) || null,
+    taken, notTaken,
+    freeConversionFrom: base ? anniv(pl.freeConversionAfterYears) : null,
+    freeConversionMinOutstanding: pl.freeConversionMinOutstanding,
+    saleWaiverPct:O.saleWaiverPct, saleWaiverQuote:O.saleWaiverQuote,
+    refinanceRefundQuote:O.refinanceRefundQuote,
+    fullRedemptionPct:pl.fullRedemptionPct, fullRedemptionNoticeMonths:pl.fullRedemptionNoticeMonths,
+    partialPrepayPct:pl.partialPrepayPct, partialPrepayNoticeMonths:pl.partialPrepayNoticeMonths,
+    partialPrepayAnnualWaiverPct:pl.partialPrepayAnnualWaiverPct,
+    valuationFee:O.valuationFee, legalFeeNote:O.legalFeeNote,
+    firePremiumApprox:O.firePremiumApprox, redemptionRefund:O.redemptionRefund,
+    soraDefinition:O.soraDefinition, soraCompounding:O.soraCompounding,
+    selectedSource:O.selectedSource, source:O.source };
+}
+
+/* What a FULL redemption costs on a given date, if the sale is what triggers it. */
+function redemptionFeeOn(iso, balance){
+  const L = loanPlan(); if(!L || !L.lockInEnd) return null;
+  const inside = iso <= L.lockInEnd;
+  const bal = balance != null ? balance
+            : (typeof mortgageBalanceOn==='function' ? (mortgageBalanceOn(iso)||{}).balance : null);
+  if(bal == null) return null;
+  const grossPct = L.fullRedemptionPct;
+  /* the table's own words: half the fee is waived when the redemption is a property sale */
+  const netPct = inside ? grossPct * (1 - L.saleWaiverPct/100) : 0;
+  return { inside, lockInEnd:L.lockInEnd, balance:bal,
+    grossPct, grossFee: inside ? bal*grossPct/100 : 0,
+    netPct, fee: bal*netPct/100,
+    waiverPct:L.saleWaiverPct, waiverQuote:L.saleWaiverQuote,
+    noticeMonths:L.fullRedemptionNoticeMonths };
+}
+
+/* The tenancy agreement's lease duty, and what it does and does not tell us.
+
+   The reconciliation below is the interesting part. S$297 at 0.4%, rounded DOWN to the
+   dollar, means the chargeable base was between S$74,250 and just under S$74,500. The
+   rent Fortress holds - S$5,800 a month - would have produced S$278 over twelve months.
+   The base is therefore about S$4,650 higher than a bare year of that rent.
+
+   Fortress does NOT conclude from this that the rent went up. Three documented reasons a
+   chargeable base legitimately exceeds bare rent: the base includes consideration for
+   furniture and fittings, maintenance, service and other charges (his tenancy came
+   furnished); IRAS charges on the contractual OR the market rental, whichever is higher;
+   and the lease term is not on the certificate, so the base may not cover twelve months
+   at all. Any of those explains the gap without a rent change. It is surfaced as a
+   question for him to close, not as a revised rent. */
+function tenancyDuty(){
+  const T = state.settings.tenancy || TENANCY_SEED; if(!T || T.duty==null) return null;
+  const L = LEASE_DUTY, rate = L.pct/100;
+  /* the duty is rounded DOWN, so one duty figure maps to a RANGE of bases, not a point */
+  const baseLow  = T.duty / rate;
+  const baseHigh = (T.duty + 1) / rate;              // exclusive upper bound
+  const rentM = (typeof monthlyIncome==='function') ? monthlyIncome() : 0;
+  const rentY = rentM * 12;
+  const dutyOnRecordedRent = rentY>0 ? Math.floor(rentY * rate) : null;
+  const gapLow  = rentY>0 ? baseLow - rentY : null;
+  const reconciles = dutyOnRecordedRent!=null && dutyOnRecordedRent === T.duty;
+  /* who bears it. CK asked for it to be treated as his; the certificate does not say. */
+  const paidBy = state.settings.tenancyDutyPaidBy || 'you';
+  const yours = paidBy === 'you';
+  return { ...T, rate:L.pct, base:L.base, roundedDown:L.roundedDown,
+    baseLow, baseHigh, rentM: rentM>0?rentM:null, rentY: rentY>0?rentY:null,
+    dutyOnRecordedRent, gapLow, reconciles,
+    /* only meaningful IF the lease runs twelve months - stated as a conditional */
+    impliedMonthlyIf12: baseLow/12, impliedMonthlyIf12High: baseHigh/12,
+    termKnown: T.termMonths != null,
+    paidBy, yours, borne: yours ? T.duty : 0,
+    chargeableIncludes:L.chargeableIncludes, chargeableExcludes:L.chargeableExcludes,
+    higherOfRule:L.higherOfRule, higherOfSource:L.higherOfSource,
+    liabilityCustom:L.liabilityCustom, liabilityNote:L.liabilityNote,
+    liabilitySources:L.liabilitySources, rateSource:L.rateSource,
+    deadline:L.deadline, checkedOn:L.checkedOn,
+    /* corroboration this certificate provides, which is worth as much as the money */
+    confirmsAddress: (()=>{ const P=state.settings.purchase||PURCHASE_SEED;
+      if(!P||!P.address) return null;
+      const norm = x => x.toUpperCase().replace(/[^A-Z0-9]/g,'');
+      return norm(T.property).includes('MAKEWAY') && norm(T.property).includes('0704')
+          && norm(P.address).includes('MAKEWAY') && norm(P.address).includes('0704'); })(),
+    confirmsTenant: (state.income||[]).some(i=>i.payer &&
+      T.tenant.toUpperCase().startsWith(i.payer.toUpperCase().slice(0,12))) };
+}
+
+/* One-off costs of letting that Fortress holds a document for, with the date they fell.
+   Kept as a list so a second one does not need a second mechanism. */
+function lettingOneOffs(){
+  const out = [];
+  const td = (typeof tenancyDuty==='function') ? tenancyDuty() : null;
+  if(td && td.yours && td.duty)
+    out.push({ id:'lease-duty', date:td.docDate, amount:td.duty,
+               label:'IRAS lease duty on the tenancy agreement', source:td.source });
+  return out;
+}
+
+/* Progressive property tax on an Annual Value. Pure arithmetic - it takes the AV as an
+   argument and never reaches for the rent. Returns null for a null AV rather than 0,
+   because "no tax" and "we don't know the tax" are different answers and conflating
+   them is how a cost quietly disappears from a yield. */
+function propertyTaxOn(av, table){
+  if(av == null || !(av >= 0)) return null;
+  const bands = table || PROPERTY_TAX.nonOwnerOccupied;
+  let left = av, total = 0; const slices = [];
+  for(const b of bands){
+    if(left <= 0) break;
+    const width = Math.min(left, b.band);
+    const amount = width * b.pct/100;
+    slices.push({ label:b.label, pct:b.pct, taxed:width, amount });
+    total += amount; left -= width;
+  }
+  return { av, total, slices,
+    effectivePct: av>0 ? total/av*100 : null,
+    marginalPct: slices.length ? slices[slices.length-1].pct : null };
+}
+
+/* The position: what Fortress can and cannot say about CK's own bill. */
+function propertyTaxPosition(){
+  const av = state.settings.annualValue != null ? state.settings.annualValue : null;
+  const T = PROPERTY_TAX;
+  const computed = propertyTaxOn(av);
+  const rentM = (typeof monthlyIncome==='function') ? monthlyIncome() : 0;
+  const rentY = rentM * 12;
+  /* Illustration points ONLY. These are not predictions of his AV - they exist so the
+     order of magnitude is visible while the real figure is missing. His contractual rent
+     is included as a reference point because it is a real number he knows, NOT because
+     the AV equals it; the card says so in terms. */
+  const points = [30000, 45000, 60000, 75000];
+  if(rentY > 0 && !points.includes(Math.round(rentY))) points.push(Math.round(rentY));
+  points.sort((a,b)=>a-b);
+  const illustration = points.map(v=>{
+    const t = propertyTaxOn(v);
+    return { av:v, tax:t.total, monthly:t.total/12, effectivePct:t.effectivePct,
+             isContractRent: rentY>0 && Math.round(rentY)===v,
+             pctOfGrossRent: rentY>0 ? t.total/rentY*100 : null };
+  });
+  return { av, known: av!=null, table:T.nonOwnerOccupied,
+    annual: computed ? computed.total : null,
+    monthly: computed ? computed.total/12 : null,
+    slices: computed ? computed.slices : null,
+    effectivePct: computed ? computed.effectivePct : null,
+    marginalPct: computed ? computed.marginalPct : null,
+    pctOfGrossRent: (computed && rentY>0) ? computed.total/rentY*100 : null,
+    rentY: rentY>0 ? rentY : null, rentM: rentM>0 ? rentM : null,
+    illustration,
+    /* the flat is let, so the non-owner-occupied schedule is the one that applies */
+    letBasis: (state.income||[]).some(i=>i.endMonth==null && /rent/i.test(i.label||'')),
+    rebateApplies:false,
+    effectiveFrom:T.effectiveFrom, checkedOn:T.checkedOn,
+    rateSource:T.rateSource, corroboration:T.corroboration,
+    bandsUnchangedNote:T.bandsUnchangedNote, bandsUnchangedSource:T.bandsUnchangedSource,
+    rebate:T.rebate2026, avDefinition:T.avDefinition, avBasis:T.avBasis,
+    avNotRent:T.avNotRent, avSource:T.avSource, avWhereToFind:T.avWhereToFind };
+}
+
 function mcstPosition(){
   const M = state.settings.mcst || MCST_SEED; if(!M) return null;
   const perQuarter = M.perQuarter, annual = perQuarter * M.quartersPerYear;
@@ -1264,13 +1856,22 @@ function rentNet(){
   if(!(gross>0)) return null;
   const M = (typeof mcstPosition==='function') ? mcstPosition() : null;
   const mcstM = M ? M.monthly : 0;
-  const known = mcstM;                               // the only fixed cost with a document
+  /* Property tax joins MCST as a fixed cost the moment the Annual Value is known - and
+     only then. A null AV keeps taxM at null, not 0, so the yield is not quietly improved
+     by a cost Fortress simply cannot compute yet. */
+  const T = (typeof propertyTaxPosition==='function') ? propertyTaxPosition() : null;
+  const taxM = (T && T.monthly != null) ? T.monthly : null;
+  /* the fire premium is now known - approximately - from UOB's approval email */
+  const Fp = (typeof firePolicy==='function') ? firePolicy() : null;
+  const insM = (Fp && Fp.premiumMonthly != null) ? Fp.premiumMonthly : null;
+  const insApprox = !!(Fp && Fp.premiumApprox);
+  const known = mcstM + (taxM || 0) + (insM || 0);     // fixed costs that have a document
   const net = gross - known;
   const mm = latestManual(), eff = effectiveLoanTerms();
   const instal = eff.instalment ?? (mm ? mm.mortgagePayment : null) ?? null;
   const other = state.settings.homeAnnualCosts != null ? state.settings.homeAnnualCosts/12 : null;
   const netAfterAll = other!=null ? net - other : null;
-  return { gross, mcstM, known, net, instal, other, netAfterAll,
+  return { gross, mcstM, taxM, insM, insApprox, known, net, instal, other, netAfterAll,
     coverGross: instal ? gross/instal*100 : null,
     coverNet:   instal ? net/instal*100   : null,
     coverAll:   (instal && netAfterAll!=null) ? netAfterAll/instal*100 : null,
@@ -1278,7 +1879,8 @@ function rentNet(){
     surplusNet:   instal ? net-instal   : null,
     /* the honest caveat: this is the best case until the rest of the costs are known */
     incomplete: other==null,
-    missing:['property tax','insurance','agent commission','repairs','vacancy'] };
+    missing:[ ...(taxM==null?['property tax']:[]), ...(insM==null?['insurance']:[]),
+              'agent commission','repairs','vacancy'] };
 }
 
 /* ---- Stamp duty, computed from the published tiers rather than a remembered total --- */
@@ -1335,7 +1937,16 @@ function breakEven(opts){
   const price = P.price; if(!(price>0)) return null;
   const bsd = bsdOn(price);
   const legalBuy = P.buyerLegalFees;                  // null unless supplied
-  const acquiredOn = o.acquiredOn || state.settings.acquiredOn || P.optionGranted;
+  /* CORRECTED. This used to fall straight through to P.optionGranted - the date the
+     Option was GRANTED - because the exercise date was not known. IRAS's own SSD
+     declaration form defines the date of purchase as "Date of exercise of Option to
+     Purchase". The exercise date now leads, and the grant survives only as the fallback
+     it always should have been. */
+  const acquiredOn = o.acquiredOn || state.settings.acquiredOn
+                   || (P.exerciseDateKnown && P.exerciseDate ? P.exerciseDate : null)
+                   || P.optionGranted;
+  const acquiredFrom = (o.acquiredOn || state.settings.acquiredOn) ? 'you'
+                     : (P.exerciseDateKnown && P.exerciseDate) ? 'exercise' : 'grant';
   const saleDate = o.saleDate || new Date().toISOString().slice(0,10);
   /* He asked for the fees from his own purchase. Commission IS documented — the rate the
      vendor of this unit paid — so it is the default rather than a blank. Legal fees are
@@ -1346,7 +1957,13 @@ function breakEven(opts){
                       : commissionDefault);
   const commissionFromDoc = (o.commissionPct == null && state.settings.saleCommissionPct == null
                              && commissionDefault != null);
-  const legalSell = o.legalSell != null ? o.legalSell : (state.settings.saleLegalFees ?? null);
+  /* the sale-leg legal fee IS documented, from his own 2025 conveyancing letter */
+  const legalSellDefault = P.saleLegalFee != null ? P.saleLegalFee : null;
+  const legalSell = o.legalSell != null ? o.legalSell
+                  : (state.settings.saleLegalFees != null ? state.settings.saleLegalFees
+                  : legalSellDefault);
+  const legalSellFromDoc = (o.legalSell == null && state.settings.saleLegalFees == null
+                            && legalSellDefault != null);
 
   /* the carry, from completion to the sale date, on the figures Fortress actually holds */
   const M  = (typeof mcstPosition==='function') ? mcstPosition() : null;
@@ -1358,8 +1975,11 @@ function breakEven(opts){
     (new Date(saleDate+'T00:00:00') - new Date(P.completion+'T00:00:00')) / 86400000 / 30.4375);
   const rentM   = N ? N.gross : 0;
   const mcstM   = M ? M.monthly : 0;
+  /* property tax enters the carry only once the AV is known - see propertyTaxPosition */
+  const taxM    = (N && N.taxM != null) ? N.taxM : null;
+  const insM    = (N && N.insM != null) ? N.insM : null;
   const interestM = (bal!=null && rate!=null) ? bal*rate/100/12 : null;
-  const carryPerMonth = (interestM!=null) ? rentM - mcstM - interestM : null;
+  const carryPerMonth = (interestM!=null) ? rentM - mcstM - (taxM||0) - (insM||0) - interestM : null;
   const carryToDate   = carryPerMonth!=null ? carryPerMonth*monthsHeld : null;
 
   const absdScenarios = STAMP_DUTY.absdRates.map(a=>({
@@ -1398,12 +2018,29 @@ function breakEven(opts){
   const solve = (absdAmt, ssdPct, onDate) => {
     const when = onDate || saleDate;
     const c = carryTo(when);
-    const capitalIn = price + bsd.total + absdAmt + (legalBuy||0);
+    /* the two scenarios, which differ ONLY in whether the rent is subtracted:
+         noRent   = acquisition + every cost the property has run up
+         withRent = the same, less the rent it has collected                       */
+    const CA = (typeof propertyCarryTo==='function') ? propertyCarryTo(when) : null;
+    /* the valuation fee is on UOB's own approval email - a documented acquisition cost */
+    const LP = (typeof loanPlan==='function') ? loanPlan() : null;
+    const valuation = LP && LP.valuationFee != null ? LP.valuationFee : 0;
+    const capitalIn = price + bsd.total + absdAmt + (legalBuy||0) + valuation;
+    const costsNoRent   = CA ? capitalIn + CA.costs : null;
+    const costsWithRent = CA ? costsNoRent - CA.rent : null;
     const denom = 1 - (ssdPct||0)/100 - (commissionPct||0)/100;
     if(!(denom>0)) return null;
-    const out = amt => (amt + (legalSell||0)) / denom;
+    /* Selling inside the lock-in triggers a full redemption fee - 1.50% of the balance,
+       halved by the table's own property-sale waiver. It is a cost of THIS sale on THIS
+       date, so it sits in the numerator beside the sale legal fee. Outside the lock-in
+       it is zero, and the rungs from 2029 on are unaffected. */
+    const rf = (typeof redemptionFeeOn==='function') ? redemptionFeeOn(when) : null;
+    const redFee = rf ? rf.fee : 0;
+    const out = amt => (amt + (legalSell||0) + redFee) / denom;
     const capital = out(capitalIn);
     const cash    = out(capitalIn - (c ? c.carry : 0));
+    const bexNoRent   = costsNoRent!=null   ? out(costsNoRent)   : null;
+    const bexWithRent = costsWithRent!=null ? out(costsWithRent) : null;
     const yrs     = yearsTo(when);
     const real    = inflPct!=null ? out(capitalIn * Math.pow(1+inflPct/100, yrs)) : null;
     /* What he would actually walk away with at THAT price: the sale, less everything the
@@ -1417,10 +2054,16 @@ function breakEven(opts){
     const owing = mb ? mb.balance : null;
     const proceedsAt = P0 => { const ssd = P0*(ssdPct||0)/100, com = P0*(commissionPct||0)/100;
       const ok = owing!=null && cl!=null;
+      /* the redemption fee leaves the proceeds on completion like every other payout */
+      const rfee = (rf && owing!=null) ? owing*rf.netPct/100 : redFee;
       return { gross:P0, ssd, com, legal:(legalSell||0), mortgage:owing, mortgageProjected:mb,
+               redemption:rfee, redemptionPct: rf?rf.netPct:0, insideLockIn: rf?rf.inside:null,
                cpf: cl?cl.claim:0, cpfAccrued: cl?cl.accrued:0, computable:ok,
-               cash: ok ? (P0 - ssd - com - (legalSell||0) - owing - cl.claim) : null }; };
-    return { price:capital, capital, cash, real, yrs,
+               cash: ok ? (P0 - ssd - com - (legalSell||0) - rfee - owing - cl.claim) : null }; };
+    return { price:capital, capital, cash, real, yrs, valuation, redemption:rf, redFee,
+             carryAll:CA, costsNoRent, costsWithRent, bexNoRent, bexWithRent,
+             vsNoRent: bexNoRent!=null ? (bexNoRent/price-1)*100 : null,
+             vsWithRent: bexWithRent!=null ? (bexWithRent/price-1)*100 : null,
              capitalIn, inCost:capitalIn, denom,
              carry: c?c.carry:null, carryMonths: c?c.months:null,
              cpfClaim: cl, proceedsAt, atCapital: proceedsAt(capital),
@@ -1462,21 +2105,22 @@ function breakEven(opts){
      which at the SSD-free rung is barely more than S$1,000 and at 16% is over S$1,200 */
   const legalSensitivity = ssd => 1000 / (1 - (ssd||0)/100 - (commissionPct||0)/100);
 
-  return { P, price, bsd, legalBuy, acquiredOn, saleDate, commissionPct, legalSell,
+  return { P, price, bsd, legalBuy, acquiredOn, acquiredFrom, saleDate, commissionPct, legalSell,
     commissionFromDoc, commissionDefault, legalSensitivity,
+    legalSellFromDoc, legalSellDefault,
     claimNow: (typeof cpfClaimOn==='function') ? cpfClaimOn(saleDate) : null,
     refValue, chosenAbsd, firstAffordable, everAffordable, floorRow, inflPct,
     /* the least a sale can ever break even at, once SSD is gone */
     capitalFloor: floorRow ? floorRow.capital : null,
     gapToFloor: floorRow ? floorRow.capital - refValue : null,
-    monthsHeld, rentM, mcstM, interestM, carryPerMonth, carryToDate,
+    monthsHeld, rentM, mcstM, taxM, insM, interestM, carryPerMonth, carryToDate,
     absdScenarios, steps, now, table,
     absdKnown: state.settings.absdKey ? STAMP_DUTY.absdRates.find(a=>a.key===state.settings.absdKey) : null,
     unknowns: [ state.settings.absdKey ? null : 'how many residential properties you owned when you bought — this sets ABSD',
                 P.exerciseDateKnown ? null : 'the date the Option was exercised, which starts the SSD clock',
-                legalBuy==null ? 'your legal fees on the purchase — not on any document Fortress holds' : null,
+                legalBuy==null ? 'your legal fees on the PURCHASE of this flat — the S$2,180 you supplied is a sale fee, for a different property' : null,
                 commissionPct==null ? 'the agent commission you would pay to sell' : null,
-                legalSell==null ? 'your legal fees on a sale — not on any document Fortress holds' : null,
+                legalSell==null ? 'your legal fees on a sale' : null,
                 'property tax, insurance and repairs' ].filter(Boolean) };
 }
 
@@ -1490,22 +2134,136 @@ function cpfHomeClaim(onDate){
   return { asOf:h.asOf, properties:h.properties, principal:prin, accrued:accr, claim, monthlyAccrual:monthly,
            monthsRun, yearlyAccrual:prin*CPF_RULES.oaPct/100, source:h.source };
 }
+/* ---- Every cost the property has actually run up, month by month ------------------
+   Rent is kept SEPARATE rather than netted, because the two scenarios CK asked for
+   differ only in whether it is subtracted. Interest is the real thing where Fortress has
+   the balances (payment less the principal actually repaid) and modelled beyond them;
+   the split is reported so the modelled part is never mistaken for observed. */
+function propertyCarryTo(iso){
+  const ms = manualMonths().filter(m=>state.manual[m].mortgageBalance!=null);
+  if(!ms.length) return null;
+  const P = state.settings.purchase || PURCHASE_SEED;
+  const M = (typeof mcstPosition==='function') ? mcstPosition() : null;
+  const Tp = (typeof propertyTaxPosition==='function') ? propertyTaxPosition() : null;
+  const taxM = (Tp && Tp.monthly != null) ? Tp.monthly : null;   // null until the AV is entered
+  const Fpc = (typeof firePolicy==='function') ? firePolicy() : null;
+  const insM = (Fpc && Fpc.premiumMonthly != null) ? Fpc.premiumMonthly : null;
+  const rentM = (typeof monthlyIncome==='function') ? monthlyIncome() : 0;
+  const startM = ms[0];                                  // first month Fortress has a balance for
+  const endM = iso.slice(0,7);
+  /* the plan's stepped rate where it can supply one, the flat observed rate otherwise */
+  const rateOn = d => { const f = (typeof forwardRateOn==='function') ? forwardRateOn(d) : null;
+    if(f && f.pct != null) return f.pct;
+    const e = effectiveLoanTerms(d);
+    return e.ratePct ?? state.manual[ms[ms.length-1]].mortgageRatePct ?? null; };
+  const instOn = d => { const e = effectiveLoanTerms(d);
+    return e.instalment ?? state.manual[ms[ms.length-1]].mortgagePayment ?? null; };
+
+  let bal = state.manual[startM].mortgageBalance;
+  let modelRate = null, modelInst = null;
+  let interest = 0, observed = 0, modelled = 0, months = 0, mcst = 0, rent = 0, tax = 0, ins = 0;
+  /* documented one-off costs of letting, charged in the month they actually fell rather
+     than smeared across the term - a S$297 duty on 25 Jul 2026 is not S$24.75 a month */
+  const oneOffList = (typeof lettingOneOffs==='function') ? lettingOneOffs() : [];
+  let oneOffs = 0; const oneOffsHit = [];
+  let [y,m] = startM.split('-').map(Number);
+  const past = () => (y > +endM.slice(0,4)) || (y === +endM.slice(0,4) && m > +endM.slice(5,7));
+  let guard = 0;
+  while(!past() && guard++ < 1200){
+    const key = `${y}-${String(m).padStart(2,'0')}`;
+    const prev = `${m===1?y-1:y}-${String(m===1?12:m-1).padStart(2,'0')}`;
+    if(key !== startM){
+      const cur = state.manual[key], pr = state.manual[prev];
+      const actual = (cur && pr && cur.mortgagePayment!=null
+                      && cur.mortgageBalance!=null && pr.mortgageBalance!=null)
+        ? cur.mortgagePayment - (pr.mortgageBalance - cur.mortgageBalance) : null;
+      if(actual != null){                                 // observed from real balances
+        interest += actual; observed += actual; bal = cur.mortgageBalance;
+      } else {                                            // modelled forward
+        const r = rateOn(key+'-01');
+        let inst = instOn(key+'-01');
+        if(r==null || inst==null) return null;
+        /* when the plan's spread steps, UOB re-amortises rather than holding the
+           instalment - so the model does the same, over the tenor that is left */
+        if(modelRate!=null && Math.abs(r-modelRate)>1e-9){
+          const left = (typeof tenorLeftOn==='function') ? tenorLeftOn(key+'-01') : null;
+          const re = (left && left>0) ? annuity(bal, r, left) : null;
+          if(re!=null) modelInst = re;
+        }
+        modelRate = r; if(modelInst!=null) inst = modelInst;
+        const i = bal*r/100/12; interest += i; modelled += i;
+        bal = Math.max(0, bal + i - inst);
+      }
+      months++;
+      if(M) mcst += M.monthly;
+      if(taxM != null) tax += taxM;
+      if(insM != null) ins += insM;
+      for(const o of oneOffList) if(o.date && o.date.slice(0,7) === key){
+        oneOffs += o.amount; oneOffsHit.push(o); }
+      rent += rentM;
+    }
+    if(m===12){ y++; m=1; } else m++;
+  }
+  return { months, interest, interestObserved:observed, interestModelled:modelled,
+           mcst, rent, tax: taxM!=null ? tax : null, taxKnown: taxM!=null,
+           ins: insM!=null ? ins : null, insKnown: insM!=null,
+           oneOffs, oneOffsHit,
+           balanceEnd:bal, from:startM, to:endM,
+           costs: interest + mcst + (taxM!=null?tax:0) + (insM!=null?ins:0) + oneOffs,
+           net: rent - interest - mcst - (taxM!=null?tax:0) - (insM!=null?ins:0) - oneOffs,
+           /* costs Fortress does NOT hold, which make both scenarios optimistic */
+           missing:[ ...(taxM==null?['property tax']:[]), ...(insM==null?['insurance']:[]),
+                     'agent commission on letting','repairs','vacancy'] };
+}
+
 /* The loan on a future date. Showing what he walks away with in 2030 against TODAY's
    balance would understate the cash by four years of principal, so it is amortised at the
    current rate and instalment - both floating, which is stated wherever this is used.
    If either is missing the projection is refused rather than guessed. */
+/* The forward rate for a month under the plan CK took. Falls back to the flat observed
+   rate whenever the plan cannot supply one - never silently, the caller can see which. */
+function forwardRateOn(iso){
+  const mm = latestManual(); const eff = effectiveLoanTerms(iso);
+  const flat = eff.ratePct ?? (mm ? mm.mortgageRatePct : null);
+  const IS = (typeof impliedSora==='function') ? impliedSora() : null;
+  const pr = (typeof planRateOn==='function' && IS) ? planRateOn(iso, IS.sora) : null;
+  if(pr && pr.pct != null) return { pct:pr.pct, fromPlan:true, spread:pr.spread, year:pr.year };
+  return flat != null ? { pct:flat, fromPlan:false, spread:null, year:null } : null;
+}
+
+/* This USED to project at today's rate for ever. Under Plan C the spread steps up by
+   contract - 0.30, then 0.55, then 0.75 points - so a flat projection understated every
+   year after the first. It now steps the rate AND re-amortises the instalment at each
+   step, which is what UOB itself did on 4 Aug 2026. */
 function mortgageBalanceOn(iso){
   const mm = latestManual(); if(!mm || mm.mortgageBalance==null) return null;
   const eff = effectiveLoanTerms();
-  const rate = eff.ratePct ?? mm.mortgageRatePct ?? null;
-  const inst = eff.instalment ?? mm.mortgagePayment ?? null;
+  const rate0 = eff.ratePct ?? mm.mortgageRatePct ?? null;
+  const inst0 = eff.instalment ?? mm.mortgagePayment ?? null;
   const from = (mm.month||'') + '-01';
-  if(rate==null || inst==null || !/^\d{4}-\d{2}-01$/.test(from))
+  if(rate0==null || inst0==null || !/^\d{4}-\d{2}-01$/.test(from))
     return { balance:mm.mortgageBalance, projected:false, months:0 };
   const months = Math.max(0, Math.round((new Date(iso+'T00:00:00') - new Date(from+'T00:00:00'))/86400000/30.4375));
   let b = mm.mortgageBalance;
-  for(let i=0;i<months && b>0;i++){ b = b*(1+rate/100/12) - inst; }
-  return { balance: Math.max(0,b), projected:true, months, rate, inst, from,
+  let [y,m] = from.split('-').map(Number);
+  let curRate = rate0, curInst = inst0, stepped = false;
+  const steps = [];
+  for(let i=0;i<months && b>0;i++){
+    const key = `${y}-${String(m).padStart(2,'0')}-01`;
+    const fr = forwardRateOn(key);
+    if(fr && fr.fromPlan && Math.abs(fr.pct - curRate) > 1e-9){
+      /* the rate changed under the plan: re-amortise over what is left of the tenor */
+      const left = (typeof tenorLeftOn==='function') ? tenorLeftOn(key) : null;
+      const re = (left && left>0) ? annuity(b, fr.pct, left) : null;
+      steps.push({ from:key, rate:fr.pct, spread:fr.spread, year:fr.year,
+                   instalment: re!=null ? re : curInst, balance:b, tenorLeft:left });
+      curRate = fr.pct; if(re != null) curInst = re; stepped = true;
+    }
+    b = b*(1+curRate/100/12) - curInst;
+    if(m===12){ y++; m=1; } else m++;
+  }
+  return { balance: Math.max(0,b), projected:true, months, rate:curRate, inst:curInst,
+           startRate:rate0, startInst:inst0, stepped, steps, from,
            paidDown: mm.mortgageBalance - Math.max(0,b) };
 }
 
@@ -2767,11 +3525,47 @@ function gaps(){
         'You have confirmed the recorded transaction is the one you bought. So the '+money(hv,0)+' Fortress shows as the value and the '+money(pp,0)+' you paid are the same event, not two. The property shows neither gain nor loss by construction. Setting your own trade aside, the only independent evidence is one equivalent-size sale from Jun 2023 and an automated estimate \u2014 and neither is above what you paid.',
         'Add a later transaction of an equivalent unit under \u201cA newer equivalent sale\u201d as soon as one appears. Until one does, treat the figure as your cost, not as a valuation.',
         'confirmed by you on 2 Sep 2026'); }
+  /* The exercise letter asked to bring completion forward. Whether it happened changes
+     the loan's lock-in dates and the carry, so it is a real gap, not trivia. */
+  { const CQ = (typeof completionQuestion==='function') ? completionQuestion() : null;
+    if(CQ && !CQ.resolved) add('prop','medium','Completion may have been brought forward, and Fortress cannot tell',
+      'Your solicitor\u2019s exercise letter records an instruction to REQUEST that completion be brought forward from '+dayLabel(CQ.recorded)+' to '+dayLabel(CQ.requested)+' \u2014 '+CQ.daysApart+' days earlier. It records the request, not the answer, and Fortress holds '+dayLabel(CQ.recorded)+' because that is what the Option says. Two other documents sit more naturally with the earlier date: the fire cover incepted '+dayLabel(CQ.fireFrom)+' ('+CQ.fireBeforeRequested+' day'+(CQ.fireBeforeRequested===1?'':'s')+' before '+dayLabel(CQ.requested)+', against '+CQ.fireBeforeRecorded+' before '+dayLabel(CQ.recorded)+'), and your CPF was drawn on '+dayLabel(CQ.cpfDrawnOn)+' ('+CQ.cpfBeforeRequested+' days before, against '+CQ.cpfBeforeRecorded+'). That is circumstantial and Fortress does not act on it.',
+      'Tell Fortress the completion date on your title or your solicitor\u2019s completion account. It moves the loan plan\u2019s anniversaries and lock-in end, and the months of carry behind both sale scenarios.',
+      CQ.source); }
+
+  /* The tenancy agreement post-dates every bank statement the rent was read off. That is
+     not a suspicion of a rent change - it is a dating fact, and it is cheap to close. */
+  { const Td = (typeof tenancyDuty==='function') ? tenancyDuty() : null;
+    const inc = (state.income||[]).filter(i=>i.endMonth==null)[0];
+    if(Td && inc && Td.docDate && inc.startMonth && Td.docDate.slice(0,7) > inc.startMonth)
+      add('prop','medium','The rent on file predates the tenancy agreement',
+        'The rent Fortress uses \u2014 '+money(inc.amount,2)+' a month \u2014 was read off bank credits from '+esc(inc.startMonth)+'. The stamped tenancy agreement is dated '+dayLabel(Td.docDate)+', after that. Fortress does NOT infer a rent change from the stamp duty: the chargeable base legitimately includes furniture, maintenance and service, and the lease term is not on the certificate. But it cannot confirm the rent is current either, and rent cover, net yield and the second sale scenario all rest on it.',
+        'Import a UOB statement from July 2026 onwards, or set the rent under \u201cRent & recurring income\u201d on the Settings tab.',
+        Td.source); }
+
+  /* The Annual Value is its own gap: unlike the other running costs it is not a figure
+     CK has to estimate, it is a number printed on a bill, and one input turns the whole
+     property tax computation on. It gets its own line so it does not hide inside a
+     general "running costs" nag. */
+  { const Tx = (typeof propertyTaxPosition==='function') ? propertyTaxPosition() : null;
+    if(Tx && !Tx.known)
+      add('prop','high','The property\u2019s Annual Value is not recorded',
+        'Property tax is a fixed, published function of one number \u2014 the Annual Value \u2014 and Fortress does not hold it, so the tax is missing from the net yield and from both sale scenarios. It is NOT your rent: IRAS assesses the AV from market rentals of comparable homes and excludes furniture, furnishings and maintenance fees, so Fortress will not substitute the '+money(Tx.rentY||0,0)+' you collect. The bands themselves are verified and in the app; only your AV is missing.',
+        'It is printed on your IRAS property tax bill and shown on myTax Portal. Enter it under \u201cWhat the house cost you\u201d on the Settings tab.',
+        Tx.rateSource); }
+
   { const Mc = (typeof mcstPosition==='function') ? mcstPosition() : null;
+    const Tx = (typeof propertyTaxPosition==='function') ? propertyTaxPosition() : null;
+    const taxKnown = !!(Tx && Tx.known);
     if(state.settings.homeAnnualCosts!=null){ /* answered - no gap */ }
-    else if(Mc) add('prop','medium','Only one of the property\u2019s running costs is known',
-      'MCST maintenance is now captured from the invoice \u2014 '+money(Mc.perQuarter,2)+' a quarter, '+money(Mc.annual,2)+' a year. Still missing: property tax, insurance, agent commission, repairs and vacancy. Net yield is therefore still overstated, only by less than before.',
-      'Add the remaining annual total under \u201cWhat the house cost you\u201d on the Property tab.',
+    else if(Mc) add('prop','medium', taxKnown
+      ? 'Only some of the property\u2019s running costs are known'
+      : 'Only one of the property\u2019s running costs is known',
+      'MCST maintenance is captured from the invoice \u2014 '+money(Mc.perQuarter,2)+' a quarter, '+money(Mc.annual,2)+' a year \u2014 and the fire premium is now in too, at the approximate figure UOB quoted. '
+      +(taxKnown?'Property tax is computed from your Annual Value and is already in the figures. Still missing in money terms: agent commission on letting, repairs and vacancy.'
+                :'Still missing in money terms: property tax, agent commission on letting, repairs and vacancy.')
+      +' Net yield and both sale scenarios are therefore still better than the truth.',
+      'Add the remaining annual total under \u201cWhat the house cost you\u201d on the Settings tab'+(taxKnown?' \u2014 excluding property tax, which Fortress now computes itself.':'.'),
       Mc.source);
     else add('prop','medium','Property running costs are not captured',
       'Rent cover is measured against the instalment alone. Property tax, maintenance, agent fees, insurance and vacancy are not in Fortress, so the true net yield is lower than anything shown.',
@@ -2969,6 +3763,46 @@ function retirementChecks(){
   const today = new Date().toISOString().slice(0,10);
 
   /* ---------- dated ---------- */
+  { const Fp = (typeof firePolicy==='function') ? firePolicy() : null;
+    if(Fp && Fp.to){ const d = Fp.daysToRenewal;
+      /* CORRECTED. This reminder used to read "a lapse is a breach as well as an exposure",
+         which implied CK had to act. Page 2 of the schedule carries an AUTOMATIC RENEWAL
+         clause: the policy renews itself each year while the mortgage runs. So the date is
+         not a task, and the tone must not escalate as it approaches. What is worth watching
+         is different - the premium is charged whatever it is (and Fortress does not hold
+         it), and the clause is conditional on the mortgage, so redeeming or selling ends
+         the thing that renews the cover. */
+      const auto = Fp.autoRenewal === true;
+      add({ id:'fire-renewal', cat:'dated', date:Fp.to, days:d,
+        tone: Fp.expired ? 'warn' : (auto ? 'info' : (d<=14?'serious':(d<=60?'warn':'info'))),
+        title: auto ? 'Fire insurance renews itself' : 'Fire insurance renews',
+        head:`${esc(Fp.insurer.split(' (')[0])} \u00b7 ${esc(Fp.policyNo)}`,
+        detail: auto
+          ? `Cover runs ${esc(dayLabel(Fp.from))} to ${esc(dayLabel(Fp.to))}. <b>This date is not a task.</b> The schedule carries an automatic-renewal clause &mdash; the policy renews each year without you doing anything, and nothing lapses if you ignore it. Two things it does <em>not</em> do for you. The renewal premium is charged whatever it comes to, and <b>Fortress does not hold the premium</b>: page ${esc(Fp.itemsPageMissing||'1 of 3')} of the schedule was not supplied. And the clause runs only <b>&ldquo;during the terms of the mortgage with the mortgagee&rdquo;</b> &mdash; redeem the loan or sell, and the thing that renews this policy stops applying; cover from that point is yours to arrange. The full wording is on the Property tab.${Fp.expired?` <b>Fortress still holds the ${esc(dayLabel(Fp.from))} schedule</b>, which has run out &mdash; a renewed one should exist. Import it so these figures are current.`:''}`
+          : `Cover runs ${esc(dayLabel(Fp.from))} to ${esc(dayLabel(Fp.to))}. Your lender requires it while the loan is outstanding, so a lapse is a breach as well as an exposure.`,
+        source:Fp.source });
+    }
+  }
+  { const L = (typeof loanPlan==='function') ? loanPlan() : null;
+    if(L && L.lockInEnd && L.inLockIn){
+      const d = L.daysToLockInEnd;
+      const r = (typeof redemptionFeeOn==='function') ? redemptionFeeOn(today) : null;
+      add({ id:'loan-lockin', cat:'dated', date:L.lockInEnd, days:d,
+        tone: d<=60?'warn':'info',
+        title:'Loan lock-in ends', head:`Plan ${esc(L.planKey)} \u00b7 ${esc(L.plan.name)}`,
+        detail:`Until ${esc(dayLabel(L.lockInEnd))}, redeeming this loan costs ${pct(L.fullRedemptionPct,2)} of what is outstanding \u2014 halved to ${pct(L.fullRedemptionPct*(1-L.saleWaiverPct/100),2)} when a property sale is what triggers it${r&&r.inside?`, which on today's balance is <b>${money(r.fee,0)}</b>`:''}. ${fmt(L.fullRedemptionNoticeMonths,0)} months' notice is required. This is not a deadline to act on; it is the date a cost disappears, and it is already priced into the first rungs of the sale scenarios.`,
+        source:L.source });
+    }
+    /* the next contractual step-up in the spread - certain, unlike SORA */
+    if(L && L.steps){
+      const next = L.steps.find(x=>x.from && x.from > today);
+      if(next) add({ id:'loan-spread-step', cat:'dated', date:next.from, days:daysUntil(next.from),
+        tone:'info',
+        title:'Loan spread steps up', head:`${next.soraSpread!=null?`3M SORA + ${pct(next.soraSpread,2)}`:pct(next.fixedPct,2)} from ${esc(dayLabel(next.from))}`,
+        detail:`Plan ${esc(L.planKey)} raises the margin over SORA from ${pct(L.currentStep?L.currentStep.soraSpread:0,2)} to ${pct(next.soraSpread,2)} on ${esc(dayLabel(next.from))}. <b>This part is contractual, not a forecast</b> \u2014 it happens whatever SORA does. ${L.impliedSora?`At today's implied SORA of ${pct(L.impliedSora.sora,4)} that takes the rate to ${pct(next.pct,4)}.`:''} UOB re-amortises the instalment when the rate changes, so expect a new instalment notice rather than a longer loan.`,
+        source:L.source });
+    }
+  }
   { const Mc = (typeof mcstPosition==='function') ? mcstPosition() : null;
     if(Mc && Mc.dueDate){ const d = Mc.daysToDue;
       add({ id:'mcst-due', cat:'dated', date:Mc.dueDate, days:d,
@@ -3680,7 +4514,138 @@ function viewProp(){
     ${M.balanceBF>0?`<div class="banner b-warn" style="margin-top:10px"><span class="ic">&#9888;</span><div><b>${money(M.balanceBF,2)} shows as brought forward.</b>The ${esc(dayLabel(M.bf.begin))}&ndash;${esc(dayLabel(M.bf.end))} quarter is unpaid <em>on this statement</em>. That may only be timing: <em>&ldquo;${esc(M.cutoffRule)}&rdquo;</em> &mdash; so a payment made on or after ${esc(dayLabel(M.cutoff))} would not appear. <b>Fortress does not assume you are in arrears</b>; it reports what the document says. If it is genuinely outstanding, interest has run since ${esc(dayLabel(M.bfTrigger))} &mdash; ${fmt(M.daysPastTrigger,0)} days &mdash; at ${money(M.dailyIfUnpaid,2)} a day.</div></div>`:''}
     <p class="note"><b>${pct(M.lateInterestPct,2)} is the most expensive money in your structure.</b> ${esc(M.lateRule)} ${M.vsMortgage!=null?`That is <b>${fmt(M.vsMortgage,2)} points</b> above your mortgage`:''}${M.vsMargin!=null?` and <b>${fmt(M.vsMargin,2)} points</b> above your margin loan`:''}. Nothing else you owe comes close, so this is the one bill where paying on the day is worth more than the cash is worth anywhere else.</p>
     <p class="note"><b>The yearly figure is one quarter multiplied by four.</b> Fortress has seen a single invoice, not a year of them. Contributions are set by the MCST's budget and can be revised at a general meeting, so ${money(M.annual,0)} is the current run rate, not a commitment. GST is shown on the invoice at ${pct(M.gstPct,2)} &mdash; if that ever changes, this figure moves with it.</p>
-    <p class="note"><b>What this does and does not cover.</b> It is the management fund and the sinking fund only. Property tax, insurance, agent commission, repairs and vacancy are still not in Fortress, so the net yield it shows remains better than the truth &mdash; by less than it was, but still. Source: ${esc(M.source)}.</p>
+    <p class="note"><b>What this does and does not cover.</b> It is the management fund and the sinking fund only. ${(typeof propertyTaxPosition==='function' && propertyTaxPosition().known)?'Insurance, agent commission, repairs and vacancy are':'Property tax, insurance, agent commission, repairs and vacancy are'} still not in Fortress, so the net yield it shows remains better than the truth &mdash; by less than it was, but still. Source: ${esc(M.source)}.</p>
+  </div>`; })()}
+
+  ${(()=>{ const Pu=state.settings.purchase||PURCHASE_SEED; if(!Pu.exerciseDateKnown) return '';
+    const CQ=(typeof completionQuestion==='function')?completionQuestion():null;
+    const B=breakEven();
+    return `<div class="card">
+    <h2>Exercise of Option<span class="pill">${esc(Pu.exerciseLetterRef)} &middot; ${esc(dayLabel(Pu.exerciseLetterDate))}</span></h2>
+    <div class="kv"><span class="k">Option granted</span><span class="v">${esc(dayLabel(Pu.optionGranted))}<br><span style="font-size:11px;opacity:.72">expiring ${esc(dayLabel(Pu.optionExpiry))}</span></span></div>
+    <div class="kv"><span class="k"><b>Option exercised</b><br><span style="font-size:11px;opacity:.72">this is what starts the SSD clock</span></span><span class="v"><b>${esc(dayLabel(Pu.exerciseDate))}</b><br><span style="font-size:11px;opacity:.72">${fmt(Pu.daysGrantToExercise,0)} days after the grant, ${fmt(Math.round((new Date(Pu.optionExpiry+'T00:00:00')-new Date(Pu.exerciseDate+'T00:00:00'))/86400000),0)} before expiry</span></span></div>
+    <div class="kv"><span class="k">Balance of the 5% deposit</span><span class="v">${money(Pu.balanceDepositPaid,2)}<br><span style="font-size:11px;opacity:.72">held by the vendor's solicitors as stakeholders</span></span></div>
+    <div class="kv"><span class="k">Your solicitor</span><span class="v">${esc(Pu.buyerSolicitor)}<br><span style="font-size:11px;opacity:.72">${esc(Pu.buyerSolicitorPerson)} &middot; vendor acted for by ${esc(Pu.vendorSolicitor)}</span></span></div>
+    <div class="kv"><span class="k">Title</span><span class="v">${esc(Pu.title)}</span></div>
+
+    <div class="warnbox" style="margin-top:12px"><b>This corrected the Seller's Stamp Duty ladder by ${fmt(Pu.daysGrantToExercise,0)} days &mdash; in the wrong direction for you.</b>
+      <p style="margin:6px 0">Fortress had been running SSD from ${esc(dayLabel(Pu.optionGranted))}, the date the Option was <em>granted</em>. IRAS's own SSD declaration form defines the date of purchase as <em>&ldquo;Date of exercise of Option to Purchase&rdquo;</em>. That is ${esc(dayLabel(Pu.exerciseDate))}, so <b>every milestone was ${fmt(Pu.daysGrantToExercise,0)} days too early</b> &mdash; including the date SSD disappears.</p>
+      ${(()=>{ const yrs=(ssdRegimeFor(B.acquiredOn)||{years:4}).years;
+        const plus = iso => { const [y,m,d]=iso.split('-').map(Number);
+          return `${y+yrs}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`; };
+        return `<div class="kv"><span class="k">SSD-free from<br><span style="font-size:11px;opacity:.72">Fortress used to say ${esc(dayLabel(plus(Pu.optionGranted)))}</span></span><span class="v neg"><b>${esc(dayLabel(plus(B.acquiredOn)))}</b></span></div>`; })()}
+      <p style="margin:6px 0">You have to hold it <b>${fmt(Pu.daysGrantToExercise,0)} days longer</b> than Fortress was telling you. Basis: ${esc(Pu.exerciseBasis)}.</p>
+    </div>
+
+    ${CQ&&CQ.resolved?`<div class="warnbox"><b>The same letter asked for completion to be brought forward &mdash; and it was.</b>
+      <p style="margin:6px 0">${esc(CQ.note)}</p>
+      <div class="kv"><span class="k">Completion under the Option</span><span class="v" style="opacity:.7">${esc(dayLabel(CQ.perOption))}</span></div>
+      <div class="kv"><span class="k"><b>Completion as it happened</b></span><span class="v"><b>${esc(dayLabel(CQ.settled))}</b><br><span style="font-size:11px;opacity:.72">${fmt(CQ.daysApart,0)} days earlier</span></span></div>
+      <p style="margin:6px 0">Fortress held the Option's date until you confirmed it, because the letter recorded a request and not an answer. ${CQ.fireBefore!=null?`It now also explains the fire policy: cover incepted <b>${esc(dayLabel(CQ.fireFrom))}</b>, ${fmt(CQ.fireBefore,0)} day${CQ.fireBefore===1?'':'s'} before completion rather than the ${fmt(CQ.daysApart+CQ.fireBefore,0)} Fortress used to show &mdash; which is the ordinary pattern, and was the clue.`:''} ${esc(CQ.confirmedBy)}</p>
+      <p style="margin:6px 0">Three things moved with it: the loan plan's anniversaries and lock-in end, the months of carry behind both sale scenarios, and the fire policy's head start.</p></div>`
+    :CQ?`<div class="warnbox"><b>The same letter asks for completion to be brought forward, and Fortress cannot tell whether it was.</b>
+      <p style="margin:6px 0">${esc(CQ.note)} Fortress holds <b>${esc(dayLabel(CQ.recorded))}</b>, because that is what the Option says, and has not moved it.</p>
+      <div class="kv"><span class="k">Requested</span><span class="v">${esc(dayLabel(CQ.requested))}<br><span style="font-size:11px;opacity:.72">${fmt(CQ.daysApart,0)} days earlier</span></span></div>
+      <p style="margin:6px 0"><b>Two other documents sit more naturally with the earlier date.</b> Your fire cover incepted ${esc(dayLabel(CQ.fireFrom))} &mdash; ${fmt(CQ.fireBeforeRequested,0)} day${CQ.fireBeforeRequested===1?'':'s'} before ${esc(dayLabel(CQ.requested))}, against ${fmt(CQ.fireBeforeRecorded,0)} days before ${esc(dayLabel(CQ.recorded))}. Your CPF was drawn on ${esc(dayLabel(CQ.cpfDrawnOn))} &mdash; ${fmt(CQ.cpfBeforeRequested,0)} days before the requested date, against ${fmt(CQ.cpfBeforeRecorded,0)}. <b>That is circumstantial, and Fortress does not act on it.</b> Cover incepting well ahead of completion and CPF released early are both ordinary.</p>
+      <p style="margin:6px 0">If the earlier date is right, three things move: ${CQ.affects.map(x=>esc(x)).join('; ')}. One line off your completion account settles it.</p></div>`:''}
+
+    <p class="note"><b>Two encumbrance numbers on this letter are the vendor's, not yours.</b> The CPF charge ${esc(Pu.vendorCpfCharge)} and mortgage ${esc(Pu.vendorMortgage)} were being discharged so clean title could pass to you. Your own UOB mortgage is a separate instrument and is not on this letter.</p>
+    <p class="note">${esc(Pu.cashierOrderRule)} &mdash; a small thing, recorded because it is a real charge on a completion that will need several orders. Source: ${esc(Pu.exerciseSource)}.</p>
+  </div>`; })()}
+
+  ${(()=>{ const L=loanPlan(); if(!L) return '';
+    const IS=L.impliedSora, O=L.offer;
+    return `<div class="card">
+    <h2>Your loan plan<span class="pill">UOB &middot; Plan ${esc(L.planKey)} &middot; ${esc(L.plan.name)}</span></h2>
+
+    <div class="kv"><span class="k">Borrowed</span><span class="v">${money(L.taken.amount,2)}<br><span style="font-size:11px;opacity:.72">over ${fmt(L.taken.tenorYears,0)} years</span></span></div>
+    ${L.notTaken.map(o=>`<div class="kv"><span class="k" style="opacity:.7">Also approved, not taken</span><span class="v" style="opacity:.7">${money(o.amount,0)}<br><span style="font-size:11px">over ${fmt(o.tenorYears,0)} years</span></span></div>`).join('')}
+    <div class="kv"><span class="k">Lock-in ends</span><span class="v ${L.inLockIn?'neg':''}">${esc(dayLabel(L.lockInEnd))}<br><span style="font-size:11px;opacity:.72">${L.inLockIn?`${fmt(L.daysToLockInEnd,0)} days away &mdash; you are inside it`:'expired'}</span></span></div>
+    <div class="kv"><span class="k">One free rate conversion from</span><span class="v">${esc(dayLabel(L.freeConversionFrom))}<br><span style="font-size:11px;opacity:.72">while at least ${money(L.freeConversionMinOutstanding,0)} is outstanding</span></span></div>
+
+    <div style="border-top:1px solid var(--grid);margin-top:12px;padding-top:12px"></div>
+    <div style="margin-bottom:6px"><b style="font-size:13px">The rate, year by year</b></div>
+    ${L.steps.map(x=>`<div class="kv"><span class="k">${x.year==='thereafter'?'Thereafter':'Year '+x.year}${x.current?' <span style="font-size:10px;color:var(--s1)">&#9679; now</span>':''}<br><span style="font-size:11px;opacity:.72">${esc(dayLabel(x.from))}${x.to?` &ndash; ${esc(dayLabel(x.to))}`:' onward'}</span></span><span class="v">${x.fixedPct!=null?`${pct(x.fixedPct,2)} fixed`:`3M SORA + ${pct(x.soraSpread,2)}`}${x.pct!=null?`<br><span style="font-size:11px;opacity:.72">${pct(x.pct,4)} at today\u2019s SORA</span>`:''}</span></div>`).join('')}
+
+    ${IS?`<div class="warnbox" style="margin-top:10px"><b>The spread rises by contract; only SORA is uncertain.</b> Your year-1 spread is ${pct(L.steps[0].soraSpread,2)}, so the ${pct(IS.observed,4)} on your ${esc(dayLabel(IS.on))} letter <em>is</em> 3M compounded SORA. Hold that still and the rate goes ${L.steps.map(x=>pct(x.pct,2)).join(' &rarr; ')} &mdash; a rise of ${pct(L.steps[L.steps.length-1].pct-L.steps[0].pct,2)} with no help from the market at all. <b>Fortress now projects the mortgage on that schedule</b> rather than at today's rate for ever, and re-amortises the instalment at each step, which is what UOB did on ${esc(dayLabel(IS.on))}. Holding SORA still is the one assumption in it; SORA floats, and Fortress does not forecast it.</div>`:''}
+
+    <div style="border-top:1px solid var(--grid);margin-top:12px;padding-top:12px"></div>
+    <div style="margin-bottom:6px"><b style="font-size:13px">Getting out early</b></div>
+    <div class="kv"><span class="k">Full redemption inside the lock-in</span><span class="v neg">${pct(L.fullRedemptionPct,2)}<br><span style="font-size:11px;opacity:.72">${fmt(L.fullRedemptionNoticeMonths,0)} months\u2019 notice</span></span></div>
+    <div class="kv"><span class="k">...halved if the redemption is a sale</span><span class="v">${pct(L.fullRedemptionPct*(1-L.saleWaiverPct/100),2)}<br><span style="font-size:11px;opacity:.72">${pct(L.saleWaiverPct,0)} of the fee waived</span></span></div>
+    ${(()=>{ const r=(typeof redemptionFeeOn==='function')?redemptionFeeOn(new Date().toISOString().slice(0,10)):null;
+      return r&&r.inside?`<div class="kv"><span class="k"><b>If you sold today</b><br><span style="font-size:11px;opacity:.72">on ${money(r.balance,0)} outstanding</span></span><span class="v neg"><b>${money(r.fee,2)}</b></span></div>`:''; })()}
+    <div class="kv"><span class="k">Partial prepayment inside the lock-in</span><span class="v neg">${pct(L.partialPrepayPct,2)}<br><span style="font-size:11px;opacity:.72">${fmt(L.partialPrepayNoticeMonths,0)} month\u2019s notice</span></span></div>
+    ${L.partialPrepayAnnualWaiverPct?`<div class="kv"><span class="k">...but one waiver a year, free<br><span style="font-size:11px;opacity:.72">this is the sweetener Plan ${esc(L.planKey)} carries</span></span><span class="v pos">up to ${pct(L.partialPrepayAnnualWaiverPct,0)}<br><span style="font-size:11px;opacity:.72">of the disbursed loan, each year in the lock-in</span></span></div>
+    <p class="note"><b>That waiver is worth naming.</b> ${pct(L.partialPrepayAnnualWaiverPct,0)} of ${money(L.taken.amount,0)} is ${money(L.taken.amount*L.partialPrepayAnnualWaiverPct/100,0)} you can put against the loan each year of the lock-in without a fee &mdash; the largest allowance of the three plans. Plan A carries none at all and Plan B half of it.</p>`:''}
+    <p class="note"><em>&ldquo;${esc(L.refinanceRefundQuote)}&rdquo;</em> &mdash; so a redemption fee is not necessarily final if you come back to UOB within six months with a loan at least as large.</p>
+
+    <div style="border-top:1px solid var(--grid);margin-top:12px;padding-top:12px"></div>
+    <div style="margin-bottom:6px"><b style="font-size:13px">What Plan ${esc(L.planKey)} cost and saved against the two you turned down</b></div>
+    <table class="hist"><tr><th>&nbsp;</th>${O.plans.map(x=>`<th>${esc(x.key)}${x.key===L.planKey?' &#9679;':''}</th>`).join('')}</tr>
+      <tr><td>Year 1</td>${O.plans.map(x=>`<td>${x.schedule[0].fixedPct!=null?pct(x.schedule[0].fixedPct,2):'S+'+fmt(x.schedule[0].soraSpread,2)}</td>`).join('')}</tr>
+      <tr><td>Year 2</td>${O.plans.map(x=>`<td>${x.schedule[1].fixedPct!=null?pct(x.schedule[1].fixedPct,2):'S+'+fmt(x.schedule[1].soraSpread,2)}</td>`).join('')}</tr>
+      <tr><td>Year 3</td>${O.plans.map(x=>`<td>${x.schedule[2].fixedPct!=null?pct(x.schedule[2].fixedPct,2):'S+'+fmt(x.schedule[2].soraSpread,2)}</td>`).join('')}</tr>
+      <tr><td>Thereafter</td>${O.plans.map(x=>`<td>S+${fmt(x.schedule[3].soraSpread,2)}</td>`).join('')}</tr>
+      <tr><td>Lock-in</td>${O.plans.map(x=>`<td>${fmt(x.lockInYears,0)}y</td>`).join('')}</tr>
+      <tr><td>Free prepay/yr</td>${O.plans.map(x=>`<td>${x.partialPrepayAnnualWaiverPct?fmt(x.partialPrepayAnnualWaiverPct,0)+'%':'\u2014'}</td>`).join('')}</tr>
+    </table>
+    ${IS?`<p class="note"><b>On today's SORA the fixed plans were dearer, and that is the whole trade.</b> Plan A's ${pct(O.plans[0].schedule[0].fixedPct,2)} and Plan B's ${pct(O.plans[1].schedule[0].fixedPct,2)} both sit above the ${pct(IS.sora,4)} you are paying now. What you gave up is certainty: a fixed plan would have held its rate whatever SORA did, and yours does not. <b>Fortress is not saying you chose well or badly</b> &mdash; that depends on where SORA goes, which nobody here knows. It shows what each would cost at today's level and stops.</p>`:''}
+
+    <div style="border-top:1px solid var(--grid);margin-top:12px;padding-top:12px"></div>
+    <p class="note" style="margin-top:0"><b>Two things on the approval email that are not in any figure above.</b> Legal fees were quoted as &ldquo;${esc(L.legalFeeNote)}&rdquo; &mdash; Fortress uses the ${money((state.settings.purchase||PURCHASE_SEED).buyerLegalFees,0)} from your solicitor's own instruction instead, which is a real number. And a <b>${money(L.redemptionRefund.amount,2)} refund</b> of a redemption fee paid on an <em>earlier</em> UOB loan, conditional on this one being at least ${money(720000,0)} &mdash; which it is. ${esc(L.redemptionRefund.note)}</p>
+    <p class="note"><b>The plan years are counted from ${esc(dayLabel(L.base))}${L.anniversaryIsCompletion?', your completion date':''}.</b> The approval email does not state the anniversary, so Fortress uses completion and tells you so rather than implying the letter fixed it. If your letter of offer counts from first disbursement instead, the step dates move by a few days and nothing material changes.</p>
+    <p class="note">${esc(L.selectedSource)} Source: ${esc(L.source)}.</p>
+  </div>`; })()}
+
+  ${(()=>{ const D=tenancyDuty(); if(!D) return '';
+    return `<div class="card">
+    <h2>Tenancy stamp duty<span class="pill">IRAS certificate &middot; ${esc(dayLabel(D.certIssued))}</span></h2>
+    <div class="kv"><span class="k">Document</span><span class="v">${esc(D.docDescription)}<br><span style="font-size:11px;opacity:.72">dated ${esc(dayLabel(D.docDate))}</span></span></div>
+    <div class="kv"><span class="k">Landlord &middot; tenant</span><span class="v">${esc(D.landlord)}<br><span style="font-size:11px;opacity:.72">to ${esc(D.tenant)}</span></span></div>
+    <div class="kv"><span class="k"><b>Lease duty</b><br><span style="font-size:11px;opacity:.72">one-off, ${pct(D.rate,1)} of ${esc(D.base)}</span></span><span class="v"><b>${money(D.duty,2)}</b></span></div>
+    <div class="kv"><span class="k">Treated as borne by</span><span class="v">${D.yours?'<b>you</b>':'the tenant'}<br><span style="font-size:11px;opacity:.72">${D.yours?'included in both sale scenarios':'excluded from your costs'}</span></span></div>
+    <button class="btn ghost" style="margin-top:8px" onclick="flipDutyPayer()">${D.yours?'It was the tenant who paid \u2014 take it out':'I paid it \u2014 put it back in'}</button>
+
+    <div class="warnbox" style="margin-top:12px"><b>The certificate does not say who paid.</b> It names you as landlord and your tenant as lessee, and nothing more. ${esc(D.liabilityNote)} Fortress has it as <b>your</b> cost because you asked for it that way &mdash; if the agreement puts it on the tenant, the button above removes it. ${esc(D.liabilitySources)}</div>
+
+    <div style="border-top:1px solid var(--grid);margin-top:12px;padding-top:12px"></div>
+    <p class="note" style="margin-top:0"><b>What the duty implies, and what it does not.</b> At ${pct(D.rate,1)} rounded down to the dollar, ${money(D.duty,2)} means the chargeable base was between <b>${money(D.baseLow,2)}</b> and just under ${money(D.baseHigh,0)}. ${D.rentY!=null?`The rent Fortress holds &mdash; ${money(D.rentM,2)} a month &mdash; would give ${money(D.rentY,0)} over twelve months and a duty of ${money(D.dutyOnRecordedRent,0)}, not ${money(D.duty,0)}. The base is about ${money(D.gapLow,0)} higher.`:''}</p>
+    <p class="note"><b>That gap is not evidence your rent went up, and Fortress does not read it as one.</b> Three documented reasons a chargeable base exceeds bare rent, any one of which covers it. The base includes consideration for ${esc(D.chargeableIncludes.join(', '))} &mdash; and this flat was let furnished. IRAS charges on the higher of two figures: <em>&ldquo;${esc(D.higherOfRule)}&rdquo;</em> (${esc(D.higherOfSource)}). And <b>the lease term is not on the certificate</b>, so the base need not cover twelve months at all &mdash; which is why Fortress does not divide it into a monthly rent.${D.rentY!=null?` For scale only: <em>if</em> the term were exactly twelve months, the base would work out at ${money(D.impliedMonthlyIf12,2)} a month. That is a conditional, not a figure Fortress holds.`:''}</p>
+    <div class="warnbox"><b>Worth closing, though.</b> The rent on file was read off your May and June 2026 bank statements, and this agreement is dated ${esc(dayLabel(D.docDate))} &mdash; after both. If the July agreement changed the rent, every rent figure in Fortress is stale: cover, net yield and the second sale scenario all move. Import a statement from July onwards, or tell Fortress the rent, and this closes either way.</div>
+
+    <div style="border-top:1px solid var(--grid);margin-top:12px;padding-top:12px"></div>
+    <p class="note" style="margin-top:0"><b>What this certificate confirms, which is worth as much as the money.</b> ${D.confirmsAddress?`It is the first document Fortress holds that names <b>${esc(D.property)}</b> and names you against it. ` : ''}${D.confirmsTenant?`The lessee matches the payer on the rent credits, so the income on file and this lease are the same arrangement. `:''}Neither was in doubt; both were previously inferred rather than documented.</p>
+    <p class="note"><b>Two numbers on the certificate are deliberately not stored.</b> The NRIC and the tenant's FIN. This file is built to be served from GitHub Pages, which is public, and a government ID &mdash; particularly a third party's &mdash; has no business in a file that might be. They are on the certificate itself if you ever need them.</p>
+    <p class="note">Duty is payable ${esc(D.deadline)}; this was stamped the same day the agreement was dated. Rates checked ${esc(dayLabel(D.checkedOn))}. Source: ${esc(D.source)}. Rate basis: ${esc(D.rateSource)}</p>
+  </div>`; })()}
+
+  ${(()=>{ const T=propertyTaxPosition(); if(!T) return '';
+    const R=T.rebate;
+    return `<div class="card">
+    <h2>Property tax<span class="pill">non-owner-occupied &middot; effective ${esc(dayLabel(T.effectiveFrom))}</span></h2>
+
+    <div class="kv"><span class="k"><b>Annual Value</b><br><span style="font-size:11px;opacity:.72">the only input this needs</span></span><span class="v">${T.known?`<b>${money(T.av,2)}</b>`:'<span class="neg"><b>not available</b></span>'}</span></div>
+    ${T.known?`
+      ${T.slices.map(x=>`<div class="kv"><span class="k">${esc(x.label)} at ${pct(x.pct,0)}<br><span style="font-size:11px;opacity:.72">on ${money(x.taxed,0)}</span></span><span class="v">${money(x.amount,2)}</span></div>`).join('')}
+      <div class="kv"><span class="k"><b>Tax for the year</b></span><span class="v"><b>${money(T.annual,2)}</b></span></div>
+      <div class="kv"><span class="k">A month</span><span class="v neg">${money(T.monthly,2)}</span></div>
+      <div class="kv"><span class="k">Effective rate on the AV</span><span class="v">${pct(T.effectivePct,2)}<br><span style="font-size:11px;opacity:.72">top slice taxed at ${pct(T.marginalPct,0)}</span></span></div>
+      ${T.pctOfGrossRent!=null?`<div class="kv"><span class="k">Share of your gross rent</span><span class="v neg">${pct(T.pctOfGrossRent,2)}</span></div>`:''}
+      <p class="note"><b>This is now in the numbers.</b> It has been taken out of the net rent and out of the carry behind both sale scenarios. If you also typed property tax into &ldquo;other running costs&rdquo; on the Settings tab, take it out &mdash; it would be counted twice.</p>
+    `:`
+      <div class="warnbox"><b>Fortress cannot compute your bill, and will not invent it.</b> The tax is a fixed function of one number it does not hold: the Annual Value. That figure is on your IRAS property tax bill and on myTax Portal. Enter it under <b>What the house cost you</b> on the Settings tab and this card fills itself in &mdash; and the net yield and both sale scenarios move with it.</div>
+      <p class="note"><b>Your rent is not the Annual Value, and Fortress will not use it as one.</b> IRAS defines the AV as &ldquo;${esc(T.avDefinition)}&rdquo;, assessed from ${esc(T.avBasis)}. ${esc(T.avNotRent)} Your tenancy includes furniture and you pay the MCST yourself &mdash; two of the things the AV explicitly leaves out &mdash; so the two figures are not the same quantity, and Fortress does not claim to know which is larger. Source: ${esc(T.avSource)}.</p>
+      <div style="border-top:1px solid var(--grid);margin-top:12px;padding-top:12px"></div>
+      <p class="note" style="margin-top:0"><b>What the bill would be, at Annual Values it does not claim are yours.</b> These are arithmetic on the published bands, shown so the order of magnitude is visible while the real figure is missing. They are <em>not</em> an estimate of your AV.</p>
+      ${T.illustration.map(x=>`<div class="kv"><span class="k">AV ${money(x.av,0)}${x.isContractRent?`<br><span style="font-size:11px;opacity:.72">= your contractual rent annualised &mdash; a reference point, not a prediction</span>`:''}</span><span class="v">${money(x.tax,0)}/yr<br><span style="font-size:11px;opacity:.72">${money(x.monthly,0)}/mo${x.pctOfGrossRent!=null?` &middot; ${pct(x.pctOfGrossRent,1)} of gross rent`:''}</span></span></div>`).join('')}
+    `}
+
+    <div style="border-top:1px solid var(--grid);margin-top:12px;padding-top:12px"></div>
+    <p class="note" style="margin-top:0"><b>The bands, verified.</b> ${T.table.map(b=>`${esc(b.label)} at ${pct(b.pct,0)}`).join(' &middot; ')}. Effective ${esc(dayLabel(T.effectiveFrom))} and still current when Fortress last checked on ${esc(dayLabel(T.checkedOn))}. Source: ${esc(T.rateSource)}. Corroborated by ${esc(T.corroboration)}</p>
+    <p class="note">${esc(T.bandsUnchangedNote)} ${esc(T.bandsUnchangedSource)}</p>
+    <p class="note"><b>Non-owner-occupied is the schedule that applies${T.letBasis?', because the flat is let':''}.</b> ${T.letBasis?'Fortress reads that from the rent it has on file and from the option to purchase, which was granted subject to a tenancy. ':''}Owner-occupier rates are lower, and Fortress deliberately does <b>not</b> hold them: they were not verified to the same standard, and a table put in to look complete is worse than one that is missing.</p>
+    <p class="note"><b>${esc(R.note)}</b> ${esc(R.source)}</p>
   </div>`; })()}
 
   ${(()=>{ const B=breakEven(); if(!B) return '';
@@ -3691,14 +4656,15 @@ function viewProp(){
     return `<div class="card">
     <h2>What it must sell for to break even<span class="pill">SSD ${pct(B.now.pct,0)} today</span></h2>
     <div class="tiles">
-      <div class="tile"><div class="v">${money(B.price,0)}</div><div class="l">You paid</div><div class="d">option ${esc(dayLabel(Pu.optionGranted))} &middot; completed ${esc(dayLabel(Pu.completion))}</div></div>
+      <div class="tile"><div class="v">${money(B.price,0)}</div><div class="l">You paid</div><div class="d">option ${esc(dayLabel(Pu.optionGranted))}${Pu.exerciseDate?` &middot; exercised ${esc(dayLabel(Pu.exerciseDate))}`:''} &middot; completed ${esc(dayLabel(Pu.completion))}</div></div>
       <div class="tile"><div class="v">${money(B.bsd.total,0)}</div><div class="l">Buyer's Stamp Duty</div><div class="d">computed from the published tiers</div></div>
       <div class="tile"><div class="v ${B.now.pct>0?'neg':'pos'}">${pct(B.now.pct,0)}</div><div class="l">Seller's Stamp Duty today</div><div class="d">year ${fmt(B.now.year,0)} of ${fmt(B.now.reg.years,0)} &middot; ${B.steps[0].days>0?`drops ${esc(dayLabel(B.steps[0].until))}`:''}</div></div>
-      <div class="tile"><div class="v ${B.carryPerMonth>0?'pos':'neg'}">${B.carryPerMonth!=null?money(B.carryPerMonth,0):'n/a'}</div><div class="l">Net carry a month</div><div class="d">rent less MCST and loan interest</div></div>
+      <div class="tile"><div class="v ${B.carryPerMonth>0?'pos':'neg'}">${B.carryPerMonth!=null?money(B.carryPerMonth,0):'n/a'}</div><div class="l">Net carry a month</div><div class="d">rent less MCST${B.taxM!=null?', property tax':''} and loan interest</div></div>
     </div>
     ${B.chosenAbsd?`<div class="banner ${B.everAffordable?'b-good':'b-warn'}" style="margin-top:10px"><span class="ic">&#9888;</span><div>${B.everAffordable
       ? `<b>At today's price, a sale first recovers your capital on ${esc(dayLabel(B.firstAffordable.from||B.firstAffordable.until))}.</b>${fmt(B.firstAffordable.days,0)} days away.`
-      : `<b>No date on this ladder breaks even at today's price.</b>Even once Seller's Stamp Duty is gone \u2014 ${esc(dayLabel(B.floorRow.from||B.floorRow.until))}, ${fmt(B.floorRow.days,0)} days away \u2014 the sale must fetch <b>${money(B.capitalFloor,0)}</b> to return what you put in. That is <b>${money(B.gapToFloor,0)} above</b> the ${money(B.refValue,0)} the flat is currently marked at, or ${pct(B.gapToFloor/B.refValue*100,1)}. <b>The price has to move; waiting alone does not get there.</b> Waiting only removes the stamp duty on top of it.`}</div></div>`:''}
+      : (()=>{ const fr=B.floorRow, no=fr.bexNoRent, wi=fr.bexWithRent;
+          return `<b>No date on this ladder breaks even at today's price.</b>Even once Seller's Stamp Duty is gone \u2014 ${esc(dayLabel(fr.from||fr.until))}, ${fmt(fr.days,0)} days away \u2014 the sale must fetch <b>${money(no,0)}</b> to cover every cost with the rent left out, or <b>${money(wi,0)}</b> once ${money(fr.carryAll.rent,0)} of rent is credited back. Against the ${money(B.refValue,0)} the flat is marked at today, that is <b>${money(no-B.refValue,0)} short</b> on the first and <b>${wi>B.refValue?money(wi-B.refValue,0)+' short':money(B.refValue-wi,0)+' clear'}</b> on the second. <b>On the strict view the price has to move; waiting alone does not get there</b> \u2014 waiting only removes the stamp duty sitting on top.`; })()}</div></div>`:''}
 
     ${!chosen?`<div class="banner b-warn" style="margin-top:10px"><span class="ic">&#9888;</span><div><b>One number decides this card, and Fortress does not know it.</b>Additional Buyer's Stamp Duty depends on how many residential properties you already owned when you bought. On a ${money(B.price,0)} purchase the difference between your first property and your second is <b>${money(B.price*0.20,0)}</b> — larger than every other figure here combined. The Option names you as sole purchaser on a Singapore NRIC, so the citizen rates apply; the count does not follow from any document Fortress holds. <b>Pick it and the card resolves to one answer.</b><div style="margin-top:8px">${scen.map(a=>`<button class="btn ghost" style="width:auto;padding:4px 10px;font-size:12px;margin:2px 4px 2px 0" onclick="setAbsd('${a.key}')">${esc(a.label.replace('Singapore Citizen, ',''))} &middot; ${pct(a.pct,0)}</button>`).join('')}</div></div></div>`:``}
 
@@ -3706,7 +4672,48 @@ function viewProp(){
 
     ${(chosen?[rows]:scen).map(t=>`
     <div style="margin-top:14px"><span class="k" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">${esc(t.label)} &middot; ABSD ${money(t.amount,0)}</span></div>
-    ${t.rows.map(r=>`<div class="kv" style="align-items:flex-start"><span class="k">${r.free?`From ${esc(dayLabel(r.from))} &mdash; no SSD`:`Sell by ${esc(dayLabel(r.until))}`}<br><span style="font-size:11px;opacity:.72">SSD ${pct(r.pct,0)}${r.days>0?` &middot; ${fmt(r.days,0)} days away`:''}${r.cpfClaim?` &middot; CPF refund by then <b>${money(r.cpfClaim.claim,0)}</b>`:''}${B.inflPct!=null&&r.real!=null?` &middot; in ${pct(B.inflPct,1)} money: <b>${money(r.real,0)}</b>`:''}</span></span><span class="v" style="text-align:right"><b>${money(r.capital,0)}</b><br><span style="font-size:11px;font-weight:400" class="${r.vsPurchase>0?'neg':'pos'}">${r.vsPurchase>0?'+':''}${fmt(r.vsPurchase,1)}% on what you paid</span><br><span style="font-size:10.5px;font-weight:400;opacity:.6">${money(r.cash,0)} counting rent</span></span></div>`).join('')}`).join('')}
+    <div class="kv" style="border-bottom:1px solid var(--line)"><span class="k" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">Sell by</span><span class="v" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;text-align:right">1&nbsp;Excl. rent &middot; 2&nbsp;Incl. rent</span></div>
+    ${t.rows.map(r=>`<div class="kv" style="align-items:flex-start"><span class="k">${r.free?`From ${esc(dayLabel(r.from))} &mdash; no SSD`:`${esc(dayLabel(r.until))}`}<br><span style="font-size:11px;opacity:.72">SSD ${pct(r.pct,0)}${r.days>0?` &middot; ${fmt(r.days,0)} days`:''}${r.carryAll?` &middot; ${fmt(r.carryAll.months,0)} months held`:''}${r.cpfClaim?`<br>CPF refund by then ${money(r.cpfClaim.claim,0)}`:''}${B.inflPct!=null&&r.real!=null?` &middot; in ${pct(B.inflPct,1)} money ${money(r.real,0)}`:''}</span></span><span class="v" style="text-align:right"><b>${money(r.bexNoRent,0)}</b> <span style="font-size:11px;font-weight:400" class="${r.vsNoRent>0?'neg':'pos'}">${r.vsNoRent>0?'+':''}${fmt(r.vsNoRent,1)}%</span><br><b style="opacity:.82">${money(r.bexWithRent,0)}</b> <span style="font-size:11px;font-weight:400" class="${r.vsWithRent>0?'neg':'pos'}">${r.vsWithRent>0?'+':''}${fmt(r.vsWithRent,1)}%</span></span></div>`).join('')}`).join('')}
+
+    ${(()=>{ const L=(typeof loanPlan==='function')?loanPlan():null; if(!L||!L.lockInEnd) return '';
+      const rows=B.chosenAbsd?B.table.find(t=>t.key===B.chosenAbsd.key).rows:null; if(!rows) return '';
+      const hit=rows.filter(r=>r.redemption&&r.redemption.inside);
+      if(!hit.length) return '';
+      return `<div class="warnbox" style="margin-top:12px"><b>The first ${fmt(hit.length,0)} row${hit.length>1?'s are':' is'} inside your loan's lock-in, and ${hit.length>1?'they carry':'it carries'} a redemption fee.</b>
+      <p style="margin:6px 0">Plan ${esc(L.planKey)} locks you in for ${fmt(L.lockInYears,0)} years, to <b>${esc(dayLabel(L.lockInEnd))}</b>. Redeeming inside that costs ${pct(L.fullRedemptionPct,2)} of the amount redeemed &mdash; but the table grants a waiver when the redemption is a sale: <em>&ldquo;${esc(L.saleWaiverQuote)}&rdquo;</em>, so ${pct(hit[0].redemption.netPct,2)} is what actually applies.</p>
+      ${hit.map(r=>`<div class="kv"><span class="k">Sell ${esc(dayLabel(r.until||r.from))}<br><span style="font-size:11px;opacity:.72">${pct(r.redemption.netPct,2)} of ${money(r.redemption.balance,0)} outstanding</span></span><span class="v neg">${money(r.redFee,0)}<br><span style="font-size:11px;font-weight:400">lifts the break-even by ${money(r.redFee/r.denom,0)}</span></span></div>`).join('')}
+      <p style="margin:6px 0">${fmt(L.fullRedemptionNoticeMonths,0)} months' notice is required. Fortress does not model what happens if you give less &mdash; the table does not say.</p></div>`; })()}
+
+    ${(()=>{ if(!B.chosenAbsd) return '';
+      const rows=B.table.find(t=>t.key===B.chosenAbsd.key).rows, last=rows[rows.length-1], first=rows[0];
+      const CA=last.carryAll; if(!CA) return '';
+      return `<div class="warnbox" style="margin-top:14px"><b>The two scenarios, built up line by line</b>
+      <p style="margin:6px 0">Both run to <b>${esc(dayLabel(last.from||last.until))}</b>, ${fmt(CA.months,0)} months after completion, when Seller's Stamp Duty has expired. They differ in one line only.</p>
+      <table><thead><tr><th>Cost</th><th class="r">To ${esc(dayLabel(last.from||last.until))}</th></tr></thead><tbody>
+        <tr><td>Purchase price</td><td class="r">${money(B.price,2)}</td></tr>
+        <tr><td>Buyer's Stamp Duty</td><td class="r">${money(B.bsd.total,2)}</td></tr>
+        <tr><td>ABSD &mdash; ${esc(B.chosenAbsd.label.replace('Singapore Citizen, ',''))}</td><td class="r">${money(B.price*B.chosenAbsd.pct/100,2)}</td></tr>
+        <tr><td>Mortgage interest<br><span class="k" style="font-size:11px">${money(CA.interestObserved,2)} observed, ${money(CA.interestModelled,2)} modelled</span></td><td class="r">${money(CA.interest,2)}</td></tr>
+        <tr><td>MCST maintenance<br><span class="k" style="font-size:11px">${fmt(CA.months,0)} months at ${money(CA.mcst/CA.months,2)}</span></td><td class="r">${money(CA.mcst,2)}</td></tr>
+        ${CA.ins!=null?`<tr><td>Fire insurance<br><span class="k" style="font-size:11px">${fmt(CA.months,0)} months at ${money(CA.ins/CA.months,2)} &mdash; UOB quotes the premium as approximate</span></td><td class="r">${money(CA.ins,2)}</td></tr>`:''}
+        ${CA.tax!=null?`<tr><td>Property tax<br><span class="k" style="font-size:11px">${fmt(CA.months,0)} months at ${money(CA.tax/CA.months,2)}</span></td><td class="r">${money(CA.tax,2)}</td></tr>`:''}
+        ${CA.oneOffs>0?`<tr><td>One-off costs of letting<br><span class="k" style="font-size:11px">${CA.oneOffsHit.map(o=>esc(o.label)+', '+dayLabel(o.date)).join('; ')}</span></td><td class="r">${money(CA.oneOffs,2)}</td></tr>`:''}
+        ${last.valuation?`<tr><td>Property valuation fee<br><span class="k" style="font-size:11px">quoted on UOB's approval email</span></td><td class="r">${money(last.valuation,2)}</td></tr>`:''}
+        <tr><td>Your legal fees, buying and selling</td><td class="r">${B.legalBuy!=null||B.legalSell!=null?money((B.legalBuy||0)+(B.legalSell||0),2):'not available'}</td></tr>
+        ${last.redemption?`<tr><td>Loan redemption fee${last.redemption.inside?'':' &mdash; none, lock-in has expired'}<br><span class="k" style="font-size:11px">${last.redemption.inside?`${pct(last.redemption.grossPct,2)} of ${money(last.redemption.balance,0)}, halved by the sale waiver`:`lock-in ended ${esc(dayLabel(last.redemption.lockInEnd))}`}</span></td><td class="r">${money(last.redFee,2)}</td></tr>`:''}
+        <tr><td><b>Scenario 1 &mdash; all costs, no rent</b></td><td class="r"><b>${money(last.costsNoRent,2)}</b></td></tr>
+        <tr><td>Rent collected<br><span class="k" style="font-size:11px">${fmt(CA.months,0)} months at ${money(CA.rent/CA.months,2)}</span></td><td class="r">&minus;${money(CA.rent,2)}</td></tr>
+        <tr><td><b>Scenario 2 &mdash; all costs, less rent</b></td><td class="r"><b>${money(last.costsWithRent,2)}</b></td></tr>
+      </tbody></table>
+      <p style="margin:8px 0">Each is then grossed up for what the sale itself costs &mdash; Seller's Stamp Duty and ${pct(B.commissionPct,3)} commission come off the price, so the figure has to be <em>divided</em> by ${fmt(1-(B.commissionPct||0)/100,5)} at ${pct(0,0)} SSD, and by less than that while SSD still bites.</p>
+      <div class="kv"><span class="k"><b>Scenario 1</b> &mdash; sell on ${esc(dayLabel(last.from||last.until))}<br><span style="font-size:11px;opacity:.72">every cost, rent ignored</span></span><span class="v"><b>${money(last.bexNoRent,0)}</b><br><span style="font-size:11px;font-weight:400" class="${last.vsNoRent>0?'neg':'pos'}">${last.vsNoRent>0?'+':''}${fmt(last.vsNoRent,1)}% on what you paid</span></span></div>
+      <div class="kv"><span class="k"><b>Scenario 2</b> &mdash; sell on ${esc(dayLabel(last.from||last.until))}<br><span style="font-size:11px;opacity:.72">every cost, less the rent</span></span><span class="v"><b>${money(last.bexWithRent,0)}</b><br><span style="font-size:11px;font-weight:400" class="${last.vsWithRent>0?'neg':'pos'}">${last.vsWithRent>0?'+':''}${fmt(last.vsWithRent,1)}% on what you paid</span></span></div>
+      <p style="margin:8px 0"><b>Which one is the right question?</b> Scenario 1 asks whether the <em>property</em> paid for itself. Scenario 2 asks whether <em>you</em> came out whole, and it is the lower of the two by ${money(last.bexNoRent-last.bexWithRent,0)} because it credits ${money(CA.rent,0)} of rent against the cost of the asset. Scenario 2 flatters the property in one specific way: rent is the return on ${money(B.price,0)} of capital, so crediting it against cost assumes that money would have earned nothing anywhere else. Both are shown for every date; neither is adjusted for inflation unless you set a rate below.</p>
+      <p class="note" style="margin:6px 0"><b>Both scenarios are optimistic.</b> ${CA.missing.map(x=>esc(x)).join(', ')} are not in Fortress, and every one of them raises Scenario 1 and Scenario 2 alike. ${B.legalBuy==null||B.legalSell==null?'Legal fees are not on any document Fortress holds either. ':''}${(()=>{ const L=(typeof loanPlan==='function')?loanPlan():null;
+        const lastObs = esc(dayMonthLabel(manualMonths()[manualMonths().length-1]));
+        if(!L||!L.impliedSora) return `Interest beyond ${lastObs} is modelled at the current rate and instalment \u2014 both floating.`;
+        return `Interest beyond ${lastObs} is modelled on <b>Plan ${esc(L.planKey)}</b>: the contractual spread steps up on schedule (${L.steps.filter(x=>x.soraSpread!=null).map(x=>pct(x.soraSpread,2)).join(' &rarr; ')}) and the instalment is re-amortised at each step, as UOB itself does. <b>SORA is held at ${pct(L.impliedSora.sora,4)}</b>, the level implied by the rate on your last letter \u2014 that is the one assumption in this projection, and SORA floats.`; })()}</p>
+      </div>`; })()}
 
     <div class="warnbox" style="margin-top:12px"><b>Three break-evens, and the headline is the strict one</b>
       <p style="margin:6px 0">The bold figure in each row is the <b>capital break-even</b>: what a sale must fetch to return the ${money(B.price,0)} price plus ${money(B.bsd.total,0)} of Buyer's Stamp Duty${B.chosenAbsd&&B.chosenAbsd.pct?` and ${money(B.price*B.chosenAbsd.pct/100,0)} of ABSD`:''}${B.legalBuy?` and ${money(B.legalBuy,0)} of legal fees`:''}, after paying the Seller's Stamp Duty${B.commissionPct?' and commission':''} on the way out. ${B.capitalFloor!=null?`Once the stamp duty is gone that number cannot fall below <b>${money(B.capitalFloor,0)}</b> &mdash; you cannot get back more than everything by selling for less than everything.`:`Once the stamp duty is gone it settles at whatever went in &mdash; you cannot get back more than everything by selling for less than everything.`}</p>
@@ -3720,7 +4727,10 @@ function viewProp(){
     <button class="btn ghost" style="margin-top:8px;width:auto;padding:6px 14px" onclick="setInflation()">Apply</button>
     <div class="warnbox" style="margin-top:12px"><b>The fees, and which of them Fortress actually has</b>
       <p style="margin:6px 0"><b>Agent commission &mdash; ${pct(B.commissionPct,3)}, and it is documented.</b> ${esc(B.P.agentSource)}. That rate is in every figure above${B.commissionFromDoc?'':' (you have overridden it below)'}. A different agent or a negotiated rate would change it.</p>
-      <p style="margin:6px 0"><b>Legal fees &mdash; not available, either side.</b> ${esc(B.P.legalNote)} Fortress will not estimate them. What it can tell you is the sensitivity: <b>every ${money(1000,0)} of legal fees adds ${money(B.legalSensitivity(0),0)} to the break-even once stamp duty is gone, and ${money(B.legalSensitivity(16),0)} while it is still ${pct(16,0)}</b> &mdash; because the fee is recovered out of a sale that is itself taxed. Enter either figure below and every row moves.</p>
+      <p style="margin:6px 0"><b>Legal fees on a sale &mdash; ${money(B.legalSell,2)}, from your own paperwork.</b> ${esc(B.P.saleLegalSource)} It is in every figure above${B.legalSellFromDoc?'':' (you have overridden it below)'}. A sale of this flat could be quoted differently.</p>
+      <p style="margin:6px 0"><b>Legal fees on the purchase &mdash; ${money(B.legalBuy,2)}, also documented.</b> ${esc(B.P.buyerLegalSource)}. That is <b>nett and inclusive</b> of ${B.P.buyerLegalInclusive.join(', ')}, so the mortgage duty is already inside it and Fortress does <b>not</b> add it again &mdash; ${esc(STAMP_DUTY.mortgageDutySource)}, which on a loan your size is the ${money(STAMP_DUTY.mortgageDutyCap,0)} cap.</p>
+      <p class="note" style="margin:6px 0">For scale, since both legs are now real: every ${money(1000,0)} of legal fees moves the break-even by ${money(B.legalSensitivity(0),0)} once stamp duty is gone, and ${money(B.legalSensitivity(16),0)} while it is still ${pct(16,0)} &mdash; a fee is recovered out of a sale that is itself taxed.</p>
+      <p class="note" style="margin:6px 0"><b>One thing in that letter works in your favour, and is not modelled.</b> ${esc(B.P.apportionment)} On a sale of this flat that would hand back the unexpired part of the ${money(mcstPosition()?mcstPosition().perQuarter:0,2)} quarterly MCST and of the property tax &mdash; a few hundred dollars at most, and Fortress leaves the credit out either way${B.taxM!=null?' — it knows the annual tax but not the day of the year a sale would fall on for apportionment':', and it does not know your property tax at all'}. Both scenarios are that much too pessimistic on this one line, and considerably too optimistic on the costs it is still missing. Source: ${esc(B.P.apportionmentSource)}.</p>
     </div>
 
     ${(()=>{ const cl=B.claimNow; if(!cl||!B.chosenAbsd) return '';
@@ -3743,8 +4753,9 @@ function viewProp(){
 
     <p class="note" style="margin-top:12px"><b>How this is worked out.</b> Selling costs are charged on the sale price, so the sum rearranges to <b>P = (what went in &minus; what the property has thrown off) &divide; (1 &minus; SSD &minus; commission)</b>. That division is why the Seller's Stamp Duty dominates every other line: at ${pct(B.now.pct,0)} you must find ${pct(B.now.pct,0)} more than the shortfall, not ${pct(B.now.pct,0)} of it.</p>
     <p class="note"><b>Stamp duty is computed, not remembered.</b> BSD on ${money(B.price,0)}: ${B.bsd.lines.map(l=>`${money(l.amount,0)} at ${pct(l.pct,0)}`).join(' + ')} = <b>${money(B.bsd.total,2)}</b>. ${esc(SD.bsdSource)}. ${esc(B.now.reg.source)}. ${esc(SD.absdSource)}. Checked ${esc(SD.checkedOn)}.</p>
-    <p class="note"><b>The carry is held at today's rate, and it will not stay there.</b> ${B.carryPerMonth!=null?`Rent ${money(B.rentM,0)} less MCST ${money(B.mcstM,0)} less loan interest ${money(B.interestM,0)} is ${money(B.carryPerMonth,0)} a month, and each row above accrues it to that row's own date rather than to today.`:''} Mortgage interest falls as the loan amortises, which would <em>raise</em> the carry; the rate is floating and the tenancy is not permanent, which could lower it. Property tax, insurance and repairs are not in Fortress at all, so the true carry is lower and every break-even here is <b>too low</b>.</p>
-    <p class="note"><b>The SSD clock does not start at completion.</b> ${esc(Pu.exerciseNote)} Fortress uses ${esc(dayLabel(B.acquiredOn))}; if the Option was exercised later the whole ladder shifts with it, by up to ${fmt(Math.round((new Date(Pu.optionExpiry)-new Date(Pu.optionGranted))/86400000),0)} days.</p>
+    <p class="note"><b>The carry is held at today's rate, and it will not stay there.</b> ${B.carryPerMonth!=null?`Rent ${money(B.rentM,0)} less MCST ${money(B.mcstM,0)}${B.taxM!=null?` less property tax ${money(B.taxM,0)}`:''} less loan interest ${money(B.interestM,0)} is ${money(B.carryPerMonth,0)} a month, and each row above accrues it to that row's own date rather than to today.`:''} Mortgage interest falls as the loan amortises, which would <em>raise</em> the carry; the rate is floating and the tenancy is not permanent, which could lower it. ${B.taxM!=null?'Insurance and repairs are':'Property tax, insurance and repairs are'} not in Fortress at all, so the true carry is lower and every break-even here is <b>too low</b>.</p>
+    ${Pu.exerciseDateKnown?`<p class="note"><b>The SSD clock starts at exercise &mdash; and that moved every date on this ladder.</b> ${esc(Pu.exerciseNote)} Fortress ran this ladder from ${esc(dayLabel(Pu.optionGranted))} until the exercise letter arrived, which made every milestone <b>${fmt(Pu.daysGrantToExercise,0)} days too early</b> &mdash; including the date Seller's Stamp Duty disappears. It is now anchored to ${esc(dayLabel(B.acquiredOn))}. IRAS's own SSD declaration form defines the date of purchase as <em>&ldquo;Date of exercise of Option to Purchase&rdquo;</em>. Basis: ${esc(Pu.exerciseBasis)}. Source: ${esc(Pu.exerciseSource)}.</p>`
+    :`<p class="note"><b>The SSD clock does not start at completion.</b> ${esc(Pu.exerciseNote)} Fortress uses ${esc(dayLabel(B.acquiredOn))}; if the Option was exercised later the whole ladder shifts with it, by up to ${fmt(Math.round((new Date(Pu.optionExpiry)-new Date(Pu.optionGranted))/86400000),0)} days.</p>`}
     <p class="note"><b>What Fortress still does not know:</b> ${B.unknowns.map(u=>esc(u)).join('; ')}. Each one makes the real break-even higher, not lower.</p>
     <label class="fld">Agent commission on a sale (%) &mdash; ${B.commissionFromDoc?`using ${pct(B.commissionDefault,3)} from your Option`:'your override'}</label>
     <input type="number" id="bkComm" step="0.001" inputmode="decimal" value="${state.settings.saleCommissionPct ?? ''}" placeholder="${fmt(B.commissionDefault,3)} from the Option">
@@ -3754,6 +4765,28 @@ function viewProp(){
     <input type="number" id="bkLegalBuy" step="0.01" inputmode="decimal" value="${(state.settings.purchase||{}).buyerLegalFees ?? ''}" placeholder="optional">
     <button class="btn" style="margin-top:12px" onclick="saveSaleCosts()">Save</button>
     <p class="note"><b>This is arithmetic, not advice.</b> It says what a sale must fetch to leave you no worse off on the figures Fortress holds. Whether to sell turns on things it does not model.</p>
+  </div>`; })()}
+
+  ${(()=>{ const F=firePolicy(); if(!F) return '';
+    return `<div class="card">
+    <h2>Fire insurance<span class="pill">${esc(F.classOfPolicy)} &middot; ${esc(F.policyNo)}</span></h2>
+    <div class="kv"><span class="k">Insurer</span><span class="v">${esc(F.insurer)}<br><span style="font-size:11px;opacity:.72">${esc(F.product)}</span></span></div>
+    <div class="kv"><span class="k">Period of insurance</span><span class="v">${esc(dayLabel(F.from))} &ndash; ${esc(dayLabel(F.to))}<br><span style="font-size:11px;opacity:.72">${fmt(F.termDays,0)} days</span></span></div>
+    <div class="kv"><span class="k">Renews in</span><span class="v">${fmt(F.daysToRenewal,0)} days${F.autoRenewal?'<br><span style="font-size:11px;opacity:.72">automatically &mdash; no action from you</span>':''}</span></div>
+    <div class="kv"><span class="k">Premium</span><span class="v">${F.premium!=null?`${money(F.premium,2)}/yr${F.premiumApprox?'<br><span style="font-size:11px;opacity:.72">approximate &mdash; UOB\u2019s word, not the schedule\u2019s</span>':''}`:'<span style="opacity:.7">not on the pages supplied</span>'}</span></div>
+    ${F.premiumMonthly!=null?`<div class="kv"><span class="k">A month</span><span class="v neg">${money(F.premiumMonthly,2)}${F.premiumPctOfRent!=null?`<br><span style="font-size:11px;opacity:.72">${pct(F.premiumPctOfRent,2)} of gross rent</span>`:''}</span></div>`:''}
+    ${F.sumInsuredTotal!=null?`<div class="kv"><span class="k"><b>Total sum insured</b><br><span style="font-size:11px;opacity:.72">all items in this risk</span></span><span class="v"><b>${money(F.sumInsuredTotal,2)}</b></span></div>`:''}
+    ${(F.items||[]).map(i=>`<div class="kv"><span class="k">Item ${esc(i.no)} &middot; ${esc(i.label)}</span><span class="v">${money(i.sumInsured,2)}</span></div>`).join('')}
+    ${F.itemsUnshownSum!=null&&F.itemsUnshownSum>0?`<div class="kv"><span class="k">Items on the page not supplied<br><span style="font-size:11px;opacity:.72">the balance of the total &mdash; contents unknown</span></span><span class="v">${money(F.itemsUnshownSum,2)}</span></div>`:''}
+    ${F.publicLiability!=null?`<div class="kv"><span class="k">${esc(F.publicLiabilityLabel||'Legal liability to the public')}<br><span style="font-size:11px;opacity:.72">${esc(F.publicLiabilityBasis||'')}</span></span><span class="v">${money(F.publicLiability,0)}</span></div>`:''}
+    <p class="note"><b>This does not duplicate what the MCST already insures.</b> The building itself is covered by the management corporation's own fire policy &mdash; part of the ${F.mcstAnnual!=null?money(F.mcstAnnual,0)+' a year':'MCST contributions'} you already pay. What that policy leaves out is the point of this one: <em>&ldquo;${esc(F.mcstQuote)}&rdquo;</em> And <em>&ldquo;${esc(F.noOverlapQuote)}&rdquo;</em> So you are not paying twice; you are covering two different things. ${esc(F.giaSource)}.</p>
+    ${F.autoRenewal?`<p class="note"><b>You do not have to renew this.</b> The schedule says so in terms: <em>&ldquo;${esc(F.autoRenewalQuote)}&rdquo;</em> &mdash; two consequences worth holding on to. The renewal premium is charged whether or not you look at it. And the clause is <b>conditional on the mortgage</b> &mdash; it renews &ldquo;during the terms of the mortgage with the mortgagee&rdquo;, so redeeming the loan or selling the flat ends the mechanism that keeps this policy alive. On a sale that is the same day the loan is discharged.</p>`:''}
+${F.premium!=null?`<p class="note"><b>The premium is now in the numbers &mdash; and it came from the bank, not the policy.</b> Page ${esc(F.itemsPageMissing||'1 of 3')} of the schedule still has not been supplied, and that is where the schedule's own premium sits, alongside the further items making up the ${F.itemsUnshownSum!=null?money(F.itemsUnshownSum,2):'remaining'} balance of the sum insured. What Fortress uses instead is UOB's approval email, which quotes it as <em>&ldquo;approximately SGD 160 per annum&rdquo;</em>. <b>&ldquo;Approximately&rdquo; is the bank's word and Fortress keeps it</b>, rather than presenting a rounded quote as an invoiced figure. At ${money(F.premium,0)} a year it is the smallest running cost on this flat by a wide margin &mdash; ${F.mcstAnnual!=null?`the MCST is ${fmt(F.mcstAnnual/F.premium,0)} times it`:'far below the MCST'} &mdash; so even a sizeable error in it moves nothing that matters. It is now deducted from net rent and carried through both sale scenarios. Source: ${esc(F.premiumSource)}.</p>`:`<p class="note"><b>Fortress still does not know what this costs you.</b> The premium is not on the pages supplied.</p>`}
+    ${F.pctOfValue!=null?`<p class="note"><b>${money(F.sumInsuredTotal,0)} is ${pct(F.pctOfValue,1)} of the ${money(F.homeValue,0)} you paid &mdash; and that is not a shortfall.</b> This policy is not meant to insure the building; the MCST's policy does that. What Fortress cannot tell you is whether the figure is <em>right</em>, because only item ${esc(((F.items||[])[0]||{}).no||'')} is itemised on the page Fortress holds. The other ${money(F.itemsUnshownSum,2)} is on the page not supplied, and Fortress will not guess what it covers.</p>`:''}
+    ${F.blanketPolicyNote?`<p class="note">${esc(F.blanketPolicyNote)} The schedule lists the perils, warranties and endorsements only by reference, so <b>Fortress cannot tell you what is actually covered or excluded</b> &mdash; only what the sums are.</p>`:''}
+    ${F.sdic?`<p class="note">Protected under the Policy Owners' Protection Scheme (SDIC). The schedule states coverage is automatic and no action is required from you.</p>`:''}
+    ${F.startedBeforeCompletion?`<p class="note"><b>Cover began ${fmt(F.daysBeforeCompletion,0)} days before completion</b> &mdash; ${esc(dayLabel(F.from))} against a completion of ${esc(dayLabel((state.settings.purchase||PURCHASE_SEED).completion))}. That is normal where a cover note is issued ahead of handover${F.replacingCoverNote?` (this schedule replaces cover note ${esc(F.replacingCoverNote)})`:''}, and Fortress states it rather than explaining it.</p>`:''}
+    <p class="note">${esc(F.addressNote)} Source: ${esc(F.source)}.</p>
   </div>`; })()}
 
   ${(()=>{ const h=cpfHomeClaim(); if(!h) return '';
@@ -3802,6 +4835,7 @@ function viewProp(){
     ${inc.map(i=>`<div class="kv"><span class="k">${esc(i.label)}${i.payer?' · '+esc(i.payer):''}</span><span class="v">${money(i.amount,2)}/mo</span></div>`).join('')}
     ${(()=>{ const N=rentNet(); if(!N) return '';
       return `${N.mcstM>0?`<div class="kv"><span class="k">Less MCST maintenance<br><span style="font-size:11px;opacity:.72">fixed, quarterly, invoiced</span></span><span class="v neg">&minus;${money(N.mcstM,2)}/mo</span></div>`:''}
+      ${N.taxM!=null?`<div class="kv"><span class="k">Less property tax<br><span style="font-size:11px;opacity:.72">computed from your Annual Value, non-owner-occupied bands</span></span><span class="v neg">&minus;${money(N.taxM,2)}/mo</span></div>`:''}
       ${N.other!=null?`<div class="kv"><span class="k">Less other running costs<br><span style="font-size:11px;opacity:.72">as you entered them</span></span><span class="v neg">&minus;${money(N.other,2)}/mo</span></div>`:''}
       <div class="kv"><span class="k"><b>Net rent</b>${N.incomplete?`<br><span style="font-size:11px;opacity:.72">before the costs Fortress still lacks</span>`:''}</span><span class="v"><b>${money(N.netAfterAll!=null?N.netAfterAll:N.net,2)}/mo</b></span></div>
       ${N.instal!=null?`<div class="kv"><span class="k">Mortgage instalment</span><span class="v">${money(N.instal,2)}/mo</span></div>
@@ -3881,8 +4915,12 @@ function propForms(){
     <input type="number" id="pPrice" step="0.01" inputmode="decimal" value="${state.settings.homePurchasePrice ?? ''}" placeholder="what you paid">
     <label class="fld">Year bought</label>
     <input type="number" id="pYear" step="1" inputmode="numeric" value="${state.settings.homeBoughtYear ?? ''}" placeholder="e.g. 2019">
-    <label class="fld">Running costs per year (S$) — tax, maintenance, agent, insurance</label>
+    <label class="fld">Annual Value (S$) — from your IRAS property tax bill</label>
+    <input type="number" id="pAV" step="1" inputmode="decimal" value="${state.settings.annualValue ?? ''}" placeholder="not your rent — see the Property tab">
+    <p class="note" style="margin:4px 0 0">Enter this and Fortress computes your property tax exactly, from the published bands, and puts it into the net yield and both sale scenarios. <b>It is not the rent you collect</b> — IRAS sets it from market rentals of comparable homes and excludes furniture, furnishings and maintenance fees.</p>
+    <label class="fld">Other running costs per year (S$) — agent, insurance, repairs${state.settings.annualValue!=null?'':', tax'}</label>
     <input type="number" id="pCosts" step="0.01" inputmode="decimal" value="${state.settings.homeAnnualCosts ?? ''}" placeholder="optional but it makes the yield honest">
+    ${state.settings.annualValue!=null?`<p class="note" style="margin:4px 0 0"><b>Do not include property tax here.</b> Fortress now computes it from the Annual Value above; putting it in both would count it twice.</p>`:''}
     <button class="btn" style="margin-top:12px" onclick="savePropCost()">Save</button>
   </div>
   <div class="card"><h2>Rent &amp; recurring income</h2>
@@ -5549,16 +6587,23 @@ function addComparable(){
   if(!equivalent) alert('Stored as a comparable. It is '+sq+' sqft against your '+H.sqft+' sqft, so it does not replace the reference.');
   else if(!newer) alert('Stored as a comparable. It is not newer than the current reference, so it does not replace it.');
 }
+function flipDutyPayer(){
+  state.settings.tenancyDutyPaidBy = (state.settings.tenancyDutyPaidBy==='tenant') ? 'you' : 'tenant';
+  saveAll(); render();
+}
+
 function savePropCost(){
   const n=id=>{ const e=document.getElementById(id); if(!e) return undefined;
                 return e.value===''? null : +e.value; };
-  const price=n('pPrice'), yr=n('pYear'), costs=n('pCosts');
+  const price=n('pPrice'), yr=n('pYear'), costs=n('pCosts'), av=n('pAV');
   if(price!==null && price!==undefined && !(price>0)){ alert('Purchase price must be a positive number, or blank.'); return; }
   if(yr!==null && yr!==undefined && !(yr>=1960 && yr<=new Date().getFullYear())){ alert('Year bought looks wrong.'); return; }
   if(costs!==null && costs!==undefined && costs<0){ alert('Running costs cannot be negative.'); return; }
+  if(av!==null && av!==undefined && !(av>0)){ alert('Annual Value must be a positive number, or blank.'); return; }
   if(price!==undefined) state.settings.homePurchasePrice = price;
   if(yr!==undefined)    state.settings.homeBoughtYear    = yr;
   if(costs!==undefined) state.settings.homeAnnualCosts   = costs;
+  if(av!==undefined)    state.settings.annualValue       = av;
   saveAll(); render();
 }
 function saveManual(){
