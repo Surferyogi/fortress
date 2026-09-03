@@ -582,14 +582,35 @@ never left — 2.5% a year, **$1,046.88 a month** on this principal, growing whe
 or not. The plain-English line and the break-even card now spell that addition out, because
 the two figures sitting side by side with no bridge is exactly what prompted the question.
 
-**A modelled number was overriding a documented one.** The first version of `cpfClaimOn()`
-re-derived the accrual from the withdrawal date (24 Apr 2026) and produced **$4,470** where
-his CPF statement says **$3,140.64**. CPF's figure is exactly *three* months of accrual at
-2.5% on the principal — the clock does not start on the withdrawal day the way a naive model
-assumes. The statement is the authority: the claim is now **anchored to it** and grown
-forward from its own as-of date at the OA rate, compounded annually, which is CPF's stated
-basis. `cpfClaimOn(statementDate)` returns CPF's own figure **to the cent**, and a test
-asserts that invariant rather than any particular projection.
+**`cpfClaimOn()` was wrong twice, and CK caught both.**
+
+1. It re-derived the accrual from the withdrawal date (24 Apr 2026) and produced **$4,470**
+   where his CPF statement says **$3,140.64**. CPF's figure is exactly *three* months of
+   accrual — the clock does not start on the withdrawal day the way a naive model assumes.
+2. Anchoring it to the statement fixed that, but it then grew the whole claim at
+   `(1+r)^fractional-years`. CPF accrues **monthly on the opening balance for the year** and
+   **compounds once a year**, so the base steps up only at each year end. The approximation
+   understated the 10 Feb 2030 refund by about **$442**.
+
+It now simulates month by month from the statement's own figure, so
+`cpfClaimOn(statementDate)` returns CPF's number **by construction**. The schedule was
+reproduced by an independent model before any of it was asserted:
+
+| Refund on | Principal | Accrued | Total |
+| --- | --- | --- | --- |
+| 23 Aug 2026 *(statement)* | $502,500 | $3,140.64 | $505,640.64 |
+| 10 Feb 2027 | $502,500 | $9,439.34 | $511,939.34 |
+| 10 Feb 2028 | $502,500 | $22,237.82 | $524,737.82 |
+| 10 Feb 2029 | $502,500 | $35,356.27 | $537,856.27 |
+| **10 Feb 2030** | $502,500 | **$48,802.67** | **$551,302.67** |
+
+**The presentation was the other half of the problem.** The card led with the statement's
+$3,140.64, which reads as though that is what would be refunded on a sale — it is three
+months of interest, not four years of it. Every SSD rung now carries the refund **at its own
+date**, the block opens with *"Do not read the statement figure as the sale figure"*, and the
+table above appears on the card. Tests assert the exact schedule, that the accrual
+**accelerates** (each year's increment exceeding the last, as annual compounding requires),
+and that the result is *not* the fractional-year approximation.
 
 **None of it is in the break-even, and that is a decision, not an omission.** The refund
 leaves the sale proceeds but lands in his own CPF — it moves between his pockets rather than
@@ -687,7 +708,7 @@ data point and it is his own purchase, not because the market has been flat. A h
 gap now says this, and the value card carries a banner above the hero figure. Every
 break-even percentage on the tab is measured against that same number.
 
-`betest.js` — 129 assertions, at `Asia/Singapore`. Two of them exist because I got the
+`betest.js` — 140 assertions, at `Asia/Singapore`. Two of them exist because I got the
 arithmetic wrong first: the option window is 57 days, not the 58 I asserted from memory, and
 it is now derived rather than restated.
 

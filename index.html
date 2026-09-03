@@ -141,7 +141,7 @@ details.gap[open]>summary::after{content:'  \2212'}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:SEP:03-09:20';
+const VERSION = 'v2026:SEP:03-12:45';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -1511,37 +1511,58 @@ function mortgageBalanceOn(iso){
 
 /* What the CPF refund will be on a given date.
 
-   THIS WAS WRONG in v2026:SEP:03-01:40. It re-derived the accrued interest from the
-   withdrawal date and produced S$4,470 where CK's own CPF statement says S$3,140.64 -
-   a modelled number quietly overriding a documented one. CPF's figure is exactly three
-   months of accrual at the OA rate on the principal, so the accrual clock does not start
-   on the withdrawal day the way a naive model assumes.
+   Two earlier versions of this were wrong, both caught by CK.
 
-   The statement is the authority. The claim is anchored to it and grown FORWARD from its
-   own as-of date at the OA rate, compounded annually, which is CPF's stated basis:
-   "It uses CPF's prevailing interest rates, compounded annually throughout this period."
-   cpfClaimOn(statementDate) therefore returns the statement figure to the cent. */
+   (1) It re-derived the accrual from the withdrawal date and produced S$4,470 where his
+       CPF statement says S$3,140.64. The statement is the authority.
+   (2) It then anchored to the statement but grew the whole claim at (1+r)^years, a
+       fractional-year approximation that understated the 2030 refund by about S$442.
+
+   CPF's actual mechanic: interest accrues MONTHLY on the opening balance for that year,
+   and is COMPOUNDED once a year - "It uses CPF's prevailing interest rates, compounded
+   annually throughout this period." So the base only steps up at each year end, and a
+   month is credited only when complete. This models that month by month, starting from
+   the statement's own accrued figure, so cpfClaimOn(statementDate) is the statement
+   figure by construction rather than by luck. */
 function cpfClaimOn(iso){
   const h = latestCpfHome(); if(!h) return null;
-  const prin = h.principalWithdrawn||0, accrAt = h.accruedInterest||0;
-  if(!(prin>0)) return null;
-  const asOf = h.asOf, r = CPF_RULES.oaPct/100;
-  const claimAt = prin + accrAt;
-  const years = asOf ? Math.max(0,
-    (new Date(iso+'T00:00:00') - new Date(asOf+'T00:00:00'))/86400000/365.25) : 0;
-  const claim = claimAt * Math.pow(1+r, years);
-  /* the withdrawal row is kept for context - it explains WHEN the clock started - but it
-     is never used to recompute a figure CPF has already published */
-  const hse = cpfTxns().filter(t=>t.code==='HSE' && (t.oa||0) < 0)
-                       .sort((a,b)=>a.date.localeCompare(b.date))[0];
-  const monthly = prin*r/12;
-  return { principal:prin, accrued: claim - prin, claim,
-           accruedAtStatement: accrAt, claimAtStatement: claimAt, asOf,
-           withdrawnOn: hse ? hse.date : null,
-           monthsAccruedAtStatement: monthly>0 ? accrAt/monthly : null,
-           years, perMonthNow: monthly, ratePct: CPF_RULES.oaPct,
-           anchoredToStatement: true, source: h.source||null,
-           basis:'CPF Board: "It uses CPF’s prevailing interest rates, compounded annually throughout this period." The calculation runs from the date you first used your CPF savings until you make the refund.' };
+  const P = h.principalWithdrawn||0, accrAt = h.accruedInterest||0;
+  if(!(P>0)) return null;
+  const asOf = h.asOf, r = CPF_RULES.oaPct/100, monthly = P*r/12;
+
+  /* how many whole months CPF had credited by the statement date. Valid while the
+     statement still falls in the first accrual year, where no compounding has happened -
+     which is exactly CK's case (3 months). Beyond that the division is not safe and the
+     projection says so rather than pretending. */
+  const monthsAt = monthly>0 ? accrAt/monthly : null;
+  const firstYearOnly = monthsAt!=null && monthsAt <= 12.01;
+
+  const [sy, sm] = asOf.split('-').map(Number);
+  const [ty, tm, td] = iso.split('-').map(Number);
+
+  /* resume from the statement month: at 23 Aug with 3 months credited (May-Jul), August
+     has not been credited yet, so August is the first month to simulate. */
+  let accrued = accrAt, base = P, y = sy, m = sm;
+  const before = (ay,am) => (ay<ty) || (ay===ty && am<tm);
+  let guard = 0;
+  while(before(y,m) && guard++ < 1200){
+    accrued += base*r/12;                      // month credited when complete
+    if(m===12){ base = P + accrued; y++; m=1; } // annual compounding at year end
+    else m++;
+  }
+  /* the target month itself counts only if it has actually finished */
+  const daysInTarget = new Date(Date.UTC(ty, tm, 0)).getUTCDate();
+  if(y===ty && m===tm && td >= daysInTarget){ accrued += base*r/12; }
+
+  return { principal:P, accrued, claim:P+accrued,
+           accruedAtStatement:accrAt, claimAtStatement:P+accrAt, asOf,
+           monthsAccruedAtStatement:monthsAt, firstYearOnly,
+           withdrawnOn:(cpfTxns().filter(t=>t.code==='HSE' && (t.oa||0)<0)
+                        .sort((a,b)=>a.date.localeCompare(b.date))[0]||{}).date||null,
+           perMonthNow:monthly, ratePct:CPF_RULES.oaPct,
+           growthSinceStatement:(P+accrued)-(P+accrAt),
+           anchoredToStatement:true, monthlyCompoundedYearly:true, source:h.source||null,
+           basis:'CPF Board: "It uses CPF’s prevailing interest rates, compounded annually throughout this period." Interest accrues monthly on the opening balance for the year and is compounded once a year, so the base steps up only at each year end.' };
 }
 function cpfClaimIn(years){
   const h = latestCpfHome(); if(!h) return null;
@@ -3685,7 +3706,7 @@ function viewProp(){
 
     ${(chosen?[rows]:scen).map(t=>`
     <div style="margin-top:14px"><span class="k" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">${esc(t.label)} &middot; ABSD ${money(t.amount,0)}</span></div>
-    ${t.rows.map(r=>`<div class="kv" style="align-items:flex-start"><span class="k">${r.free?`From ${esc(dayLabel(r.from))} &mdash; no SSD`:`Sell by ${esc(dayLabel(r.until))}`}<br><span style="font-size:11px;opacity:.72">SSD ${pct(r.pct,0)}${r.days>0?` &middot; ${fmt(r.days,0)} days away`:''}${B.inflPct!=null&&r.real!=null?` &middot; in ${pct(B.inflPct,1)} money: <b>${money(r.real,0)}</b>`:''}</span></span><span class="v" style="text-align:right"><b>${money(r.capital,0)}</b><br><span style="font-size:11px;font-weight:400" class="${r.vsPurchase>0?'neg':'pos'}">${r.vsPurchase>0?'+':''}${fmt(r.vsPurchase,1)}% on what you paid</span><br><span style="font-size:10.5px;font-weight:400;opacity:.6">${money(r.cash,0)} counting rent</span></span></div>`).join('')}`).join('')}
+    ${t.rows.map(r=>`<div class="kv" style="align-items:flex-start"><span class="k">${r.free?`From ${esc(dayLabel(r.from))} &mdash; no SSD`:`Sell by ${esc(dayLabel(r.until))}`}<br><span style="font-size:11px;opacity:.72">SSD ${pct(r.pct,0)}${r.days>0?` &middot; ${fmt(r.days,0)} days away`:''}${r.cpfClaim?` &middot; CPF refund by then <b>${money(r.cpfClaim.claim,0)}</b>`:''}${B.inflPct!=null&&r.real!=null?` &middot; in ${pct(B.inflPct,1)} money: <b>${money(r.real,0)}</b>`:''}</span></span><span class="v" style="text-align:right"><b>${money(r.capital,0)}</b><br><span style="font-size:11px;font-weight:400" class="${r.vsPurchase>0?'neg':'pos'}">${r.vsPurchase>0?'+':''}${fmt(r.vsPurchase,1)}% on what you paid</span><br><span style="font-size:10.5px;font-weight:400;opacity:.6">${money(r.cash,0)} counting rent</span></span></div>`).join('')}`).join('')}
 
     <div class="warnbox" style="margin-top:12px"><b>Three break-evens, and the headline is the strict one</b>
       <p style="margin:6px 0">The bold figure in each row is the <b>capital break-even</b>: what a sale must fetch to return the ${money(B.price,0)} price plus ${money(B.bsd.total,0)} of Buyer's Stamp Duty${B.chosenAbsd&&B.chosenAbsd.pct?` and ${money(B.price*B.chosenAbsd.pct/100,0)} of ABSD`:''}${B.legalBuy?` and ${money(B.legalBuy,0)} of legal fees`:''}, after paying the Seller's Stamp Duty${B.commissionPct?' and commission':''} on the way out. ${B.capitalFloor!=null?`Once the stamp duty is gone that number cannot fall below <b>${money(B.capitalFloor,0)}</b> &mdash; you cannot get back more than everything by selling for less than everything.`:`Once the stamp duty is gone it settles at whatever went in &mdash; you cannot get back more than everything by selling for less than everything.`}</p>
@@ -3706,8 +3727,13 @@ function viewProp(){
       const row=B.table.find(t=>t.key===B.chosenAbsd.key).rows[B.table.find(t=>t.key===B.chosenAbsd.key).rows.length-1];
       const a=row.atCapital;
       return `<div class="warnbox" style="margin-top:12px"><b>The CPF refund, and its interest</b>
-      <p style="margin:6px 0"><b>Two figures, and the gap between them is interest.</b> You took <b>${money(cl.principal,2)}</b> of CPF out${cl.withdrawnOn?` on ${esc(dayLabel(cl.withdrawnOn))}`:''}. Your CPF statement of ${esc(dayLabel(cl.asOf))} shows <b>${money(cl.accruedAtStatement,2)}</b> of accrued interest on it, so the refund then stood at <b>${money(cl.principal,2)} + ${money(cl.accruedAtStatement,2)} = ${money(cl.claimAtStatement,2)}</b>. CPF charges itself interest on money you take out as though it had never left, at ${pct(cl.ratePct,1)} a year &mdash; about <b>${money(cl.perMonthNow,2)} a month</b> on this principal, which is why CPF's figure is exactly ${fmt(cl.monthsAccruedAtStatement,0)} months' worth. It grows whether you sell or not: <b>${money(cl.claim,2)}</b> today, and <b>${money(row.cpfClaim.claim,0)}</b> by ${esc(dayLabel(row.from||row.until))}, of which <b>${money(row.cpfClaim.accrued,0)}</b> would be interest.</p>
-      <p class="note" style="margin:6px 0">Projected forward from your statement, not re-derived from the withdrawal date &mdash; ${esc(cl.basis)} An earlier build recomputed it from scratch and produced ${money(4470,0)} where CPF says ${money(cl.accruedAtStatement,2)}; the statement wins, and ${'cpfClaimOn'}(${esc(dayLabel(cl.asOf))}) now returns CPF's own figure to the cent.</p>
+      <p style="margin:6px 0"><b>Do not read the statement figure as the sale figure.</b> Your CPF statement of ${esc(dayLabel(cl.asOf))} shows only <b>${money(cl.accruedAtStatement,2)}</b> of accrued interest, because the money had been out for just ${fmt(cl.monthsAccruedAtStatement,0)} months. <b>By ${esc(dayLabel(row.from||row.until))} the accrued interest is ${money(row.cpfClaim.accrued,2)}</b> &mdash; ${fmt(row.cpfClaim.accrued/cl.accruedAtStatement,0)} times the statement figure &mdash; and the refund becomes <b>${money(row.cpfClaim.claim,2)}</b>. Every rung above shows the refund at its own date for exactly this reason.</p>
+      <table style="margin:8px 0"><thead><tr><th>Refund on</th><th class="r">Principal</th><th class="r">Accrued</th><th class="r">Total</th></tr></thead><tbody>
+        <tr><td>${esc(dayLabel(cl.asOf))}<br><span class="k" style="font-size:11px">your statement</span></td><td class="r">${money(cl.principal,0)}</td><td class="r">${money(cl.accruedAtStatement,2)}</td><td class="r"><b>${money(cl.claimAtStatement,2)}</b></td></tr>
+        ${B.table.find(t=>t.key===B.chosenAbsd.key).rows.filter(x=>!x.free).map(x=>`<tr><td>${esc(dayLabel(x.until))}</td><td class="r">${money(cl.principal,0)}</td><td class="r">${money(x.cpfClaim.accrued,2)}</td><td class="r"><b>${money(x.cpfClaim.claim,2)}</b></td></tr>`).join('')}
+      </tbody></table>
+      <p style="margin:6px 0">You took <b>${money(cl.principal,2)}</b> of CPF out${cl.withdrawnOn?` on ${esc(dayLabel(cl.withdrawnOn))}`:''}, and CPF charges itself interest on it as though it had never left &mdash; ${pct(cl.ratePct,1)} a year, <b>${money(cl.perMonthNow,2)} a month</b> at first, rising as it compounds. Interest accrues monthly on the opening balance for each year and is <b>compounded once a year</b>, which is why the accrued figure accelerates rather than growing in a straight line.</p>
+      <p class="note" style="margin:6px 0">${esc(cl.basis)} Anchored to your statement and simulated month by month from there, so asking for the refund on ${esc(dayLabel(cl.asOf))} returns CPF's own figure to the cent. Two earlier builds got this wrong: one re-derived it from the withdrawal date and produced ${money(4470,0)}, and one grew the whole claim at a fractional-year rate, which understated ${esc(dayLabel(row.from||row.until))} by about ${money(442,0)}.</p>
       <p style="margin:6px 0"><b>None of that is in the break-even, deliberately.</b> The refund leaves the sale proceeds but lands in <em>your own CPF account</em> &mdash; it moves between your pockets rather than out of them, so it changes what you <em>receive</em>, not what you are <em>worth</em>. Adding it to the break-even would count the same money twice, since the ${money(cl.principal,0)} already sits inside the ${money(B.price,0)} you paid.</p>
       <p style="margin:6px 0"><b>What it does change is the cheque.</b> ${a.computable
         ? `Selling at the ${esc(dayLabel(row.from||row.until))} break-even of ${money(row.capital,0)} would pay out roughly: ${money(a.gross,0)} less ${money(a.ssd,0)} stamp duty, less ${money(a.com,0)} commission, less <b>${money(a.mortgage,0)}</b> still owing on the loan${a.mortgageProjected&&a.mortgageProjected.projected?` (amortised from today's ${money(latestManual().mortgageBalance,0)} at the current rate and instalment &mdash; both floating)`:''}, less <b>${money(a.cpf,0)}</b> to CPF &mdash; leaving about <b>${money(a.cash,0)}</b> in cash${a.legal?'':' before legal fees'}. The CPF portion is still yours; it is simply not spendable until you meet the withdrawal conditions.`
