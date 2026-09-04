@@ -804,6 +804,79 @@ migration was legitimately needed for the purchase seed. They now assert the *re
 that the stored version tracks the app's own `SEED_VERSION` — so a real migration passes and
 a missing one still fails.
 
+## "The Property tab is unable to load" — two bugs, one of them months old
+
+CK reported the Property tab would not load. Every suite passed. Both causes were things
+the suites could not see, because every test ran against a **fresh** browser and a **fresh**
+seed.
+
+### 1. One unguarded null killed the whole tab
+
+`viewProp` read `fr.carryAll.rent` with no guard. `carryAll` is null whenever
+`propertyCarryTo` cannot model the loan forward — no mortgage balance, no rate, no
+instalment. The throw happened **inside a template literal**, so `render()` aborted
+*before* assigning `innerHTML`, and the screen simply kept showing the previous tab. No
+error dialog, no blank page, nothing to go on. From the outside: the tab never loads.
+
+A fuzz harness now renders **every tab against 31 degraded states in both display modes —
+558 renders** — and fails on any throw or blank tab. It found three more of the same class
+that were also live:
+
+| Site | Trigger |
+|---|---|
+| `fr.carryAll.rent` | no mortgage balance on file |
+| `V.evid.loPsf` | no comparable carries a price per sqft |
+| `B.P.completion.slice(0,4)` | purchase record without a completion date |
+| `snap.portfolios` (via `gapsFor`) | no DBS snapshots imported |
+
+Each now yields a **refusal in words** rather than an exception — the same lesson as the
+`mortgageBalanceOn` regression, where a defensive guard with a `|| 0` fallback silently
+substituted a zero mortgage. A missing input must say it is missing.
+
+### The systemic fix: a tab is no longer all-or-nothing
+
+`render()` builds its three parts separately and catches a throw in each **in place**:
+
+```
+part('The plain-English summary', …) + part('The prop tab', …) + part('The gaps list', …)
+```
+
+A failure now renders a red card naming the section and the error message, the rest of the
+tab still works, and the error is still logged — never swallowed into a blank space. A test
+injects a deliberate throw and asserts the tab survives and reports it.
+
+### 2. The stale record — silent, and months old
+
+This one is worse, and it explains why CK's phone could be showing different figures from
+every screenshot in this file.
+
+```js
+if(!state.settings.purchase){ state.settings.purchase = { ...PURCHASE_SEED }; }
+```
+
+That copies the seed **only when the key is absent**. Every device that installed an earlier
+build froze a copy of whatever `PURCHASE_SEED` said that day — and because `SEED_VERSION`
+had not moved, `runSeedMigrations()` returned early and never ran again. **Every property
+fact added since then reached the source and not the device**: the exercise date, the
+corrected 5 May completion, the documented legal fees, the agent percentages. The app on the
+phone was quietly running a stale record while every test here passed against the fresh seed.
+
+`SEED_VERSION` is now **15**, and the v15 migration re-seeds the record whenever it is stale —
+detected by a missing key, a changed completion date, or a changed exercise date. It carries
+over the one field the UI can write, `buyerLegalFees`, and only when he actually wrote it
+(`buyerLegalUserSet`). Everything else is documented fact and belongs to the seed, not to a
+copy taken on an arbitrary day.
+
+Tested both ways: a stale device comes up to 5 May 2026, gains the exercise date, and
+re-anchors its SSD ladder to 10 Mar 2026 — while a device carrying a hand-entered S$3,100
+legal fee keeps it.
+
+### The lesson worth keeping
+
+**Testing a fresh install tests the one state no real user is in.** `rendertest.js` now
+covers degraded and stale states as first-class cases, including a device upgrading from an
+older seed version.
+
 ## The exercise date — and the 28 days it moved
 
 APEX Law LLC's letter of **10 March 2026** (ref `PTE.Pur.26.JO.280747`) encloses the

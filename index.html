@@ -141,7 +141,7 @@ details.gap[open]>summary::after{content:'  \2212'}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:SEP:03-20:42';
+const VERSION = 'v2026:SEP:04-07:42';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -909,7 +909,7 @@ if(!state.al){ state.al = AL_SEED; store.set('fortress.al', state.al); }
    readings needs those to reach devices that already installed an older build,
    WITHOUT touching anything the user entered. Each migration is additive and
    idempotent: it fills gaps and repairs missing fields, and never deletes.  */
-const SEED_VERSION = 14;
+const SEED_VERSION = 15;
 function runSeedMigrations(){
   const from = store.get('fortress.seedVersion', 0);
   if(from >= SEED_VERSION) return 0;
@@ -966,6 +966,33 @@ function runSeedMigrations(){
   if(state.settings.homePurchasePrice == null){ state.settings.homePurchasePrice = PURCHASE_SEED.price; changed++; }
   if(state.settings.homeBoughtYear == null){ state.settings.homeBoughtYear = +PURCHASE_SEED.completion.slice(0,4); changed++; }
   if(!state.settings.purchase){ state.settings.purchase = { ...PURCHASE_SEED }; changed++; }
+
+  /* v15 - RE-SEED the purchase record.
+     This was a silent, months-long bug and it is worth naming. The line above copies
+     PURCHASE_SEED into settings only when the key is ABSENT. Every device that installed
+     an earlier build therefore froze a copy of whatever the seed said that day - and
+     because SEED_VERSION had not moved, the migration ran once and never again. Every
+     property fact added since then reached the source and NOT the device: the exercise
+     date, the corrected 5 May completion, the documented legal fees, the agent
+     percentages. The app on the phone was quietly running a stale record while every test
+     here passed against the fresh seed.
+
+     The fix re-seeds from PURCHASE_SEED and carries over the one field the UI can write,
+     and only when he actually wrote it. Everything else is documented fact and belongs to
+     the seed, not to a copy taken on an arbitrary day. */
+  { const cur = state.settings.purchase || {};
+    const stale = Object.keys(PURCHASE_SEED).some(k=>!(k in cur))
+               || cur.completion !== PURCHASE_SEED.completion
+               || cur.exerciseDate !== PURCHASE_SEED.exerciseDate;
+    if(stale){
+      const keep = (cur.buyerLegalUserSet && cur.buyerLegalFees != null)
+        ? { buyerLegalFees: cur.buyerLegalFees, buyerLegalUserSet: true } : {};
+      state.settings.purchase = { ...PURCHASE_SEED, ...keep };
+      /* homeBoughtYear was derived from the OLD completion date, so it moves with it */
+      if(state.settings.homeBoughtYear == null || !state.settings.homeBoughtYearUserSet)
+        state.settings.homeBoughtYear = +PURCHASE_SEED.completion.slice(0,4);
+      changed++;
+    } }
   /* CONFIRMED by CK on 2 Sep 2026: this is his only residential property, so ABSD is the
      Singapore Citizen first-property rate of 0%. Recorded as HIS statement, not as a
      document Fortress read, and changeable on the Property tab. */
@@ -4433,7 +4460,7 @@ function viewProp(){
         <td>${fmt(c.sqft,0)} sqft${c.sameSize?' &middot; <span style="font-size:10px">same as yours</span>':''}</td>
         <td>${money(c.price,0)}</td><td>${money(c.psf,0)}</td></tr>`; }).join('')}
     </table>
-    <p class="note">${V.sameSize.length>1?`<b>${fmt(V.sameSize.length,0)} of the ${fmt(V.comps.length,0)} match your floor area.</b> ${V.sameSize.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(c=>`${esc(dayMonthLabel(c.date))} at ${money(c.psf,0)} psf`).join(' and ')} &mdash; only ${money(Math.abs(V.sameSize[0].psf-V.sameSize[1].psf),0)} psf apart across nearly three years. `:''}The ${fmt(V.comps.length,0)} together span ${money(V.evid.loPsf,0)}&ndash;${money(V.evid.hiPsf,0)} psf, which on ${fmt(V.sqft,0)} sqft is ${money(V.evid.lo,0)}&ndash;${money(V.evid.hi,0)}. That spread is what the market actually shows; it is not a confidence interval and Fortress does not present it as one. Source: ${esc(V.compSource||'')}.</p>
+    <p class="note">${V.sameSize.length>1?`<b>${fmt(V.sameSize.length,0)} of the ${fmt(V.comps.length,0)} match your floor area.</b> ${V.sameSize.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(c=>`${esc(dayMonthLabel(c.date))} at ${money(c.psf,0)} psf`).join(' and ')} &mdash; only ${money(Math.abs(V.sameSize[0].psf-V.sameSize[1].psf),0)} psf apart across nearly three years. `:''}${V.evid?`The ${fmt(V.comps.length,0)} together span ${money(V.evid.loPsf,0)}&ndash;${money(V.evid.hiPsf,0)} psf, which on ${fmt(V.sqft,0)} sqft is ${money(V.evid.lo,0)}&ndash;${money(V.evid.hi,0)}. That spread is what the market actually shows; it is not a confidence interval and Fortress does not present it as one.`:`No comparable sale on file carries a price per square foot, so Fortress shows no spread rather than inventing one.`} Source: ${esc(V.compSource||'')}.</p>
 
     <div class="kv" style="margin-top:12px"><span class="k">Less the mortgage</span><span class="v">${money(V.equity,0)}<br><span class="k" style="font-size:11px">after ${money(V.mortgage,0)} outstanding</span></span></div>
     ${V.claim?`<div class="kv"><span class="k">Less the CPF refund too<br><span style="font-size:11px">what actually reaches your bank account on a sale</span></span><span class="v">${money(V.afterAll,0)}<br><span class="k" style="font-size:11px">after ${money(V.claim,0)} back to CPF</span></span></div>
@@ -4663,8 +4690,18 @@ function viewProp(){
     </div>
     ${B.chosenAbsd?`<div class="banner ${B.everAffordable?'b-good':'b-warn'}" style="margin-top:10px"><span class="ic">&#9888;</span><div>${B.everAffordable
       ? `<b>At today's price, a sale first recovers your capital on ${esc(dayLabel(B.firstAffordable.from||B.firstAffordable.until))}.</b>${fmt(B.firstAffordable.days,0)} days away.`
-      : (()=>{ const fr=B.floorRow, no=fr.bexNoRent, wi=fr.bexWithRent;
-          return `<b>No date on this ladder breaks even at today's price.</b>Even once Seller's Stamp Duty is gone \u2014 ${esc(dayLabel(fr.from||fr.until))}, ${fmt(fr.days,0)} days away \u2014 the sale must fetch <b>${money(no,0)}</b> to cover every cost with the rent left out, or <b>${money(wi,0)}</b> once ${money(fr.carryAll.rent,0)} of rent is credited back. Against the ${money(B.refValue,0)} the flat is marked at today, that is <b>${money(no-B.refValue,0)} short</b> on the first and <b>${wi>B.refValue?money(wi-B.refValue,0)+' short':money(B.refValue-wi,0)+' clear'}</b> on the second. <b>On the strict view the price has to move; waiting alone does not get there</b> \u2014 waiting only removes the stamp duty sitting on top.`; })()}</div></div>`:''}
+      : (()=>{ const fr=B.floorRow;
+          /* CRASHED THE WHOLE TAB. This read fr.carryAll.rent with no guard. carryAll is
+             null whenever propertyCarryTo cannot model the loan forward - no mortgage
+             balance on file, no rate, no instalment - and one null dereference inside a
+             template literal takes out every card on the Property tab, not just this
+             banner. The lesson from the mortgageBalanceOn regression applies here too: a
+             missing input must produce a refusal, never an exception. */
+          if(!fr) return `<b>Fortress cannot place a break-even date.</b> The SSD ladder is not available.`;
+          const no=fr.bexNoRent, wi=fr.bexWithRent, ca=fr.carryAll;
+          if(no==null || wi==null || !ca)
+            return `<b>Fortress cannot say whether any date on this ladder breaks even.</b> The carry behind both scenarios needs a mortgage balance, a rate and an instalment, and at least one of those is not on file \u2014 so the figures are withheld rather than guessed. Import a mortgage statement and this banner fills in.`;
+          return `<b>No date on this ladder breaks even at today's price.</b>Even once Seller's Stamp Duty is gone \u2014 ${esc(dayLabel(fr.from||fr.until))}, ${fmt(fr.days,0)} days away \u2014 the sale must fetch <b>${money(no,0)}</b> to cover every cost with the rent left out, or <b>${money(wi,0)}</b> once ${money(ca.rent,0)} of rent is credited back. Against the ${money(B.refValue,0)} the flat is marked at today, that is <b>${money(no-B.refValue,0)} short</b> on the first and <b>${wi>B.refValue?money(wi-B.refValue,0)+' short':money(B.refValue-wi,0)+' clear'}</b> on the second. <b>On the strict view the price has to move; waiting alone does not get there</b> \u2014 waiting only removes the stamp duty sitting on top.`; })()}</div></div>`:''}
 
     ${!chosen?`<div class="banner b-warn" style="margin-top:10px"><span class="ic">&#9888;</span><div><b>One number decides this card, and Fortress does not know it.</b>Additional Buyer's Stamp Duty depends on how many residential properties you already owned when you bought. On a ${money(B.price,0)} purchase the difference between your first property and your second is <b>${money(B.price*0.20,0)}</b> — larger than every other figure here combined. The Option names you as sole purchaser on a Singapore NRIC, so the citizen rates apply; the count does not follow from any document Fortress holds. <b>Pick it and the card resolves to one answer.</b><div style="margin-top:8px">${scen.map(a=>`<button class="btn ghost" style="width:auto;padding:4px 10px;font-size:12px;margin:2px 4px 2px 0" onclick="setAbsd('${a.key}')">${esc(a.label.replace('Singapore Citizen, ',''))} &middot; ${pct(a.pct,0)}</button>`).join('')}</div></div></div>`:``}
 
@@ -4720,7 +4757,7 @@ function viewProp(){
       <p style="margin:6px 0">The grey figure beneath it nets off the rent collected by that date. <b>It is the flattering number and it is not the headline</b>, because rent is the <em>return</em> on the money, not a discount on its cost: netting it silently assumes the same ${money(B.price,0)} would have earned nothing anywhere else. Use it to answer &ldquo;am I down overall&rdquo;, never &ldquo;what must it fetch&rdquo;.</p>
       <p style="margin:6px 0"><b>Neither is adjusted for inflation${B.inflPct!=null?' unless you set a rate':''}.</b> ${B.inflPct!=null
         ? `You have set ${pct(B.inflPct,1)}, so each row also shows what the sale must fetch for the money coming out to buy what the money going in would have. Fortress does not forecast inflation and does not endorse this rate \u2014 it is yours.`
-        : `A dollar in ${esc(B.P.completion.slice(0,4))} is not a dollar in ${esc((B.floorRow ? (B.floorRow.from||B.floorRow.until) : B.steps[B.steps.length-1].from||B.steps[B.steps.length-1].until).slice(0,4))}, so ${B.capitalFloor!=null?`even the ${money(B.capitalFloor,0)} floor is`:'every figure here is'} a nominal figure that quietly loses ground every year. Fortress could not verify a current Singapore inflation rate from a primary source and will not invent one \u2014 enter the rate you want to test below and every row will show the real figure too.`}</p>
+        : `A dollar in ${esc(B.P.completion ? B.P.completion.slice(0,4) : 'the year you completed')} is not a dollar in ${esc((B.floorRow ? (B.floorRow.from||B.floorRow.until) : B.steps[B.steps.length-1].from||B.steps[B.steps.length-1].until).slice(0,4))}, so ${B.capitalFloor!=null?`even the ${money(B.capitalFloor,0)} floor is`:'every figure here is'} a nominal figure that quietly loses ground every year. Fortress could not verify a current Singapore inflation rate from a primary source and will not invent one \u2014 enter the rate you want to test below and every row will show the real figure too.`}</p>
     </div>
     <label class="fld">Inflation rate to test (% a year) &mdash; optional, yours not Fortress's</label>
     <input type="number" id="bkInfl" step="0.1" inputmode="decimal" value="${state.settings.inflationPct ?? ''}" placeholder="e.g. 2">
@@ -5634,7 +5671,10 @@ function saveSaleCosts(){
   if(c!=null && c!==undefined && (c<0||c>10)){ alert('Commission looks wrong — enter a percentage, e.g. 2.'); return; }
   if(c!==undefined) state.settings.saleCommissionPct = c;
   if(l!==undefined) state.settings.saleLegalFees = l;
-  if(lb!==undefined){ state.settings.purchase = { ...(state.settings.purchase||PURCHASE_SEED), buyerLegalFees: lb }; }
+  /* buyerLegalFees is the ONLY field of `purchase` the UI can write. It is flagged so the
+     v15 re-seed below can refresh every documented fact without discarding his own entry. */
+  if(lb!==undefined){ state.settings.purchase = { ...(state.settings.purchase||PURCHASE_SEED),
+                        buyerLegalFees: lb, buyerLegalUserSet: lb!=null }; }
   saveAll(); render();
 }
 function setBirthDate(v){
@@ -6540,7 +6580,29 @@ function render(){
   document.getElementById('stamp').textContent = VERSION;
   const v={dash:viewDash,prop:viewProp,cpf:viewCpf,retire:viewRetire,al:viewAl,trends:viewTrends,fx:viewFX,hist:viewHist,set:viewSet}[state.settings.tab]||viewDash;
   const tab = state.settings.tab;
-  document.getElementById('main').innerHTML = plainCard(tab) + v() + gapsCard(tab)
+  /* A tab used to be all-or-nothing. One unguarded null inside one card's template
+     literal threw, render() aborted, innerHTML was never assigned - and the screen simply
+     kept showing the PREVIOUS tab. From the outside that reads as "the tab will not
+     load", with no error and nothing to go on.
+
+     Each of the three parts is now built separately, and a throw in any of them is caught
+     and reported IN PLACE. The rest of the tab still renders, and the failure names
+     itself instead of hiding. A caught error is still an error: it is logged and shown in
+     red, never swallowed into a blank space. */
+  const part = (label, fn) => {
+    try { return fn(); }
+    catch(err){
+      console.error('Fortress: '+label+' failed to render', err);
+      return `<div class="card"><h2 style="color:var(--serious)">This section could not be drawn</h2>
+        <p class="note"><b>${esc(label)}</b> threw while rendering, so it has been left out. The rest of the tab is unaffected and your data is untouched.</p>
+        <p class="note" style="font-family:ui-monospace,monospace;font-size:11px">${esc(String(err && err.message || err))}</p>
+        <p class="note">Send this message with a screenshot and it can be fixed. If the tab was stuck before, this is what was stopping it.</p></div>`;
+    }
+  };
+  document.getElementById('main').innerHTML =
+      part('The plain-English summary', ()=>plainCard(tab))
+    + part('The '+tab+' tab', v)
+    + part('The gaps list', ()=>gapsCard(tab))
     + `<p class="fine">Monitoring aid only — verify against your official DBS statements. ${VERSION}</p>`;
   simplify();
   const btn = document.getElementById('simpleBtn');
