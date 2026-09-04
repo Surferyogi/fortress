@@ -804,6 +804,114 @@ migration was legitimately needed for the purchase seed. They now assert the *re
 that the stored version tracks the app's own `SEED_VERSION` — so a real migration passes and
 a missing one still fails.
 
+## A portal reading that turned out not to be an update
+
+CK sent a fresh screenshot of the portal's My Property screen on 4 Sep 2026, expecting an
+update to the market price. **Every field matched what was already on file** — S$2.39M, low
+S$2.15M, high S$2.63M, last updated Aug 2026, 915 sqft, #07-04. Checked field by field
+before answering; nothing had moved.
+
+The honest response is to say so rather than ship a version bump that changes nothing. But
+the visit did surface three things worth fixing.
+
+### Dated is not the same as unexamined
+
+A reading dated August that nobody has looked at since is stale. A reading dated August that
+was checked in September and had not moved is **confirmed current**. Those are different
+facts and only one of them was on file. The seed now carries `checkedOn` alongside `asOf`,
+and the card shows *"Last checked 4 Sep 2026 — unchanged since Aug 2026"*.
+
+### The portal's figure is a band, not a number
+
+It prints two decimals in millions, so **S$2.39M is rounded to the nearest S$10,000** and
+stands for something between S$2,385,000 and S$2,395,000. The card had been dividing the
+rounded figure by 915 sqft and printing **S$2,612 psf** as though it were exact; on the band
+it is S$2,607–2,617. `rounded: 10000` is now recorded and the card states the band, so the
+precision is not mistaken for accuracy.
+
+### One reading is not a trend
+
+The AVM was stored as a single value with no history, so it could not show movement — which
+is exactly what "updates for the market price" asks for. It is now a dated series
+(`avmHistory`), each entry carrying its move on the one before. Today it holds one entry and
+the card says so in terms: *"One reading is not a trend, and Fortress will not draw one."*
+The next screenshot makes it a series.
+
+### And one stale date that survived the completion correction
+
+`comps[0].ownNote` still read *"completed 20 May 2026"* — the Option's date, superseded when
+CK confirmed completion happened on 5 May. It was also **dead data**: stored and never
+rendered, which is how it survived. It now reads *"Option granted 10 Feb 2026, exercised
+10 Mar 2026, completed 5 May 2026"* and is displayed against his own row in the comparables
+table, where it also explains why that row is dated March — the month the Option was
+exercised.
+
+## The property's own account — three months, reconciled
+
+UOB CURRENT **372-304-221-4**, page 3 of 4 of the June, July and August 2026 statements.
+This is the account the rent lands in and the mortgage leaves from, so it is the one place
+both sides of the property can be checked against a bank's record rather than a letter
+about what should happen.
+
+**Every figure was reconciled before it was written**, and the app re-runs those checks
+rather than trusting the transcription — a slip fails loudly instead of reading as a
+plausible number. Four checks per month:
+
+| Check | Result |
+|---|---|
+| Running balance vs stated closing balance | 3 / 3 |
+| Withdrawals vs stated total | 3 / 3 |
+| Deposits vs stated total | 3 / 3 |
+| Brought-forward vs previous carried-forward | 2 / 2 joins |
+
+Two tests corrupt the data deliberately — a ten-cent error on one line, and a one-cent
+error on a month join — and assert the verdict flips to `false`. A reconciliation that
+cannot fail proves nothing.
+
+### The date that closed a gap
+
+Fortress had been carrying a `prop` gap: the rent on file was read off the **May and June**
+statements, the tenancy agreement was stamped **25 Jul 2026**, and so the figure might be
+stale. The gap explicitly refused to infer a rent change from the S$297 lease duty.
+
+**The 11 Aug credit is after the agreement, and it is still S$5,800.** Three credits, all
+identical. The gap now fires only while no rent credit has been observed after the
+agreement date, so it has closed on evidence rather than being deleted.
+
+That also settles the duty reconciliation. The chargeable base was ~S$4,650 above a bare
+year of rent, and the app refused to read that as a rent rise — offering furniture,
+maintenance and service (which the base includes) as the explanation. With the rent now
+confirmed unchanged, **it cannot have been a rent rise.** The tenancy card says so and ties
+the two together.
+
+### The account fell S$6,057. The property did not lose money.
+
+| | |
+|---|---|
+| Opening balance, 31 May | S$25,073.57 |
+| Closing balance, 31 Aug | S$19,016.56 |
+| Change | **−S$6,057.01** |
+| ...of which his own transfers | −S$7,000.00 |
+| **The property's own contribution** | **+S$942.99** |
+
+The S$8,000 out to OCBC on 2 Jul and the S$1,000 in on 1 Aug are his own money moving.
+Conflating them with the property would read a flat that added S$314.33 a month as one
+losing S$2,019 a month. The card separates them and the tests pin the identity
+`balanceChange − ownTransferNet = propertyNet × months`.
+
+### What is not there
+
+**MCST maintenance, the fire premium and property tax appear nowhere in three months of
+this account.** That is stated as an observation and explicitly not as a conclusion — they
+may be paid from another account, or fall annually outside this window. But it means the
+S$314.33 a month is *rent less the mortgage and nothing else*, so the card also shows what
+it becomes once the costs Fortress does hold are netted off.
+
+The mortgage debits — 2 Jun, 1 Jul, 3 Aug, all S$5,485.67 — independently confirm the
+instalment the whole forward projection is built on.
+
+`acctest.js` — 37 assertions, at `Asia/Singapore`.
+
 ## "The Property tab is unable to load" — two bugs, one of them months old
 
 CK reported the Property tab would not load. Every suite passed. Both causes were things

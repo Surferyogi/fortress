@@ -141,7 +141,7 @@ details.gap[open]>summary::after{content:'  \2212'}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:SEP:04-07:42';
+const VERSION = 'v2026:SEP:04-08:38';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -338,15 +338,32 @@ const HOME_SEED = {
   asOf:'2026-03',
   basisNote:'The last transacted price of an equivalent unit \u2014 a real trade, not an estimate. It carries no confidence range of its own: one sale is one sale.',
   source:'URA / HDB transacted price, 2-bedroom 915 sqft at the same project, Mar 2026',
-  /* kept as a second opinion, never as the headline */
-  avm:{ value:2390000, low:2150000, high:2630000, asOf:'2026-08',
+  /* Kept as a second opinion, never as the headline.
+
+     The portal prints its figures to two decimals in millions - "S$2.39M" - so each one
+     is rounded to the nearest S$10,000 and the true value sits in a band S$10,000 wide.
+     `rounded` records that, because a psf carried to the cent off a figure rounded to ten
+     thousand is false precision and the card should say so rather than imply otherwise.
+
+     `checkedOn` is the date the reading was last SEEN, which is not the date the portal
+     last changed it. A reading dated Aug and confirmed unchanged in Sep is a different
+     thing from a reading nobody has looked at since Aug, and only one of those is stale. */
+  avm:{ value:2390000, low:2150000, high:2630000, asOf:'2026-08', rounded:10000,
+        checkedOn:'2026-09-04',
         source:'Property portal estimated value, last updated Aug 2026, with a low\u2013high range' },
+  /* every reading Fortress has been shown, oldest first, so movement is visible. One
+     entry today; the next screenshot makes this a trend rather than a single number. */
+  avmHistory:[
+    { asOf:'2026-08', value:2390000, low:2150000, high:2630000, rounded:10000,
+      seenOn:'2026-09-04',
+      source:'Property portal, My Property screen for #07-04, estimated value last updated Aug 2026' }
+  ],
   comps:[
     /* CONFIRMED by CK on 2 Sep 2026: this row is his own purchase, not an arm's-length
        comparable from someone else. It stays as the reference because it IS the last
        equivalent transaction - but it can never corroborate the price he paid. */
     { date:'2026-03', sqft:915, price:2450000, own:true,
-      ownNote:'your own purchase — Option granted 10 Feb 2026, completed 20 May 2026' },
+      ownNote:'your own purchase \u2014 Option granted 10 Feb 2026, exercised 10 Mar 2026, completed 5 May 2026' },
     { date:'2026-02', sqft:872, price:2200000 },
     { date:'2023-06', sqft:872, price:2370000 },
     { date:'2023-06', sqft:872, price:2200000 },
@@ -750,11 +767,56 @@ const LEASE_DUTY = {
   checkedOn:'2026-09-03'
 };
 
+/* ---- The property's own current account, three months of it -----------------------
+   UOB CURRENT 372-304-221-4, page 3 of 4 of the June, July and August 2026 statements.
+   This is the account the rent lands in and the mortgage leaves from, so it is the one
+   place where both sides of the property can be checked against a bank's own record
+   rather than against a letter about what should happen.
+
+   Every figure below was reconciled BEFORE it was written: each month's running balance
+   against its stated closing balance, each month's withdrawals and deposits against its
+   stated totals, and each month's brought-forward against the previous month's carried
+   -forward. All three months and both joins agree to the cent. propertyAccount() re-runs
+   those checks in the app, so a transcription error surfaces as a failure rather than as
+   a plausible number.
+
+   What matters most here is a DATE. The tenancy agreement was stamped 25 Jul 2026, and
+   Fortress had been carrying a gap saying it could not confirm the rent was still current
+   because every observation predated that agreement. The 11 Aug credit is after it, and
+   is still S$5,800. The gap closes on evidence, not on assumption. ---- */
+const PROPERTY_ACCOUNT = {
+  bank:'UOB', account:'372-304-221-4', type:'CURRENT',
+  loanRef:'1688212222-00000',
+  months:[
+    { month:'2026-06', broughtForward:25073.57, carriedForward:25387.90,
+      statedWithdrawals:5485.67, statedDeposits:5800.00,
+      lines:[
+        { date:'2026-06-02', kind:'mortgage', amount:-5485.67, label:'Misc Debit', narrative:'Trf. Wd. Loans', ref:'1688212222-00000' },
+        { date:'2026-06-11', kind:'rent', amount:5800.00, label:'Inward CR - GIRO', narrative:'SI Rent The Atelier', payer:'PLOETNER MATHIAS ALE' } ] },
+    { month:'2026-07', broughtForward:25387.90, carriedForward:17702.23,
+      statedWithdrawals:13485.67, statedDeposits:5800.00,
+      lines:[
+        { date:'2026-07-01', kind:'mortgage', amount:-5485.67, label:'Misc Debit', narrative:'Trf. Wd. Loans', ref:'1688212222-00000' },
+        { date:'2026-07-02', kind:'transferOut', amount:-8000.00, label:'Funds Trf - FAST', narrative:'OCBC 1a \u00b7 OTHR Transfer', ref:'PIB2607020903469615' },
+        { date:'2026-07-13', kind:'rent', amount:5800.00, label:'Inward CR - GIRO', narrative:'SI Rent The Atelier', payer:'PLOETNER MATHIAS ALE' } ] },
+    { month:'2026-08', broughtForward:17702.23, carriedForward:19016.56,
+      statedWithdrawals:5485.67, statedDeposits:6800.00,
+      lines:[
+        { date:'2026-08-01', kind:'transferIn', amount:1000.00, label:'Inward Credit-FAST', narrative:'OTHR Other', payer:'CHOW KOK SUM' },
+        { date:'2026-08-03', kind:'mortgage', amount:-5485.67, label:'Misc Debit', narrative:'Trf. Wd. Loans', ref:'1688212222-00000' },
+        { date:'2026-08-11', kind:'rent', amount:5800.00, label:'Inward CR - GIRO', narrative:'SI Rent The Atelier', payer:'PLOETNER MATHIAS ALE' } ] }
+  ],
+  /* costs Fortress knows the property has, which do NOT appear anywhere in three months
+     of this account. Named, not concluded from - they may be paid from elsewhere. */
+  expectedButAbsent:['MCST maintenance','fire insurance premium','property tax'],
+  source:'UOB Current account 372-304-221-4, page 3 of 4 of the June, July and August 2026 statements'
+};
+
 const INCOME_SEED = [{
   id:'rent-atelier', label:'Rent — The Atelier', payer:'PLOETNER MATHIAS ALE',
   amount:5800.00, ccy:'SGD', frequency:'monthly', dayOfMonth:11,
   account:'UOB 372-304-221-4', startMonth:'2026-05', endMonth:null,
-  source:'Inward CR - GIRO, observed on the May and Jun 2026 UOB statements'
+  source:'Inward CR - GIRO on UOB 372-304-221-4, observed on the May, Jun, Jul and Aug 2026 statements \u2014 the Aug credit is after the 25 Jul 2026 tenancy agreement, so the figure is confirmed current rather than inferred'
 }];
 
 /* DBS's own wording for its two capacity figures — verbatim from the app's (i) tooltips.
@@ -1710,6 +1772,81 @@ function redemptionFeeOn(iso, balance){
     netPct, fee: bal*netPct/100,
     waiverPct:L.saleWaiverPct, waiverQuote:L.saleWaiverQuote,
     noticeMonths:L.fullRedemptionNoticeMonths };
+}
+
+/* The property's current account: what the bank's own record proves, and what it does
+   not contain. Every arithmetic check the statement makes about itself is re-run here,
+   so a transcription slip fails loudly instead of reading as a plausible figure. */
+function propertyAccount(){
+  const A = state.settings.propertyAccount || PROPERTY_ACCOUNT;
+  if(!A || !A.months || !A.months.length) return null;
+  const r2 = n => Math.round(n*100)/100;
+  let prevCf = null;
+  const months = A.months.map(m=>{
+    let bal = m.broughtForward;
+    const walk = m.lines.map(l=>{ bal = r2(bal + l.amount); return { ...l, balanceAfter:bal }; });
+    const withdrawals = r2(m.lines.filter(l=>l.amount<0).reduce((a,l)=>a-l.amount,0));
+    const deposits    = r2(m.lines.filter(l=>l.amount>0).reduce((a,l)=>a+l.amount,0));
+    const chainOk = prevCf==null ? null : Math.abs(prevCf - m.broughtForward) < 0.005;
+    prevCf = m.carriedForward;
+    const rent = m.lines.filter(l=>l.kind==='rent');
+    const mort = m.lines.filter(l=>l.kind==='mortgage');
+    return { ...m, walk, withdrawals, deposits,
+      closeOk:  Math.abs(bal - m.carriedForward) < 0.005,
+      wOk:      Math.abs(withdrawals - m.statedWithdrawals) < 0.005,
+      dOk:      Math.abs(deposits - m.statedDeposits) < 0.005,
+      chainOk,
+      rentIn:   r2(rent.reduce((a,l)=>a+l.amount,0)),
+      rentOn:   rent.length ? rent[rent.length-1].date : null,
+      mortgageOut: r2(mort.reduce((a,l)=>a-l.amount,0)),
+      mortgageOn:  mort.length ? mort[mort.length-1].date : null,
+      /* the property's own flow, with his personal transfers stripped out */
+      propertyNet: r2(m.lines.filter(l=>l.kind==='rent'||l.kind==='mortgage')
+                              .reduce((a,l)=>a+l.amount,0)),
+      ownTransfers: m.lines.filter(l=>l.kind==='transferIn'||l.kind==='transferOut') };
+  });
+  const rents = months.map(m=>m.rentIn).filter(x=>x>0);
+  const morts = months.map(m=>m.mortgageOut).filter(x=>x>0);
+  const same = a => a.length>0 && a.every(x=>Math.abs(x-a[0])<0.005);
+  const allDates = months.flatMap(m=>m.lines.map(l=>l.date)).sort();
+  const rentDates = months.map(m=>m.rentOn).filter(Boolean).sort();
+  /* the reconciliation verdict, as one boolean and as its parts */
+  const checks = { closes:months.every(m=>m.closeOk), withdrawals:months.every(m=>m.wOk),
+                   deposits:months.every(m=>m.dOk),
+                   chain:months.slice(1).every(m=>m.chainOk===true) };
+  return { ...A, months, checks,
+    reconciles: checks.closes && checks.withdrawals && checks.deposits && checks.chain,
+    monthsCount: months.length,
+    from: allDates[0] || null, to: allDates[allDates.length-1] || null,
+    rentAmount: same(rents) ? rents[0] : null, rentSteady: same(rents),
+    rentObservations: rents.length, lastRentOn: rentDates[rentDates.length-1] || null,
+    firstRentOn: rentDates[0] || null,
+    instalment: same(morts) ? morts[0] : null, instalmentSteady: same(morts),
+    instalmentObservations: morts.length,
+    propertyNetPerMonth: same(rents) && same(morts) ? Math.round((rents[0]-morts[0])*100)/100 : null,
+    openingBalance: months[0].broughtForward,
+    closingBalance: months[months.length-1].carriedForward,
+    balanceChange: Math.round((months[months.length-1].carriedForward - months[0].broughtForward)*100)/100,
+    ownTransferNet: Math.round(months.flatMap(m=>m.ownTransfers).reduce((a,l)=>a+l.amount,0)*100)/100,
+    expectedButAbsent:A.expectedButAbsent||[],
+    source:A.source };
+}
+
+/* Does the bank record prove the rent is still current, i.e. observed AFTER the tenancy
+   agreement was stamped? This is the exact question the rent gap was asking. */
+function rentStillCurrent(){
+  const PA = (typeof propertyAccount==='function') ? propertyAccount() : null;
+  const Td = (typeof tenancyDuty==='function') ? tenancyDuty() : null;
+  if(!PA || !PA.lastRentOn) return null;
+  const inc = (state.income||[]).filter(i=>i.endMonth==null)[0] || null;
+  const agreed = Td ? Td.docDate : null;
+  const after = agreed ? PA.lastRentOn > agreed : null;
+  return { lastRentOn:PA.lastRentOn, amount:PA.rentAmount, steady:PA.rentSteady,
+    observations:PA.rentObservations, agreementDate:agreed, observedAfterAgreement:after,
+    matchesRecorded: inc && PA.rentAmount!=null ? Math.abs(inc.amount - PA.rentAmount) < 0.005 : null,
+    recorded: inc ? inc.amount : null,
+    confirmed: !!(after && PA.rentSteady),
+    source:PA.source };
 }
 
 /* The tenancy agreement's lease duty, and what it does and does not tell us.
@@ -3181,7 +3318,30 @@ function propertyValue(){
   const avm = (H&&H.avm) ? { ...H.avm, psf:psf(H.avm.value),
       vsRef:(H.avm.value/v-1)*100, nw:nwAt(H.avm.value),
       lowNw:nwAt(H.avm.low), highNw:nwAt(H.avm.high),
-      swing:nwAt(H.avm.high)-nwAt(H.avm.low) } : null;
+      swing:nwAt(H.avm.high)-nwAt(H.avm.low),
+      /* the portal rounds to the nearest S$10,000, so the printed figure is a BAND.
+         Carrying a psf to the dollar off it would be false precision. */
+      roundedTo:H.avm.rounded||null,
+      bandLow:  H.avm.rounded ? H.avm.value - H.avm.rounded/2 : null,
+      bandHigh: H.avm.rounded ? H.avm.value + H.avm.rounded/2 : null,
+      psfBandLow:  H.avm.rounded ? psf(H.avm.value - H.avm.rounded/2) : null,
+      psfBandHigh: H.avm.rounded ? psf(H.avm.value + H.avm.rounded/2) : null,
+      checkedOn:H.avm.checkedOn||null,
+      /* dated but re-confirmed is not the same as dated and unexamined */
+      staleMonths: H.avm.asOf ? (()=>{ const [y,m]=H.avm.asOf.split('-').map(Number);
+        const now=new Date(); return (now.getFullYear()-y)*12 + (now.getMonth()+1-m); })() : null,
+      /* was the reading looked at AFTER the month it is dated? */
+      reconfirmed: !!(H.avm.checkedOn && H.avm.asOf && H.avm.checkedOn.slice(0,7) > H.avm.asOf) } : null;
+
+  /* the series, oldest first, each reading carrying its move on the one before it */
+  const avmSeries = (H && H.avmHistory && H.avmHistory.length)
+    ? H.avmHistory.slice().sort((x,y)=>String(x.asOf).localeCompare(String(y.asOf)))
+        .map((r,i,arr)=>{ const prev = i>0 ? arr[i-1] : null;
+          return { ...r, psf:psf(r.value),
+            change: prev ? r.value - prev.value : null,
+            changePct: prev ? (r.value/prev.value-1)*100 : null,
+            vsRef:(r.value/v-1)*100 }; })
+    : [];
   /* the spread the evidence itself shows - derived, not invented */
   const evid = allPsf.length ? { loPsf:Math.min(...allPsf), hiPsf:Math.max(...allPsf),
       lo:Math.min(...allPsf)*sqft, hi:Math.max(...allPsf)*sqft } : null;
@@ -3192,7 +3352,7 @@ function propertyValue(){
     nwLow:nwAt(H.low), nwHigh:nwAt(H.high), nwSwing:nwAt(H.high)-nwAt(H.low) } : null;
 
   return { ...(H||{}), value:v, sqft, psf:psf(v), lowPsf:psf(H&&H.low), highPsf:psf(H&&H.high),
-    isTxn, monthsSince, avm, evid,
+    isTxn, monthsSince, avm, avmSeries, evid,
     comps, sameSize, meanPsf, newest, newestSame,
     own, independent, independentSame,
     /* Once his own purchase is set aside, what is actually left to test the price
@@ -3564,7 +3724,13 @@ function gaps(){
      not a suspicion of a rent change - it is a dating fact, and it is cheap to close. */
   { const Td = (typeof tenancyDuty==='function') ? tenancyDuty() : null;
     const inc = (state.income||[]).filter(i=>i.endMonth==null)[0];
-    if(Td && inc && Td.docDate && inc.startMonth && Td.docDate.slice(0,7) > inc.startMonth)
+    /* CLOSED ON EVIDENCE. This gap said the rent on file predated the tenancy agreement
+       and could therefore be stale. The June-August statements settle it: the 11 Aug
+       credit is after the 25 Jul agreement and is still S$5,800. The gap now fires only
+       while no rent credit has been observed after the agreement date. */
+    const RC = (typeof rentStillCurrent==='function') ? rentStillCurrent() : null;
+    if(Td && inc && Td.docDate && inc.startMonth && Td.docDate.slice(0,7) > inc.startMonth
+       && !(RC && RC.confirmed))
       add('prop','medium','The rent on file predates the tenancy agreement',
         'The rent Fortress uses \u2014 '+money(inc.amount,2)+' a month \u2014 was read off bank credits from '+esc(inc.startMonth)+'. The stamped tenancy agreement is dated '+dayLabel(Td.docDate)+', after that. Fortress does NOT infer a rent change from the stamp duty: the chargeable base legitimately includes furniture, maintenance and service, and the lease term is not on the certificate. But it cannot confirm the rent is current either, and rent cover, net yield and the second sale scenario all rest on it.',
         'Import a UOB statement from July 2026 onwards, or set the rent under \u201cRent & recurring income\u201d on the Settings tab.',
@@ -4447,16 +4613,22 @@ function viewProp(){
 
     ${V.avm?`
     <div style="margin-top:12px"><b style="font-size:13px">Cross-check: what the portal's algorithm says</b></div>
+    ${V.avm.checkedOn?`<div class="kv"><span class="k">Last checked</span><span class="v">${esc(dayLabel(V.avm.checkedOn))}${V.avm.reconfirmed?`<br><span style="font-size:11px;opacity:.72">unchanged since ${esc(dayMonthLabel(V.avm.asOf))}</span>`:''}</span></div>`:''}
     <div class="kv"><span class="k">Estimated value, ${esc(dayMonthLabel(V.avm.asOf))}</span><span class="v">${money(V.avm.value,0)}<br><span class="k" style="font-size:11px">${money(V.avm.psf,0)} psf &middot; <b>${pct(V.avm.vsRef,1)}</b> against the reference</span></span></div>
     <div class="kv"><span class="k">...with its own range<br><span style="font-size:11px">a ${money(V.avm.high-V.avm.low,0)} spread, ${money(V.avm.swing,0)} of net worth</span></span><span class="v" style="font-size:13px">${money(V.avm.low,0)} &ndash; ${money(V.avm.high,0)}</span></div>
-    <p class="note">The estimate sits ${pct(Math.abs(V.avm.vsRef),1)} <b>below</b> the last equivalent sale, and the reference sits inside the estimate's own range. The two do not contradict each other &mdash; an algorithm blending ${fmt(V.comps.length,0)} transactions of two different sizes will land under a same-size trade when the smaller units fetch a lower psf, which is what they do here. Fortress leads with the transaction because it is evidence rather than inference, and shows the estimate so you can see the disagreement rather than have it hidden.</p>`:''}
+    <p class="note">The estimate sits ${pct(Math.abs(V.avm.vsRef),1)} <b>below</b> the last equivalent sale, and the reference sits inside the estimate's own range. The two do not contradict each other &mdash; an algorithm blending ${fmt(V.comps.length,0)} transactions of two different sizes will land under a same-size trade when the smaller units fetch a lower psf, which is what they do here. Fortress leads with the transaction because it is evidence rather than inference, and shows the estimate so you can see the disagreement rather than have it hidden.</p>
+    ${V.avm.roundedTo?`<p class="note"><b>Read that figure as a band, not a number.</b> The portal prints two decimals in millions, so ${money(V.avm.value,0)} is rounded to the nearest ${money(V.avm.roundedTo,0)} and the estimate it stands for is somewhere between <b>${money(V.avm.bandLow,0)}</b> and <b>${money(V.avm.bandHigh,0)}</b>. The ${money(V.avm.psf,0)} psf above is that rounded figure divided by ${fmt(V.sqft,0)} sqft; on the band it is ${money(V.avm.psfBandLow,0)}&ndash;${money(V.avm.psfBandHigh,0)}. Fortress shows the single figure because that is what the portal shows, and states the band so the precision is not mistaken for accuracy.</p>`:''}
+    ${V.avmSeries&&V.avmSeries.length?`
+      <div style="margin-top:12px"><b style="font-size:13px">Every reading Fortress has been shown</b></div>
+      ${V.avmSeries.slice().reverse().map(r=>`<div class="kv"><span class="k">${esc(dayMonthLabel(r.asOf))}${r.seenOn?`<br><span style="font-size:11px;opacity:.72">seen ${esc(dayLabel(r.seenOn))}</span>`:''}</span><span class="v">${money(r.value,0)}${r.change!=null?`<br><span style="font-size:11px" class="${r.change>0?'pos':'neg'}">${r.change>0?'+':''}${money(r.change,0)} &middot; ${r.changePct>0?'+':''}${fmt(r.changePct,1)}%</span>`:`<br><span style="font-size:11px;opacity:.72">first reading on file</span>`}</span></div>`).join('')}
+      ${V.avmSeries.length<2?`<p class="note"><b>One reading is not a trend, and Fortress will not draw one.</b> ${V.avm.checkedOn&&V.avm.reconfirmed?`This figure was checked again on ${esc(dayLabel(V.avm.checkedOn))} and had not moved, which is worth knowing but is still a single observation.`:''} Send the next one and this becomes a series showing what the estimate actually did.</p>`:''}`:''}`:''}
 
     <div style="margin-top:12px"><b style="font-size:13px">The evidence</b></div>
     <table class="hist" style="margin-top:6px"><tr><th>Sold</th><th>Size</th><th>Price</th><th>psf</th></tr>
       ${V.comps.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(c=>{
         const isRef = V.isTxn && c.date===V.valueDate && c.price===V.value;
         return `<tr${c.sameSize?' style="font-weight:600"':''}>
-        <td>${esc(dayMonthLabel(c.date))}${isRef?' <span style="font-size:10px;color:var(--s1)">&#9679; reference</span>':''}</td>
+        <td>${esc(dayMonthLabel(c.date))}${isRef?' <span style="font-size:10px;color:var(--s1)">&#9679; reference</span>':''}${c.own&&c.ownNote?`<br><span style="font-size:10px;opacity:.7">${esc(c.ownNote)}</span>`:''}</td>
         <td>${fmt(c.sqft,0)} sqft${c.sameSize?' &middot; <span style="font-size:10px">same as yours</span>':''}</td>
         <td>${money(c.price,0)}</td><td>${money(c.psf,0)}</td></tr>`; }).join('')}
     </table>
@@ -4625,6 +4797,37 @@ function viewProp(){
     <p class="note">${esc(L.selectedSource)} Source: ${esc(L.source)}.</p>
   </div>`; })()}
 
+  ${(()=>{ const A=propertyAccount(); if(!A) return '';
+    const R=(typeof rentStillCurrent==='function')?rentStillCurrent():null;
+    return `<div class="card">
+    <h2>The property's account<span class="pill">${esc(A.bank)} ${esc(A.account)} &middot; ${fmt(A.monthsCount,0)} months</span></h2>
+
+    ${R&&R.confirmed?`<div class="banner b-good" style="margin-bottom:12px"><span class="ic">&#10003;</span><div><b>The rent is confirmed current.</b> ${fmt(R.observations,0)} credits, all ${money(R.amount,2)}, the last on <b>${esc(dayLabel(R.lastRentOn))}</b> &mdash; after the tenancy agreement was stamped on ${esc(dayLabel(R.agreementDate))}. Fortress was carrying a gap saying it could not tell whether the July agreement had changed the rent. It did not.</div></div>`:''}
+
+    <div class="kv"><span class="k">Rent in</span><span class="v">${money(A.rentAmount,2)}/mo<br><span style="font-size:11px;opacity:.72">${fmt(A.rentObservations,0)} credits, ${A.rentSteady?'all identical':'<b class="neg">not identical</b>'}</span></span></div>
+    <div class="kv"><span class="k">Mortgage out</span><span class="v neg">&minus;${money(A.instalment,2)}/mo<br><span style="font-size:11px;opacity:.72">${fmt(A.instalmentObservations,0)} debits, ${A.instalmentSteady?'all identical':'<b class="neg">not identical</b>'}</span></span></div>
+    <div class="kv"><span class="k"><b>The property's own flow</b><br><span style="font-size:11px;opacity:.72">rent less the instalment, nothing else</span></span><span class="v"><b class="${A.propertyNetPerMonth>0?'pos':'neg'}">${A.propertyNetPerMonth>0?'+':''}${money(A.propertyNetPerMonth,2)}/mo</b></span></div>
+
+    <div style="border-top:1px solid var(--grid);margin-top:12px;padding-top:12px"></div>
+    ${A.months.map(m=>`<div style="margin-bottom:10px">
+      <div class="kv" style="border:0;padding-bottom:2px"><span class="k"><b>${esc(dayMonthLabel(m.month+'-01'))}</b></span><span class="v" style="font-size:11px;opacity:.72">b/f ${money(m.broughtForward,2)}</span></div>
+      ${m.walk.map(l=>`<div class="kv" style="padding:3px 0"><span class="k" style="font-size:12px">${esc(dayLabel(l.date))} &middot; ${esc(l.label)}<br><span style="font-size:11px;opacity:.72">${esc(l.narrative||'')}${l.payer?' &middot; '+esc(l.payer):''}</span></span><span class="v" style="font-size:12px"><span class="${l.amount<0?'neg':'pos'}">${l.amount<0?'&minus;':'+'}${money(Math.abs(l.amount),2)}</span><br><span style="font-size:11px;opacity:.72">${money(l.balanceAfter,2)}</span></span></div>`).join('')}
+      <div class="kv" style="padding-top:2px"><span class="k" style="font-size:11px;opacity:.72">c/f ${money(m.carriedForward,2)}</span><span class="v" style="font-size:11px" class="pos">${m.closeOk&&m.wOk&&m.dOk?'&#10003; reconciles':'<b class="neg">does not reconcile</b>'}</span></div>
+    </div>`).join('')}
+
+    <div class="warnbox"><b>Every figure here was checked against the statement's own arithmetic before it was recorded.</b> For each month: the running balance against the stated closing balance, the withdrawals and deposits against the stated totals, and the brought-forward against the previous month's carried-forward. <b>${A.reconciles?`All ${fmt(A.monthsCount,0)} months and both joins agree to the cent.`:'<span class="neg">At least one check fails &mdash; the transcription is wrong and these figures should not be trusted.</span>'}</b> The app re-runs those checks rather than trusting the transcription, so a slip fails loudly instead of reading as a plausible number.</div>
+
+    <div class="kv"><span class="k">Balance over the ${fmt(A.monthsCount,0)} months</span><span class="v">${money(A.openingBalance,2)} &rarr; ${money(A.closingBalance,2)}<br><span style="font-size:11px;opacity:.72" class="${A.balanceChange<0?'neg':'pos'}">${A.balanceChange<0?'':'+'}${money(A.balanceChange,2)}</span></span></div>
+    ${A.ownTransferNet!==0?`<div class="kv"><span class="k">...of which your own transfers</span><span class="v">${A.ownTransferNet<0?'&minus;':'+'}${money(Math.abs(A.ownTransferNet),2)}<br><span style="font-size:11px;opacity:.72">not the property</span></span></div>
+    <p class="note"><b>The account fell ${money(Math.abs(A.balanceChange),0)}, but the property did not lose money.</b> ${money(Math.abs(A.ownTransferNet),0)} of that is money you moved yourself &mdash; ${A.months.flatMap(m=>m.ownTransfers).map(t=>`${esc(dayLabel(t.date))} ${t.amount<0?'out':'in'} ${money(Math.abs(t.amount),0)}${t.payer?' from '+esc(t.payer):''}`).join(', ')}. Strip those out and the flat added ${money(A.propertyNetPerMonth*A.monthsCount,2)} across the ${fmt(A.monthsCount,0)} months.</p>`:''}
+
+    ${A.expectedButAbsent.length?`<div class="warnbox"><b>Three costs Fortress knows this property has do not appear anywhere in ${fmt(A.monthsCount,0)} months of this account.</b> ${A.expectedButAbsent.map(x=>esc(x)).join(', ')}. That is an observation, not a conclusion &mdash; they may be paid from another account, or annually outside this window. But the ${money(A.propertyNetPerMonth,2)} a month above is <b>rent less the mortgage and nothing else</b>, so it is not the property's true surplus. ${(()=>{ const M=(typeof mcstPosition==='function')?mcstPosition():null; const F=(typeof firePolicy==='function')?firePolicy():null; const T=(typeof propertyTaxPosition==='function')?propertyTaxPosition():null;
+      const known=(M?M.monthly:0)+(F&&F.premiumMonthly?F.premiumMonthly:0)+(T&&T.monthly?T.monthly:0);
+      return known>0?`On the costs Fortress does hold &mdash; ${money(known,2)} a month &mdash; the real figure is nearer ${money(A.propertyNetPerMonth-known,2)}.`:''; })()}</div>`:''}
+
+    <p class="note">Source: ${esc(A.source)}.</p>
+  </div>`; })()}
+
   ${(()=>{ const D=tenancyDuty(); if(!D) return '';
     return `<div class="card">
     <h2>Tenancy stamp duty<span class="pill">IRAS certificate &middot; ${esc(dayLabel(D.certIssued))}</span></h2>
@@ -4639,7 +4842,10 @@ function viewProp(){
     <div style="border-top:1px solid var(--grid);margin-top:12px;padding-top:12px"></div>
     <p class="note" style="margin-top:0"><b>What the duty implies, and what it does not.</b> At ${pct(D.rate,1)} rounded down to the dollar, ${money(D.duty,2)} means the chargeable base was between <b>${money(D.baseLow,2)}</b> and just under ${money(D.baseHigh,0)}. ${D.rentY!=null?`The rent Fortress holds &mdash; ${money(D.rentM,2)} a month &mdash; would give ${money(D.rentY,0)} over twelve months and a duty of ${money(D.dutyOnRecordedRent,0)}, not ${money(D.duty,0)}. The base is about ${money(D.gapLow,0)} higher.`:''}</p>
     <p class="note"><b>That gap is not evidence your rent went up, and Fortress does not read it as one.</b> Three documented reasons a chargeable base exceeds bare rent, any one of which covers it. The base includes consideration for ${esc(D.chargeableIncludes.join(', '))} &mdash; and this flat was let furnished. IRAS charges on the higher of two figures: <em>&ldquo;${esc(D.higherOfRule)}&rdquo;</em> (${esc(D.higherOfSource)}). And <b>the lease term is not on the certificate</b>, so the base need not cover twelve months at all &mdash; which is why Fortress does not divide it into a monthly rent.${D.rentY!=null?` For scale only: <em>if</em> the term were exactly twelve months, the base would work out at ${money(D.impliedMonthlyIf12,2)} a month. That is a conditional, not a figure Fortress holds.`:''}</p>
-    <div class="warnbox"><b>Worth closing, though.</b> The rent on file was read off your May and June 2026 bank statements, and this agreement is dated ${esc(dayLabel(D.docDate))} &mdash; after both. If the July agreement changed the rent, every rent figure in Fortress is stale: cover, net yield and the second sale scenario all move. Import a statement from July onwards, or tell Fortress the rent, and this closes either way.</div>
+    ${(()=>{ const RC=(typeof rentStillCurrent==='function')?rentStillCurrent():null;
+      if(RC && RC.confirmed) return `<div class="banner b-good"><span class="ic">&#10003;</span><div><b>Settled: the July agreement did not change the rent.</b> The bank record shows ${fmt(RC.observations,0)} credits of ${money(RC.amount,2)}, the last on <b>${esc(dayLabel(RC.lastRentOn))}</b> &mdash; after this agreement was stamped. Fortress asked for a statement from July onwards and now has one, so cover, net yield and the second sale scenario all rest on a confirmed figure rather than a stale one.
+        <br><br><b>And that strengthens the reading above.</b> If the rent is unchanged at ${money(RC.amount,2)}, the ${money(D.gapLow,0)} by which the chargeable base exceeds a bare year of it cannot be a rent rise. It is the furniture, maintenance and service the base includes &mdash; which is exactly what Fortress declined to read as a rent increase.</div></div>`;
+      return `<div class="warnbox"><b>Worth closing, though.</b> The rent on file was read off your May and June 2026 bank statements, and this agreement is dated ${esc(dayLabel(D.docDate))} &mdash; after both. If the July agreement changed the rent, every rent figure in Fortress is stale: cover, net yield and the second sale scenario all move. Import a statement from July onwards, or tell Fortress the rent, and this closes either way.</div>`; })()}
 
     <div style="border-top:1px solid var(--grid);margin-top:12px;padding-top:12px"></div>
     <p class="note" style="margin-top:0"><b>What this certificate confirms, which is worth as much as the money.</b> ${D.confirmsAddress?`It is the first document Fortress holds that names <b>${esc(D.property)}</b> and names you against it. ` : ''}${D.confirmsTenant?`The lessee matches the payer on the rent credits, so the income on file and this lease are the same arrangement. `:''}Neither was in doubt; both were previously inferred rather than documented.</p>
