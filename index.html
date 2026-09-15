@@ -141,7 +141,7 @@ details.gap[open]>summary::after{content:'  \2212'}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:SEP:04-08:38';
+const VERSION = 'v2026:SEP:14-11:49';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -187,6 +187,18 @@ const store = {
 
 /* ================= seed: parsed from the 31-Jul-2026 DBS statement ================= */
 const SEED = {"statementDate":"2026-07-31","source":"DBS eStatement S/N S-6075227990332902 (seeded)","portfolios":[{"id":"S-607522-0","refCurrency":"SGD","totalAssets":2697000.94,"totalCash":58732.22,"totalEquity":2638268.72,"netAssets":2129445.83,"totalLoans":-567555.11,"loans":[{"ccy":"SGD","principal":-565472.93,"description":"MRTL SGD, 2.10%, 28/05/2026-31/08/2026","ratePct":2.1,"startDate":"2026-05-28","maturityDate":"2026-08-31","accrIntSGD":-2082.18,"valueSGD":-565472.93}],"ccyAlloc":{"USD":2002259.39,"SGD":454608.92,"HKD":191043.71,"JPY":28128.14,"EUR":20960.78},"perf":{"startMtd":2200678.77,"startYtd":1981070.61,"addWithMtd":1585.34,"addWithYtd":-127104.04,"end":2130397.76,"plMtd":-71866.35,"plYtd":276431.19,"pctMtd":-3.27,"pctYtd":15.06},"income":{"divMtd":876.86,"divYtd":17054.57,"intRecMtd":1.56,"intRecYtd":1426.33},"expenses":{"custodyMtd":0,"custodyYtd":1962.31,"txnMtd":146,"txnYtd":1827.52,"intPaidMtd":0,"intPaidYtd":8354.34},"leverageFactor":1.3,"leverageThreshold":6,"riskRating":4.2,"riskThreshold":5,"fxForwards":[{"buyCcy":"SGD","buyAmt":568563.67,"pair":"CHF/SGD","contractRate":1.6334936,"maturityDate":"2026-08-31","sellCcy":"CHF","sellAmt":-348066.05,"mtmSGD":15387.54}]},{"id":"S-607522-1","refCurrency":"SGD","totalAssets":40157.73,"totalCash":2.67,"totalEquity":40155.06,"netAssets":40157.73,"totalLoans":0,"loans":[],"ccyAlloc":{"USD":40155.07,"SGD":2.66},"perf":{"startMtd":40379.45,"startYtd":360839.25,"addWithMtd":-1585.25,"addWithYtd":-355972.7,"end":40157.73,"plMtd":1363.53,"plYtd":35291.18,"pctMtd":3.38,"pctYtd":13.71},"income":{"divMtd":125.7,"divYtd":429.77,"intRecMtd":0.04,"intRecYtd":6706.31},"expenses":{"custodyMtd":0,"custodyYtd":227.48,"txnMtd":0,"txnYtd":458.06,"intPaidMtd":0,"intPaidYtd":0},"leverageFactor":1,"leverageThreshold":6,"riskRating":4,"riskThreshold":5,"fxForwards":[]}],"fxRates":{"AUD":0.901837,"CAD":0.914943,"CHF":1.58766,"EUR":1.476189,"GBP":1.723823,"HKD":0.1635941503966831,"JPY":0.008003,"USD":1.28275}};
+
+
+/* The August 2026 statement, transcribed from the eStatement PDF and reconciled before
+   it was written: cash+equity against total asset, the currency split against total asset,
+   total asset+loans against net asset, and start+additions+P&L against ending value - for
+   BOTH portfolios and for both MTD and YTD. All twelve checks agree to the cent. */
+const SEED_AUG = {"statementDate":"2026-08-31","source":"DBS eStatement S/N S-6075227974102202 (seeded)","portfolios":[{"id":"S-607522-0","refCurrency":"SGD","totalAssets":2800291.57,"totalCash":9761.35,"totalEquity":2790530.22,"netAssets":2251039.17,"totalLoans":-549252.4,"loans":[{"ccy":"SGD","principal":-549252.4,"description":"MRTL SGD, 2.15%, 31/08/2026-01/12/2026 (12911142)","ratePct":2.15,"startDate":"2026-08-31","maturityDate":"2026-12-01","accrIntSGD":0.0,"valueSGD":-549252.4}],"ccyAlloc":{"USD":2079092.8,"SGD":474452.12,"HKD":185496.83,"JPY":29297.11,"EUR":31952.71},"perf":{"startMtd":2131342.65,"startYtd":1981070.61,"addWithMtd":15308.04,"addWithYtd":-111796.0,"end":2251151.28,"plMtd":104500.59,"plYtd":381876.67,"pctMtd":4.89,"pctYtd":20.76},"income":{"divMtd":5875.8,"divYtd":22930.37,"intRecMtd":0.19,"intRecYtd":1426.52},"expenses":{"custodyMtd":0,"custodyYtd":1962.31,"txnMtd":558.86,"txnYtd":2386.38,"intPaidMtd":3090.74,"intPaidYtd":11445.08},"leverageFactor":1.2,"leverageThreshold":6,"riskRating":4.2,"riskThreshold":5,"fxForwards":[{"buyCcy":"SGD","buyAmt":552228.9,"pair":"CHF/SGD","contractRate":1.5825194,"maturityDate":"2026-12-01","sellCcy":"CHF","sellAmt":-348955.53,"mtmSGD":874.34}]},{"id":"S-607522-1","refCurrency":"SGD","totalAssets":42302.67,"totalCash":49.34,"totalEquity":42253.33,"netAssets":42302.67,"totalLoans":0,"loans":[],"ccyAlloc":{"USD":42300.01,"SGD":2.66},"perf":{"startMtd":40350.81,"startYtd":360839.25,"addWithMtd":61.36,"addWithYtd":-355911.34,"end":42302.67,"plMtd":1890.5,"plYtd":37374.76,"pctMtd":4.68,"pctYtd":16.6},"income":{"divMtd":46.97,"divYtd":476.74,"intRecMtd":0,"intRecYtd":6706.31},"expenses":{"custodyMtd":0,"custodyYtd":227.48,"txnMtd":63.07,"txnYtd":521.13,"intPaidMtd":0,"intPaidYtd":0},"leverageFactor":1,"leverageThreshold":6,"riskRating":4,"riskThreshold":5,"fxForwards":[]}],"fxRates":{"AUD":0.911027,"CAD":0.915543,"CHF":1.573796,"EUR":1.475956,"GBP":1.723868,"HKD":0.16235163090330826,"JPY":0.007971,"USD":1.27265}};
+
+/* Every statement Fortress ships with, newest last. The v16 migration below adds any of
+   these a device does not already hold - because seeding only on first install means a new
+   statement reaches a fresh browser and nobody else. */
+const SNAPSHOT_SEEDS = [SEED, SEED_AUG];
 
 /* ================= other-bank debts (manual) — seeded from CK's UOB screenshots ================= */
 const MANUAL_SEED = {
@@ -954,7 +966,7 @@ let state = {
   al: store.get('fortress.al', null),
   settings: store.get('fortress.settings', { lendingValue:null, ltvAlert:35, homeValue:null, annualValue:null, tenancyDutyPaidBy:'you', tab:'dash', fxCcy:'USD', fxBars:250, cpfYears:10, birthDate:null, frsOverride:null, remindersDone:{}, alChart:'daily', simple:true })
 };
-if(!state.snapshots){ state.snapshots = { [SEED.statementDate]: SEED }; store.set('fortress.snapshots', state.snapshots); }
+if(!state.snapshots){ state.snapshots = Object.fromEntries(SNAPSHOT_SEEDS.map(x=>[x.statementDate, x])); store.set('fortress.snapshots', state.snapshots); }
 if(!state.manual){ state.manual = MANUAL_SEED; store.set('fortress.manual', state.manual); }
 if(!state.income){ state.income = INCOME_SEED; store.set('fortress.income', state.income); }
 if(!state.mrtl){ state.mrtl = MRTL_SEED; store.set('fortress.mrtl', state.mrtl); }
@@ -971,7 +983,7 @@ if(!state.al){ state.al = AL_SEED; store.set('fortress.al', state.al); }
    readings needs those to reach devices that already installed an older build,
    WITHOUT touching anything the user entered. Each migration is additive and
    idempotent: it fills gaps and repairs missing fields, and never deletes.  */
-const SEED_VERSION = 15;
+const SEED_VERSION = 16;
 function runSeedMigrations(){
   const from = store.get('fortress.seedVersion', 0);
   if(from >= SEED_VERSION) return 0;
@@ -1028,6 +1040,26 @@ function runSeedMigrations(){
   if(state.settings.homePurchasePrice == null){ state.settings.homePurchasePrice = PURCHASE_SEED.price; changed++; }
   if(state.settings.homeBoughtYear == null){ state.settings.homeBoughtYear = +PURCHASE_SEED.completion.slice(0,4); changed++; }
   if(!state.settings.purchase){ state.settings.purchase = { ...PURCHASE_SEED }; changed++; }
+
+  /* v16 - ship new STATEMENTS to devices that already have snapshots.
+     The initialiser above seeds snapshots only when there are none at all, so a device
+     that installed in July froze on the July statement and would never see August. This
+     is the same staleness that hid the purchase record until v15, and the same fix: add
+     by key, never overwrite, and remember what has been offered so a snapshot he deleted
+     on purpose does not come back.
+
+     A statement he imported himself ALWAYS wins - if the date is already present, the
+     seed copy is skipped entirely rather than merged, because his own import came from
+     the real PDF and this one is a transcription. */
+  { state.settings.appliedSnapshotDates = state.settings.appliedSnapshotDates || [];
+    const offered = new Set(state.settings.appliedSnapshotDates);
+    SNAPSHOT_SEEDS.forEach(sn=>{
+      if(!state.snapshots[sn.statementDate] && !offered.has(sn.statementDate)){
+        state.snapshots[sn.statementDate] = sn; changed++;
+      }
+      offered.add(sn.statementDate);
+    });
+    state.settings.appliedSnapshotDates = [...offered]; }
 
   /* v15 - RE-SEED the purchase record.
      This was a silent, months-long bug and it is worth naming. The line above copies

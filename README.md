@@ -804,6 +804,85 @@ migration was legitimately needed for the purchase seed. They now assert the *re
 that the stored version tracks the app's own `SEED_VERSION` — so a real migration passes and
 a missing one still fails.
 
+## The August 2026 DBS statement
+
+Transcribed from the eStatement PDF (S/N S-6075227974102202) and reconciled **before** it
+was written into the seed. Twelve checks, across both portfolios:
+
+| Check | S-607522-0 | S-607522-1 |
+|---|---|---|
+| Cash + equity = total asset | ✓ | ✓ |
+| Currency split sums to total asset | ✓ | ✓ |
+| Total asset + loans = net asset | ✓ | ✓ (no loans) |
+| MTD start + additions + P&L = ending value | ✓ | ✓ |
+| YTD start + additions + P&L = ending value | ✓ | ✓ |
+
+**The PDF contained two statements, not one.** Pages 1-26 are S-607522-0; a second
+statement for **S-607522-1** starts at page 28 with its own table of contents. Seeding only
+the first would have silently dropped a S$42,302.67 account. `snaptest.js` asserts both are
+present.
+
+### What moved
+
+| | 31 Jul 2026 | 31 Aug 2026 |
+|---|---|---|
+| Total assets (both) | S$2,737,158.67 | **S$2,842,594.24** |
+| Net assets (both) | S$2,169,603.56 | **S$2,293,341.84** |
+| Margin loan | S$565,472.93 @ 2.10% | **S$549,252.40 @ 2.15%** |
+| LTV | 21.04% | **19.61%** |
+| Leverage factor | 1.3 | **1.2** |
+| CHF forward MTM | S$15,387.54 | **S$874.34** |
+
+**Both the loan and the forward rolled on 31 August.** The loan moved to a new tranche
+running to 1 Dec 2026 at 2.15% — 5bp dearer — with the principal cut by S$16,220.53 and
+accrued interest back to zero because the tranche started on the statement date. The CHF
+forward settled and was rewritten at 1.5825194, also to 1 Dec 2026. Its mark collapsed from
+S$15,387.54 to S$874.34, which is what a freshly struck forward looks like, not a loss. The
+two now mature on the same day, so the hedge and the borrowing stay matched — a test pins
+that.
+
+### One FX rate has to be inverted
+
+The statement quotes every rate as "1 X = n SGD" **except** HKD, which it prints as
+"1 SGD = 6.15947 HKD". Stored as its reciprocal, with a test asserting the stored value is
+below 1 — the failure mode is a 38× error in the HKD column.
+
+### DBS restated July, and Fortress records both figures
+
+August opens **S$944.89 above** July's stated closing value on S-607522-0, and its
+year-to-date P&L moved by exactly S$944.89 more than the month itself made. The same
+pattern appears on S-607522-1 at **S$193.08**. The two gaps matching is what makes this a
+restatement rather than rounding — S$1,137.97 across both.
+
+Fortress stores each statement as issued and does not smooth the join. A test pins both
+gaps, so if the pattern changes the suite says so.
+
+Separately, DBS's own "Ending Value" and "Net Asset" differ in both months — S$951.93 in
+July, S$112.11 in August. They are two different measures and the app keeps both.
+
+### Delivering it to a device that already had July
+
+Snapshots were seeded only when a device had **none at all**, so an install from July would
+have frozen there — the third instance of this staleness class, after the purchase record
+(v15) and the Hoken seed. `SEED_VERSION` is now **16**, and the migration adds any seeded
+statement whose date is missing, with `appliedSnapshotDates` so a deliberately deleted one
+does not return.
+
+**A statement CK imported himself always wins.** If the date is already present the seed
+copy is skipped entirely rather than merged — his import came from the real PDF, this one
+is a transcription. A test proves the imported copy survives.
+
+### What else moved, and why
+
+Four suites had pinned July-derived figures. Each was re-verified, not just re-pinned:
+the MCST comparison (12% late interest is now **9.85** points above the loan, not 9.90),
+pledged assets (**S$2,800,291.57**), the seed version, and net worth — which rose to
+**S$4,723,659.66** because DBS net assets gained S$123,738.28 while the Air Liquide holding
+lost S$131.62 on the EUR rate. Property equity and post-CPF proceeds are unchanged, which
+is the check that the property side was not disturbed.
+
+`snaptest.js` — 33 assertions, at `Asia/Singapore`.
+
 ## A portal reading that turned out not to be an update
 
 CK sent a fresh screenshot of the portal's My Property screen on 4 Sep 2026, expecting an
