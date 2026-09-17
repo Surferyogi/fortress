@@ -804,6 +804,39 @@ migration was legitimately needed for the purchase seed. They now assert the *re
 that the stored version tracks the app's own `SEED_VERSION` — so a real migration passes and
 a missing one still fails.
 
+## "All-in interest" was not all-in
+
+CK asked whether the dashboard's **"All-in interest / month"** tile included insurance,
+MCST and the like. It did not, and never had — it was `DBS margin interest + mortgage
+interest`, two lines and nothing else. "All-in" meant *across both lenders*, not *all
+costs*, and the question is the proof that the label did not carry that.
+
+That mattered more than it used to. When the tile was written, the MCST and the fire
+premium were not in Fortress. They are now, so the old label was understating the real
+monthly cost of holding by about a fifth.
+
+| | per month |
+|---|---|
+| DBS margin loan interest (S$549,252 @ 2.15%) | S$984 |
+| UOB mortgage interest (S$1,334,491 @ 1.13%) | S$1,246 |
+| **Interest only — what the tile counted** | **S$2,230** |
+| MCST | S$486 |
+| Fire insurance (approximate) | S$13 |
+| **With those** | **S$2,730** |
+| Property tax | not available — needs the Annual Value |
+
+The tile is now labelled **"Loan interest / month"**, says *"Interest only."* outright, and
+names the costs it excludes with the fuller figure beside them. When an Annual Value is
+entered the property tax joins the line and the total becomes S$3,630; until then the tile
+says the tax is missing rather than implying S$2,730 is complete.
+
+**The fix was to the label, not the number.** S$2,230 was always correct for what it
+measured. Renaming it is cheaper and more honest than redefining it, and it leaves the
+existing interest-versus-rent comparisons untouched.
+
+`simpletest.js` gained seven assertions, including one that the string "All-in interest"
+is *absent* — a wrong label that a test pins is a wrong label that comes back.
+
 ## The August 2026 DBS statement
 
 Transcribed from the eStatement PDF (S/N S-6075227974102202) and reconciled **before** it

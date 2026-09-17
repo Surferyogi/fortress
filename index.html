@@ -141,7 +141,7 @@ details.gap[open]>summary::after{content:'  \2212'}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:SEP:14-11:49';
+const VERSION = 'v2026:SEP:15-11:41';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -4335,7 +4335,21 @@ function viewDash(){
     <div class="tile"><div class="v ${a.plMtd>=0?'pos':'neg'}">${money(a.plMtd)}</div>
       <div class="l">Portfolio P&L, this month</div>
       <div class="d">${pm?esc(rangeLabel(pm.from,pm.to)):''}</div></div>`; })()}
-    <div class="tile"><div class="v">${money(allInMo)}</div><div class="l">All-in interest / month</div><div class="d">DBS ≈ ${money(a.estMonthlyInterest)} + mortgage ${impInt!==null?money(impInt):(mm?.mortgageRatePct!=null?'≈ '+money(mtg*mm.mortgageRatePct/100/12):'—')}</div></div>
+        ${(()=>{ /* RENAMED. This was "All-in interest / month", which CK reasonably read as
+         "everything this costs me a month" - it is not. It is interest on the two LOANS
+         and nothing else. Now that Fortress holds the MCST and the fire premium, leaving
+         the old label would have understated the real cost of holding by about a fifth.
+         The tile is precise about what it counts and states the fuller figure beside it. */
+      const M=(typeof mcstPosition==='function')?mcstPosition():null;
+      const F=(typeof firePolicy==='function')?firePolicy():null;
+      const T=(typeof propertyTaxPosition==='function')?propertyTaxPosition():null;
+      const mcstM=M?M.monthly:0, insM=(F&&F.premiumMonthly!=null)?F.premiumMonthly:0;
+      const taxM=(T&&T.monthly!=null)?T.monthly:null;
+      const holding = allInMo + mcstM + insM + (taxM||0);
+      const extras=[]; if(mcstM) extras.push('MCST '+money(mcstM));
+      if(insM) extras.push('insurance '+money(insM));
+      if(taxM) extras.push('property tax '+money(taxM));
+      return `<div class="tile"><div class="v">${money(allInMo)}</div><div class="l">Loan interest / month</div><div class="d">DBS \u2248 ${money(a.estMonthlyInterest)} + mortgage ${impInt!==null?money(impInt):(mm?.mortgageRatePct!=null?'\u2248 '+money(mtg*mm.mortgageRatePct/100/12):'\u2014')}${extras.length?`<br>Interest only. With ${extras.length>1?extras.slice(0,-1).join(', ')+' and '+extras[extras.length-1]:extras[0]}: <b>${money(holding)}</b>${taxM==null?' \u2014 before property tax, which needs your Annual Value':''}`:''}</div></div>`; })()}
     <div class="tile"><div class="v">${liquid>0?pct(totDebt/liquid*100,1):'—'}</div><div class="l">Total debt ÷ liquid assets</div><div class="d">${money(totDebt,0)} of debt against ${money(liquid,0)}${state.settings.homeValue?'<br>'+pct(totDebt/(liquid+state.settings.homeValue)*100,1)+' incl. property':'<br>property not counted'}</div></div>
   </div>`; })()}
   ${remindersCard()}
