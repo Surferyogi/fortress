@@ -141,7 +141,7 @@ details.gap[open]>summary::after{content:'  \2212'}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:SEP:15-11:41';
+const VERSION = 'v2026:SEP:20-10:47';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -160,6 +160,11 @@ const daysUntil = iso=>{ if(!iso) return null; return Math.ceil((new Date(iso+'T
 const addDays = (iso, n)=>{ if(!iso) return null;
   const [y,m,d] = iso.split('-').map(Number);
   return new Date(Date.UTC(y, m-1, d+n)).toISOString().slice(0,10); };
+/* Whole days from one calendar date to another, same UTC-only discipline as addDays.
+   Positive when `to` is later. Used for "paid N days before it was due". */
+const daysBetween = (from,to)=>{ if(!from||!to) return null;
+  const [y1,m1,d1]=from.split('-').map(Number), [y2,m2,d2]=to.split('-').map(Number);
+  return Math.round((Date.UTC(y2,m2-1,d2)-Date.UTC(y1,m1-1,d1))/86400000); };
 const addMonths = (iso,n)=>{ const [y,m]=iso.split('-').map(Number); const d=new Date(y,m-1+n,1);
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); };
 const dayMonthLabel = ym=>{ if(!ym) return '\u2014'; const [y,m]=ym.split('-');
@@ -686,6 +691,33 @@ const MCST_SEED = {
   contributionRule:'Contributions are due and payable on the 1st day of each billing period.',
   cutoff:'2026-08-31',
   cutoffRule:'Payments received after 31/08/2026 will not be reflected in this statement.',
+
+  /* Payments made AGAINST this invoice, recorded beside it rather than folded into it.
+     The invoice still says what the invoice says - 2,916.00 was due, 1,458.00 of it
+     brought forward. Fortress does not rewrite a document because it was later settled;
+     it records the payment as a separate dated fact with its own source and DERIVES the
+     balance from the two. That way the arrears warning can retire without the invoice
+     quietly changing shape underneath it.
+
+     The transfer confirmation names the RECEIVING bank and not the paying account, so
+     `fromAccount` is null and stays null. It is not inferred from the fact that the UOB
+     current account is the property's account - that would be a guess, and this is the
+     one place a guess would matter, because it decides whether the MCST is missing from
+     the June-August statements for an innocent reason.
+
+     The MCST's own bank account number is on the confirmation and is deliberately NOT
+     here. This file is served from a public GitHub Pages site. Same rule as the NRICs. */
+  payments:[
+    { date:'2026-09-03', amount:2916.00, method:'bank transfer',
+      payee:'MCST 4940', payeeBank:'OCBC', fromAccount:null, newPayee:true,
+      appliedTo:'the whole statement - both the brought-forward and the current quarter',
+      confirmedOn:'2026-09-04',
+      confirmedBy:'Toh Jia En, Account Executive (Trust Accounts), Knight Frank Property & Facilities Management Pte Ltd',
+      confirmedQuote:'We have received your payment $2,916.00 on 03/09/2026.',
+      payerNote:'You added MCST 4940 as a new payee on 3 Sep 2026 and waited for the bank to activate it, so this is the first contribution you have paid this MCST. That is why none appears in the earlier bank statements.',
+      source:'Email thread "Re: MCST4940 Invoice/Statement #07-04" from Knight Frank, 4 Sep 2026 10:32, with your own bank transfer confirmation of 3 Sep 2026 in the same thread' }
+  ],
+
   source:'MCST Plan No. 4940 (The Atelier) tax invoice dated 02/09/2026, unit #07-04, share unit 6'
 };
 
@@ -2023,8 +2055,60 @@ function mcstPosition(){
   const today = new Date().toISOString().slice(0,10);
   const daysPastTrigger = bfTrigger ? -daysUntil(bfTrigger) : null;
 
+  /* ---- settlement, DERIVED from the payments recorded against this invoice ----------
+     Payments are applied oldest period first, exactly as a statement would apply them:
+     the brought-forward quarter clears before the current one. Nothing is assumed. If the
+     payments do not cover the invoice, the remainder simply stays outstanding and every
+     warning below stands unchanged; if they over-cover it, the excess is shown as a
+     credit rather than silently absorbed. */
+  const payments = (M.payments||[]).slice().sort((a,b)=> a.date < b.date ? -1 : 1);
+  const paid = Math.round(payments.reduce((a,p)=>a+p.amount,0)*100)/100;
+  let pool = paid;
+  const take = amt => { const t = Math.min(pool, amt); pool = Math.round((pool-t)*100)/100; return t; };
+  const bfPaid      = bf      ? take(M.balanceBF)     : 0;
+  const currentPaid = current ? take(M.currentAmount) : 0;
+  const credit      = Math.round(pool*100)/100;
+  const outstanding = Math.round((M.totalDue - bfPaid - currentPaid)*100)/100;
+  const bfSettled      = bf      ? bfPaid      >= M.balanceBF     - 0.005 : null;
+  const currentSettled = current ? currentPaid >= M.currentAmount - 0.005 : null;
+  const settled        = payments.length>0 && outstanding <= 0.005;
+  const lastPayment    = payments.length ? payments[payments.length-1] : null;
+  const paidOn         = lastPayment ? lastPayment.date : null;
+  /* Paid how many days before the current quarter's due date? Worth keeping, because
+     12% a year is the most expensive money in his structure and being early on this one
+     bill is the single highest-return thing on the page. Negative means late. */
+  const paidEarlyDays = (settled && paidOn && current && current.dueDate)
+                      ? daysBetween(paidOn, current.dueDate) : null;
+  /* Was any late interest actually charged? The confirmation acknowledges the invoice
+     total and nothing more, so no interest was added. Stated as what the document shows,
+     not as a ruling on what the MCST could have charged. */
+  const lateInterestCharged = settled ? false : null;
+  /* How long the brought-forward quarter actually sat past its interest trigger - measured
+     to the DAY IT WAS PAID, not to today. Measuring to today would keep inflating a window
+     that closed on 3 Sep, which is the sort of quietly wrong number this app exists to
+     avoid. The money figure is the invoice's own rate applied to that window; it is what
+     was NOT charged, and it is labelled that way wherever it is shown. */
+  const bfExposedDays = (bfSettled && bf && bfTrigger && paidOn) ? daysBetween(bfTrigger, paidOn) : null;
+  const bfInterestAvoided = bfExposedDays!=null
+    ? Math.round(M.balanceBF * (M.lateInterestPct/100) / 365 * bfExposedDays * 100)/100 : null;
+
+  /* ---- the NEXT billing period ------------------------------------------------------
+     Derived only from what this invoice states: the periods on it are consecutive
+     quarters, so the next one begins the day after the current one ends. Fortress does
+     NOT know what it will cost - that invoice does not exist yet - and it will not repeat
+     1,458.00 as though it were a bill. The contribution rule and the interest rule are
+     the invoice's own words, so the dates they imply are stated, not forecast. */
+  const nextBegin = current ? addDays(current.end, 1) : null;
+  const nextDueOn = nextBegin;                       // "due and payable on the 1st day"
+  const nextInterestFrom = nextBegin ? addDays(nextBegin, 30) : null;
+  const daysToNext = nextBegin ? daysUntil(nextBegin) : null;
+
   const dailyIfUnpaid = M.balanceBF * (M.lateInterestPct/100) / 365;
   return { ...M, perQuarter, annual, monthly,
+    payments, paid, bfPaid, currentPaid, outstanding, credit,
+    bfSettled, currentSettled, settled, lastPayment, paidOn, paidEarlyDays,
+    lateInterestCharged, bfExposedDays, bfInterestAvoided,
+    nextBegin, nextDueOn, nextInterestFrom, daysToNext, nextAmountKnown:false,
     rentM, rentY,
     pctOfRent: rentY>0 ? annual/rentY*100 : null,
     current, bf, dueDate: current ? current.dueDate : null,
@@ -4029,18 +4113,30 @@ function retirementChecks(){
     }
   }
   { const Mc = (typeof mcstPosition==='function') ? mcstPosition() : null;
-    if(Mc && Mc.dueDate){ const d = Mc.daysToDue;
+    if(Mc && Mc.dueDate && !Mc.currentSettled){ const d = Mc.daysToDue;
       add({ id:'mcst-due', cat:'dated', date:Mc.dueDate, days:d,
         tone: d<=7?'serious':(d<=21?'warn':'info'),
         title:'MCST maintenance due', head:`${money(Mc.currentAmount,2)} for ${esc(dayLabel(Mc.current.begin))} \u2013 ${esc(dayLabel(Mc.current.end))}`,
         detail:`${money(Mc.managementFund,2)} management fund plus ${money(Mc.sinkingFund,2)} sinking fund. Late payment carries ${pct(Mc.lateInterestPct,2)} a year \u2014 ${Mc.vsMortgage!=null?`${fmt(Mc.vsMortgage,2)} points above your mortgage`:'far above your other borrowing'}, which makes it the most expensive money in your structure.`,
         source:Mc.source });
     }
-    if(Mc && Mc.balanceBF > 0){
+    if(Mc && Mc.balanceBF > 0 && !Mc.bfSettled){
       add({ id:'mcst-arrears', cat:'dated', date:Mc.bfTrigger, days:Mc.bfTrigger?daysUntil(Mc.bfTrigger):null,
         tone:'warn',
         title:'MCST quarter shown unpaid', head:`${money(Mc.balanceBF,2)} brought forward`,
         detail:`The ${esc(dayLabel(Mc.bf.begin))} \u2013 ${esc(dayLabel(Mc.bf.end))} quarter appears as a balance brought forward. <b>That may simply be timing:</b> the invoice states \u201c${esc(Mc.cutoffRule)}\u201d, so a payment made on or after ${esc(dayLabel(Mc.cutoff))} would not show. Fortress cannot tell the difference and does not assume you are in arrears. If it <em>is</em> outstanding, interest runs at ${pct(Mc.lateInterestPct,2)} from ${esc(dayLabel(Mc.bfTrigger))} \u2014 ${money(Mc.dailyIfUnpaid,2)} a day, ${money(Mc.monthlyIfUnpaid,2)} a month. Check the account, then dismiss this.`,
+        source:Mc.source });
+    }
+    /* Settled, so the only MCST item left is the quarter that has not been invoiced yet.
+       The DATE is the invoice's own rule - "contributions are due and payable on the 1st
+       day of each billing period" - and the AMOUNT is not stated anywhere, so it is not
+       stated here either. The last two quarters are given as a reference, labelled as a
+       reference. */
+    if(Mc && Mc.settled && Mc.nextBegin){
+      add({ id:'mcst-next', cat:'dated', date:Mc.nextBegin, days:Mc.daysToNext,
+        tone: Mc.daysToNext!=null && Mc.daysToNext<=14 ? 'warn' : 'info',
+        title:'Next MCST quarter begins', head:`amount not yet invoiced &middot; last two quarters were ${money(Mc.perQuarter,2)} each`,
+        detail:`The ${esc(dayLabel(Mc.bf.begin))} \u2013 ${esc(dayLabel(Mc.current.end))} statement is <b>settled in full</b> \u2014 ${money(Mc.paid,2)} paid on ${esc(dayLabel(Mc.paidOn))}${Mc.paidEarlyDays!=null&&Mc.paidEarlyDays>0?`, ${fmt(Mc.paidEarlyDays,0)} days before it was due`:''}. The quarter from ${esc(dayLabel(Mc.nextBegin))} has not been invoiced. <b>Fortress will not put a figure on it</b>; ${money(Mc.perQuarter,2)} is what the last two cost, not what the next one is. ${esc(Mc.contributionRule)} Interest at ${pct(Mc.lateInterestPct,2)} would run from ${esc(dayLabel(Mc.nextInterestFrom))}, so the invoice is worth chasing if it has not arrived by then.`,
         source:Mc.source });
     }
   }
@@ -4293,20 +4389,25 @@ function viewDash(){
   ${remindersDue().map(r=>`<div class="banner ${r.tone==='serious'?'b-serious':'b-warn'}"><span class="ic">${r.days!=null&&r.days<=45?'&#9200;':'&#9873;'}</span><div><b>${esc(r.title)}${r.days!=null?` — ${r.days>=0?fmt(r.days,0)+' days':'overdue'}`:''}</b>${r.head?esc(String(r.head).replace(/<[^>]*>/g,''))+'. ':''}Details in Reminders below.</div></div>`).join('')}
   <div class="card">
     <div class="hero">${money(a.net)}</div>
-    <div class="hero-sub">DBS net assets · ${snap.portfolios.map(p=>esc(p.id)).join(' + ')} · statement ${snap.statementDate}${upd<-40?' · <span style="color:var(--serious)">statement is '+Math.abs(upd)+' days old — import the new one</span>':''}</div>
+    <div class="hero-sub">DBS net assets${a.debt>0?` · after the ${money(a.debt,0)} drawdown loan`:''} · ${snap.portfolios.map(p=>esc(p.id)).join(' + ')} · statement ${snap.statementDate}${upd<-40?' · <span style="color:var(--serious)">statement is '+Math.abs(upd)+' days old — import the new one</span>':''}</div>
     ${(()=>{ const w=netWorth(a); if(!w.hasUob) return '';
       return `<div style="border-top:1px solid var(--grid);margin-top:12px;padding-top:12px">
       <div class="hero" style="font-size:26px">${money(w.dbsUob)}</div>
       <div class="hero-sub">DBS + UOB net assets · after the ${money(w.mortgage,0)} home loan${w.uobCash?', incl. '+money(w.uobCash,0)+' UOB cash ('+esc(w.cashMonth)+')':''}</div>
-      <div class="kv" style="margin-top:10px"><span class="k">DBS net assets</span><span class="v">${money(a.net,2)}</span></div>
+      ${a.debt>0?`<div class="kv" style="margin-top:10px"><span class="k">DBS portfolio assets<br><span style="font-size:11px;opacity:.72">${snap.portfolios.map(p=>esc(p.id)).join(' + ')}</span></span><span class="v">${money(a.assets,2)}</span></div>
+      <div class="kv"><span class="k">DBS drawdown loan${a.loans.length===1&&a.loans[0].ratePct!=null?`<br><span style="font-size:11px;opacity:.72">MRTL at ${pct(a.loans[0].ratePct,2)}${a.loans[0].maturityDate?`, matures ${esc(dayLabel(a.loans[0].maturityDate))}`:''}</span>`:(a.loans.length>1?`<br><span style="font-size:11px;opacity:.72">${fmt(a.loans.length,0)} facilities</span>`:'')}</span><span class="v neg">&minus;${money(a.debt,2)}</span></div>
+      <div class="kv"><span class="k">DBS net assets<br><span style="font-size:11px;opacity:.72">as the statement reports it</span></span><span class="v">${money(a.net,2)}</span></div>`
+      :`<div class="kv" style="margin-top:10px"><span class="k">DBS net assets</span><span class="v">${money(a.net,2)}</span></div>`}
       ${w.uobCash?`<div class="kv"><span class="k">UOB cash</span><span class="v">+${money(w.uobCash,2)}</span></div>`:''}
       <div class="kv"><span class="k">UOB home loan</span><span class="v neg">-${money(w.mortgage,2)}</span></div>
       <div class="kv"><span class="k"><b>DBS + UOB net assets</b></span><span class="v"><b>${money(w.dbsUob,2)}</b></span></div>
+      ${a.debt>0&&w.mortgage>0?`<div class="kv"><span class="k" style="opacity:.8">Total borrowings<br><span style="font-size:11px;opacity:.72">both loans, already taken off the line above</span></span><span class="v neg" style="opacity:.9">&minus;${money(a.debt+w.mortgage,2)}</span></div>`:''}
       ${state.settings.homeValue?`<div class="kv"><span class="k">Property (your estimate)</span><span class="v">+${money(state.settings.homeValue,2)}</span></div>
       <div class="kv"><span class="k"><b>Incl. property</b></span><span class="v"><b>${money(w.dbsUob+state.settings.homeValue,2)}</b></span></div>`:''}
       ${w.al?`<div class="kv" style="margin-top:6px"><span class="k">Air Liquide shares (not collateral)</span><span class="v">+${money(w.al,2)}</span></div>`:''}
       ${w.cpf?`<div class="kv"${w.al?'':' style="margin-top:6px"'}><span class="k">CPF balances (restricted)</span><span class="v">+${money(w.cpf,2)}</span></div>`:''}
       ${(w.cpf||w.al)?`<div class="kv"><span class="k"><b>Everything</b></span><span class="v"><b>${money(w.dbsUob+(state.settings.homeValue||0)+w.cpf+w.al,2)}</b></span></div>`:''}
+      ${a.debt>0?`<p class="note"><b>Your DBS drawdown loan is already taken off every total on this card.</b> The statement reports ${money(a.assets,2)} of portfolio assets and ${money(a.debt,2)} drawn against them, and <em>net assets</em> is what is left: ${money(a.net,2)}. It used to be invisible here &mdash; the home loan had a line of its own and this one did not &mdash; so the three rows above now show it the same way. <b>The totals have not changed</b>; adding it again would count it twice and understate you by ${money(a.debt,0)}.</p>`:''}
       <p class="note">${state.settings.homeValue?'':'The property the mortgage funds is <b>not</b> counted — enter its value in the Property tab and a third total appears. '}Excludes the CHF forward's ${money(w.fwdMtm,0)} mark-to-market, which DBS holds outside net assets until it settles.</p>
       ${w.al?`<p class="note"><b>The Air Liquide shares sit outside the margin account.</b> ${fmt(w.alShares,0)} shares registered directly with the company — they cannot be pledged, cannot raise your lending value and cannot answer a margin call in the hours one allows. Counted in wealth, excluded from headroom, exactly like CPF. See the AL tab.</p>`:''}
       ${w.cpf?`<p class="note"><b>CPF is counted last and separately on purpose.</b> It cannot be pledged, cannot be drawn to meet a margin call, and cannot service either loan — so it belongs in your net worth but nowhere in the margin arithmetic above.${w.cpfClaim?` A further ${money(w.cpfClaim,0)} of CPF already sits in the property and returns to your CPF, not to your bank, when the house is sold — see the Property tab.`:''}</p>`:''}
@@ -4750,14 +4851,24 @@ function viewProp(){
       <div class="tile"><div class="v">${money(M.perQuarter,2)}</div><div class="l">Per quarter</div><div class="d">${money(M.managementFund,2)} management + ${money(M.sinkingFund,2)} sinking</div></div>
       <div class="tile"><div class="v">${money(M.annual,0)}</div><div class="l">A year</div><div class="d">${money(M.monthly,2)} a month &middot; four quarters</div></div>
       <div class="tile"><div class="v ${M.pctOfRent!=null&&M.pctOfRent>0?'neg':''}">${M.pctOfRent!=null?pct(M.pctOfRent,2):'n/a'}</div><div class="l">Of the gross rent</div><div class="d">${M.rentY>0?`${money(M.rentY,0)} a year in`:'no rent recorded'}</div></div>
-      <div class="tile"><div class="v ${M.daysToDue!=null&&M.daysToDue<=21?'neg':''}">${M.daysToDue!=null?fmt(M.daysToDue,0):'—'}</div><div class="l">Days to the next due date</div><div class="d">${M.dueDate?esc(dayLabel(M.dueDate)):'not stated'}</div></div>
+      ${M.settled
+        ? `<div class="tile"><div class="v pos">Paid</div><div class="l">This statement</div><div class="d">${money(M.paid,2)} on ${esc(dayLabel(M.paidOn))}${M.paidEarlyDays!=null&&M.paidEarlyDays>0?` &middot; ${fmt(M.paidEarlyDays,0)} days early`:''}</div></div>`
+        : `<div class="tile"><div class="v ${M.daysToDue!=null&&M.daysToDue<=21?'neg':''}">${M.daysToDue!=null?fmt(M.daysToDue,0):'—'}</div><div class="l">Days to the next due date</div><div class="d">${M.dueDate?esc(dayLabel(M.dueDate)):'not stated'}</div></div>`}
     </div>
     <div style="margin-top:12px"><span class="k" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">Billing periods on this invoice</span></div>
     ${M.periods.map(q=>`
-    <div class="kv" style="align-items:flex-start"><span class="k">${esc(dayLabel(q.begin))} &ndash; ${esc(dayLabel(q.end))}<br><span style="font-size:11px;opacity:.72">${money(q.mgmt,2)} management &middot; ${money(q.sink,2)} sinking</span></span><span class="v" style="text-align:right"><b>${money(q.total,2)}</b><br><span style="font-size:11px;font-weight:400;opacity:.72">${q.kind==='broughtForward'?'brought forward':`due ${esc(dayLabel(q.dueDate))}`}</span></span></div>`).join('')}
+    <div class="kv" style="align-items:flex-start"><span class="k">${esc(dayLabel(q.begin))} &ndash; ${esc(dayLabel(q.end))}<br><span style="font-size:11px;opacity:.72">${money(q.mgmt,2)} management &middot; ${money(q.sink,2)} sinking</span></span><span class="v" style="text-align:right"><b>${money(q.total,2)}</b><br><span style="font-size:11px;font-weight:400;opacity:.72">${(q.kind==='broughtForward'?M.bfSettled:M.currentSettled)?`<span class="pos">paid ${esc(dayLabel(M.paidOn))}</span>`:(q.kind==='broughtForward'?'brought forward':`due ${esc(dayLabel(q.dueDate))}`)}</span></span></div>`).join('')}
     <div class="kv"><span class="k"><b>Total due on the invoice</b></span><span class="v"><b>${money(M.totalDue,2)}</b></span></div>
-    ${M.balanceBF>0?`<div class="banner b-warn" style="margin-top:10px"><span class="ic">&#9888;</span><div><b>${money(M.balanceBF,2)} shows as brought forward.</b>The ${esc(dayLabel(M.bf.begin))}&ndash;${esc(dayLabel(M.bf.end))} quarter is unpaid <em>on this statement</em>. That may only be timing: <em>&ldquo;${esc(M.cutoffRule)}&rdquo;</em> &mdash; so a payment made on or after ${esc(dayLabel(M.cutoff))} would not appear. <b>Fortress does not assume you are in arrears</b>; it reports what the document says. If it is genuinely outstanding, interest has run since ${esc(dayLabel(M.bfTrigger))} &mdash; ${fmt(M.daysPastTrigger,0)} days &mdash; at ${money(M.dailyIfUnpaid,2)} a day.</div></div>`:''}
+    ${M.payments.length?M.payments.map(pm=>`<div class="kv"><span class="k">Paid ${esc(dayLabel(pm.date))}<br><span style="font-size:11px;opacity:.72">${esc(pm.method)} to ${esc(pm.payee)}${pm.payeeBank?' at '+esc(pm.payeeBank):''}</span></span><span class="v pos">&minus;${money(pm.amount,2)}</span></div>`).join(''):''}
+    ${M.payments.length?`<div class="kv"><span class="k"><b>Outstanding</b></span><span class="v"><b class="${M.outstanding>0.005?'neg':'pos'}">${money(M.outstanding,2)}</b>${M.credit>0.005?`<br><span style="font-size:11px;opacity:.72">plus ${money(M.credit,2)} in credit</span>`:''}</span></div>`:''}
+    ${M.settled?`<div class="banner b-good" style="margin-top:10px"><span class="ic">&#10003;</span><div><b>Settled in full \u2014 ${money(M.paid,2)} paid on ${esc(dayLabel(M.paidOn))} and confirmed by the managing agent the next day.</b>
+      That clears both quarters on this statement: the ${esc(dayLabel(M.bf.begin))}&ndash;${esc(dayLabel(M.bf.end))} balance brought forward <em>and</em> the ${esc(dayLabel(M.current.begin))}&ndash;${esc(dayLabel(M.current.end))} quarter${M.paidEarlyDays!=null&&M.paidEarlyDays>0?`, the latter ${fmt(M.paidEarlyDays,0)} days before its ${esc(dayLabel(M.dueDate))} due date`:''}.
+      <b>No late interest was charged</b> \u2014 the agent acknowledged the invoice total and nothing more. On the invoice's own rule the brought-forward quarter was exposed from ${esc(dayLabel(M.bfTrigger))} until you paid it, ${fmt(M.bfExposedDays,0)} days at ${money(M.dailyIfUnpaid,2)} a day, so roughly ${money(M.bfInterestAvoided,2)} was not levied that could have been. <b>That is what did not happen, not a figure from the invoice</b> \u2014 it carries no interest line at all. <em>&ldquo;${esc(M.lastPayment.confirmedQuote)}&rdquo;</em> &mdash; ${esc(M.lastPayment.confirmedBy)}.
+      <br><br>${esc(M.lastPayment.payerNote)}
+      ${M.lastPayment.fromAccount?`Paid from ${esc(M.lastPayment.fromAccount)}.`:`<b>The confirmation does not name the account the money left</b>, only the one it reached, so Fortress does not say which of your accounts funded it.`}</div></div>`
+    :M.balanceBF>0?`<div class="banner b-warn" style="margin-top:10px"><span class="ic">&#9888;</span><div><b>${money(M.balanceBF,2)} shows as brought forward.</b>The ${esc(dayLabel(M.bf.begin))}&ndash;${esc(dayLabel(M.bf.end))} quarter is unpaid <em>on this statement</em>. That may only be timing: <em>&ldquo;${esc(M.cutoffRule)}&rdquo;</em> &mdash; so a payment made on or after ${esc(dayLabel(M.cutoff))} would not appear. <b>Fortress does not assume you are in arrears</b>; it reports what the document says. If it is genuinely outstanding, interest has run since ${esc(dayLabel(M.bfTrigger))} &mdash; ${fmt(M.daysPastTrigger,0)} days &mdash; at ${money(M.dailyIfUnpaid,2)} a day.</div></div>`:''}
     <p class="note"><b>${pct(M.lateInterestPct,2)} is the most expensive money in your structure.</b> ${esc(M.lateRule)} ${M.vsMortgage!=null?`That is <b>${fmt(M.vsMortgage,2)} points</b> above your mortgage`:''}${M.vsMargin!=null?` and <b>${fmt(M.vsMargin,2)} points</b> above your margin loan`:''}. Nothing else you owe comes close, so this is the one bill where paying on the day is worth more than the cash is worth anywhere else.</p>
+    ${M.settled&&M.nextBegin?`<p class="note"><b>The next quarter begins ${esc(dayLabel(M.nextBegin))}, and Fortress does not know what it costs.</b> That invoice has not been issued. ${esc(M.contributionRule)} So the money is due on ${esc(dayLabel(M.nextDueOn))} whether or not the bill has arrived, and ${pct(M.lateInterestPct,2)} would begin on ${esc(dayLabel(M.nextInterestFrom))}. The last two quarters were ${money(M.perQuarter,2)} each; <b>that is a reference, not a bill</b>, and Fortress will not put it in the arrears position of a quarter it has not seen an invoice for. ${M.daysToNext!=null?(M.daysToNext>0?`${fmt(M.daysToNext,0)} days from now.`:`${fmt(-M.daysToNext,0)} days ago \u2014 if no invoice has arrived, chase it.`):''}</p>`:''}
     <p class="note"><b>The yearly figure is one quarter multiplied by four.</b> Fortress has seen a single invoice, not a year of them. Contributions are set by the MCST's budget and can be revised at a general meeting, so ${money(M.annual,0)} is the current run rate, not a commitment. GST is shown on the invoice at ${pct(M.gstPct,2)} &mdash; if that ever changes, this figure moves with it.</p>
     <p class="note"><b>What this does and does not cover.</b> It is the management fund and the sinking fund only. ${(typeof propertyTaxPosition==='function' && propertyTaxPosition().known)?'Insurance, agent commission, repairs and vacancy are':'Property tax, insurance, agent commission, repairs and vacancy are'} still not in Fortress, so the net yield it shows remains better than the truth &mdash; by less than it was, but still. Source: ${esc(M.source)}.</p>
   </div>`; })()}
@@ -4869,7 +4980,14 @@ function viewProp(){
 
     ${A.expectedButAbsent.length?`<div class="warnbox"><b>Three costs Fortress knows this property has do not appear anywhere in ${fmt(A.monthsCount,0)} months of this account.</b> ${A.expectedButAbsent.map(x=>esc(x)).join(', ')}. That is an observation, not a conclusion &mdash; they may be paid from another account, or annually outside this window. But the ${money(A.propertyNetPerMonth,2)} a month above is <b>rent less the mortgage and nothing else</b>, so it is not the property's true surplus. ${(()=>{ const M=(typeof mcstPosition==='function')?mcstPosition():null; const F=(typeof firePolicy==='function')?firePolicy():null; const T=(typeof propertyTaxPosition==='function')?propertyTaxPosition():null;
       const known=(M?M.monthly:0)+(F&&F.premiumMonthly?F.premiumMonthly:0)+(T&&T.monthly?T.monthly:0);
-      return known>0?`On the costs Fortress does hold &mdash; ${money(known,2)} a month &mdash; the real figure is nearer ${money(A.propertyNetPerMonth-known,2)}.`:''; })()}</div>`:''}
+      return known>0?`On the costs Fortress does hold &mdash; ${money(known,2)} a month &mdash; the real figure is nearer ${money(A.propertyNetPerMonth-known,2)}.`:''; })()}
+      ${(()=>{ const M=(typeof mcstPosition==='function')?mcstPosition():null;
+        if(!M || !M.settled || !M.paidOn) return '';
+        /* One of the three is now explained, and saying so matters more than leaving the
+           warning to imply something it never established. The MCST payment is dated
+           AFTER the last line in this account, so its absence here was always timing. */
+        const afterWindow = A.to ? M.paidOn > A.to : null;
+        return `<p style="margin:8px 0 0"><b>One of the three is now accounted for.</b> The MCST statement was settled with ${money(M.paid,2)} on ${esc(dayLabel(M.paidOn))}${afterWindow===true?` &mdash; <b>after the last line in this account</b> (${esc(dayLabel(A.to))}), so it could not have appeared here`:''}. ${esc(M.lastPayment.payerNote)} ${M.lastPayment.fromAccount?`It was paid from ${esc(M.lastPayment.fromAccount)}.`:`<b>The transfer confirmation does not name the account it was paid from</b>, so Fortress still cannot say whether this account funded it &mdash; the next statement will settle that.`} Fire insurance and property tax remain unexplained.</p>`; })()}</div>`:''}
 
     <p class="note">Source: ${esc(A.source)}.</p>
   </div>`; })()}
