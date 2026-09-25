@@ -33,7 +33,10 @@ const near = (a, b, tol = 0.005) => a != null && b != null && Math.abs(a - b) <=
       parts: s.portfolios.map(p => ({ id: p.id, assets: p.totalAssets, loans: p.totalLoans, net: p.netAssets })),
       assets: a.assets, debt: a.debt, net: a.net,
       uobCash: w.uobCash, mortgage: w.mortgage, dbsUob: w.dbsUob,
-      home: state.settings.homeValue || 0, al: w.al, cpf: w.cpf
+      home: state.settings.homeValue || 0, al: w.al, cpf: w.cpf,
+      car: (typeof carPosition === 'function' && carPosition())
+             ? { price: carPosition().price, loan: carPosition().loanPrincipal,
+                 owed: carPosition().outstanding, net: carPosition().netToWorth } : null
     };
   });
 
@@ -49,9 +52,18 @@ const near = (a, b, tol = 0.005) => a != null && b != null && Math.abs(a - b) <=
   console.log('\n-- the ledger adds up, line by line, exactly as drawn --');
   ok('DBS + UOB = DBS net + UOB cash - home loan',
      near(D.dbsUob, D.net + D.uobCash - D.mortgage), [D.dbsUob, D.net, D.uobCash, D.mortgage]);
-  const everything = D.dbsUob + D.home + D.cpf + D.al;
-  ok('Everything = DBS+UOB + property + CPF + Air Liquide',
-     near(everything, D.dbsUob + D.home + D.cpf + D.al), everything);
+  const carNet = D.car ? D.car.net : 0;
+  const everything = D.dbsUob + D.home + D.cpf + D.al + carNet;
+  ok('Everything = DBS+UOB + property + CPF + Air Liquide + the car',
+     near(everything, D.dbsUob + D.home + D.cpf + D.al + carNet), everything);
+  if (D.car) {
+    /* the car contributes its NET, never its price: cost less loan less what is still
+       owed on it. If that ever becomes the full price, net worth jumps by 179,388 for a
+       car that is largely unpaid. */
+    ok('the car contributes cost - loan - owed, not its price',
+       near(carNet, D.car.price - D.car.loan - D.car.owed) && !near(carNet, D.car.price),
+       [carNet, D.car]);
+  }
 
   console.log('\n-- THE REGRESSION GUARD: the drawdown loan is deducted ONCE, never twice --');
   /* Build the totals from gross assets explicitly. If anything ever subtracts a.debt on
@@ -93,13 +105,14 @@ const near = (a, b, tol = 0.005) => a != null && b != null && Math.abs(a - b) <=
   ok('the three DBS rows reconcile on screen',
      near(rows['DBS portfolio assets'] + rows['DBS drawdown loan'], rows['DBS net assets']),
      [rows['DBS portfolio assets'], rows['DBS drawdown loan'], rows['DBS net assets']]);
-  ok('total borrowings = drawdown loan + home loan',
-     near(Math.abs(rows['Total borrowings']), D.debt + D.mortgage), rows['Total borrowings']);
+  ok('total borrowings = drawdown loan + home loan + car loan',
+     near(Math.abs(rows['Total borrowings']), D.debt + D.mortgage + (D.car ? D.car.loan : 0)),
+     [rows['Total borrowings'], D.debt, D.mortgage, D.car && D.car.loan]);
 
   console.log('\n-- the totals on screen are UNCHANGED by making the loan visible --');
   ok('DBS + UOB net assets on screen is unchanged', near(rows['DBS + UOB net assets'], D.dbsUob), rows['DBS + UOB net assets']);
   ok('Incl. property on screen is unchanged',       near(rows['Incl. property'], D.dbsUob + D.home), rows['Incl. property']);
-  ok('Everything on screen is unchanged',           near(rows['Everything'], everything), rows['Everything']);
+  ok('Everything on screen matches the computed total', near(rows['Everything'], everything), rows['Everything']);
   ok('Everything did NOT drop by the drawn amount',
      !near(rows['Everything'], everything - D.debt), [rows['Everything'], everything - D.debt]);
 
