@@ -141,7 +141,7 @@ details.gap[open]>summary::after{content:'  \2212'}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:SEP:25-14:06';
+const VERSION = 'v2026:SEP:30-12:59';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -747,27 +747,186 @@ const CAR_SEED = {
   loanInstalment:null, loanFirstPayment:null,
   loanDescribedAs:'Bank Financing',
   balanceDue:58038.00, balanceDueRule:'Inclusive of GST - payable before registration',
-  balancePaid:false,
+  balancePaid:true,
 
-  coeRebateSum:123000.00, coeBids:4, coeSecured:null,
-  registrationNo:null, registeredOn:null,
+  /* Payments, each from a bank SMS on the day it happened. Deliberately WITHOUT the
+     account and card digits the messages carry: they are partial identifiers and this
+     page is public. Naming the bank is enough to reason about where the money came from.
 
+     WHY THESE TWO CLEAR THE BALANCE, which is worth setting out because the amounts are
+     ambiguous on their face. 41,688.00 + 16,350.00 = 58,038.00, exactly the balance due -
+     but 16,350.00 is also exactly the deposit, so one reading has the card payment BEING
+     the deposit, leaving 16,350.00 still owed. The invoice settles it: dated 24/09/2026,
+     it credits the deposit as "Received" and still states 58,038.00 as due. Had the
+     15:48 PayNow already been received it would have shown 16,350.00 due instead. So the
+     invoice predates 15:48, so the deposit predates 15:48, so the 17:30 card payment
+     cannot be the deposit. It is part of the balance.
+
+     Fortress records the conclusion AND the check, because the difference is 16,350.00 of
+     his money - see depositDateEvidenced below. */
+  payments:[
+    { date:'2026-09-08', time:'13:10', amount:16350.00, method:'bank transfer',
+      via:'a bank transfer &mdash; the receipt does not name the bank', from:null,
+      payee:'Vantage Automotive Limited', against:'deposit',
+      source:'Transfer receipt, 8 Sep 2026 13:10' },
+    { date:'2026-09-24', time:'15:48', amount:41688.00, method:'PayNow',
+      via:'PayNow from a DBS account', from:'a DBS account',
+      payee:'Vantage Automotive Limited', against:'balance',
+      source:'DBS SMS, 24 Sep 2026 15:48 SGT' },
+    { date:'2026-09-24', time:'17:30', amount:16350.00, method:'card',
+      via:'a DBS/POSB card', from:'a DBS/POSB card',
+      payee:'E-AUTO (BYD)', against:'balance',
+      source:'DBS SMS, 24 Sep 2026 17:30 SGT' }
+  ],
+  depositDateEvidenced:true, depositPaidOn:'2026-09-08',
+  /* RESOLVED. The previous build could not date the deposit and said so: because
+     S$16,350.00 is also exactly the 24 Sep card payment, one reading had that card
+     payment BEING the deposit, which would have left S$16,350.00 of the balance owed.
+     Fortress reasoned from the invoice that the deposit must predate 15:48 on 24 Sep,
+     took the balance as cleared, and flagged the inference as inference.
+
+     The receipt of 8 Sep 2026 13:10 confirms it - the day after the sales agreement was
+     signed, and sixteen days before the two payments that cleared the balance. The
+     inference was right, and it is now evidence. */
+  depositResolution:'The deposit was paid on 8 September 2026 at 13:10, the day after the sales agreement was signed and sixteen days before the balance was cleared. Fortress had inferred this from the invoice and flagged it as an inference; the receipt confirms it.',
+
+  coeRebateSum:123000.00, coeBids:4,
+
+  /* ---- REGISTERED. LTA letter of 25 Sep 2026 and its Annex A. ------------------------
+     Deliberately NOT recorded here, because this file is served from a public GitHub
+     Pages site: the NRIC, the registered address, the chassis and motor numbers, the COE
+     certificate number and LTA's own transaction references. The registration NUMBER is
+     also left out - a plate is public on the road, but a plate sitting next to a net-worth
+     figure is an identifier, and nothing on this page needs it. Say the word and it goes
+     in; Fortress will not put it there on its own. */
+  registered:true,
+  registeredOn:'2026-09-25', ownershipFrom:'2026-09-25', firstRegistration:'2026-09-25',
+  vehicleType:'P10 - Passenger Motor Car', scheme:'Normal', sunRoof:true,
+  propellant:'Electric', powerKw:95.0, powerBhp:127, co2gkm:60.80,
+  passengerCapacity:4, unladenKg:1780, maxLadenKg:2190,
+
+  omv:24587.00,
+  coePremiumPaid:131890.00, coeCategory:'A',
+  coeFrom:'2026-09-25', coeExpiry:'2036-09-24', coeMonths:120,
+  arfPaid:0.00,
+  vesRebate:22500.00, evRebate:3922.00,
+  parfEligible:true, parfExpiry:'2036-09-24', minimumParfBenefit:0.00,
+  roadTaxYear:1474.00, roadTaxFrom:'2026-09-25', roadTaxTo:'2027-09-24',
+  giroRoadTax:true,
+  ltaRemark:'This vehicle is eligible for PARF. To renew the COE, the Prevailing Quota Premium payable is that of Category A.',
+  ltaSource:'Land Transport Authority registration letter dated 25 Sep 2026 and its Annex A',
+  registrationNo:null,
+
+  /* Everything on the sales agreement's Additional Options table. Each line is priced at
+     nil, which is the point: they are what BYD threw in. Two carry a stated value and are
+     recorded with it; the rest are listed as the agreement lists them, without a number,
+     because the agreement does not give one. The service package is the big one - ten
+     years or 200,000 km of scheduled servicing, which is why the running-cost card below
+     has no maintenance line to fill in. */
+  optionsIncluded:[
+    { item:'10 years / 200,000 km service package (Seal 6 EV)', value:null, note:'scheduled servicing, prepaid by the dealer' },
+    { item:'10 years / 200,000 km battery warranty',            value:null },
+    { item:'6 years / 150,000 km vehicle warranty',             value:null },
+    { item:'7.4 kW wallbox charger',                            value:null, note:'listed as "(3K)" on the agreement, priced at nil' },
+    { item:'Additional 6 months road tax (95 kW)',              value:null },
+    { item:'Insurance subsidy',                                 value:3000.00, note:'applied to the MSIG premium, not to the car price' },
+    { item:'Shopping voucher',                                  value:1000.00 },
+    { item:'Front and rear recording camera',                   value:null },
+    { item:'Electric auto tailgate',                            value:null },
+    { item:'3M solar film with roof (Premium Plus)',            value:null },
+    { item:'Solar film, front windscreen, anti-glare',          value:null },
+    { item:'MASK AVAS',                                         value:null }
+  ],
   includes:['road tax (12 months, plus an additional 6 months on the 95kW option)',
             'number plates','registration fees','Certificate of Entitlement'],
   excludes:['insurance premiums'],
   insurerRequirement:'At least one year of insurance must be bought through the dealer (Liberty, MSIG or Etiqa).',
   insuranceSubsidy:3000.00,
-  insurancePremium:null,                 // the Liberty proposal form is blank on premium
-  insuranceProposalStatus:'Liberty Pte Limited motor proposal form, unsigned and unpriced: premium, period of insurance, NCD and vehicle registration number are all blank.',
+  /* The insurer is MSIG, not Liberty. The Liberty proposal form supplied earlier was one
+     of the three the sales agreement offers and was NOT the one taken up - which is why
+     it is unsigned and unpriced. The charge that actually appears is MSIG's. */
+  insurer:'MSIG (S), through Sime Darby Singapore',
+  insurancePaid:299.03,
+  insurancePaidOn:'2026-09-24', insurancePaidFrom:'an OCBC card',
+  insuranceIsNetOfSubsidy:true,
+  /* CONFIRMED. The previous build derived 3,299.03 as "arithmetic on an assumption" -
+     299.03 paid plus the 3,000 subsidy - and refused to carry it as the premium. The
+     MSIG quote gives exactly 3,299.03, so the inference was right and is now a figure
+     from the insurer. It reconciles to the cent against the OCBC charge. */
+  insuranceGross:3299.03, insuranceGstPct:9,
+  insurancePeriodYears:1,
+  insuranceExcess:1000.00,
+  insuranceNcdPct:0,
+  insuranceNcdProtectorQuoted:false,
+  insuranceVerifiedBy:'Contego', insuranceQuoteBy:'Yeo Yue',
+  insuranceRenewalDate:null,             // the schedule's inception date is still not supplied
+  insuranceSource:'MSIG Insurance (Singapore) Pte Ltd one-year quote verified by Contego, quoted by Yeo Yue; the OCBC charge of 24 Sep 2026 18:06 SGT; and the LTA registration of 25 Sep 2026',
+  insuranceProposalStatus:'The Liberty Pte Limited proposal form supplied earlier is unsigned and unpriced throughout - it was one of the three insurers the sales agreement allows, and is not the one you took.',
+  /* Not recorded: the Salesforce record link on the quote. It is an internal CRM URL and
+     belongs nowhere near a public page. */
 
   dealerRemarks:['Car to be registered in the same month the COE is secured and the car arrives',
                  'First-time buyer, no trade-in',
-                 'S$3,000 insurance subsidy and a S$1,000 shopping voucher, both already netted to zero in the options',
+                 'A S$3,000 insurance subsidy, which went to the MSIG premium, and a S$1,000 shopping voucher - both shown at nil in the options table because they cost you nothing, not because they were absorbed into the car price',
                  'Deposit fully refunded if the loan is not approved',
                  'A change of colour or model after three days carries a S$2,000 admin fee'],
-  source:'Vehicle Sales Agreement VSA No. 1054052 dated 07/09/2026 (E-AUTO / Vantage Automotive Limited) and the eVSA 1054052 invoice dated 24/09/2026',
-  insuranceSource:'Liberty Pte Limited Motor Insurance Proposal Form, in partnership with Sime Darby Singapore Ltd, ref Brand New & Winbacks (04/2026)'
+  source:'Vehicle Sales Agreement VSA No. 1054052 dated 07/09/2026 (E-AUTO / Vantage Automotive Limited), the eVSA 1054052 invoice dated 24/09/2026, bank payment messages of 8 and 24 September 2026, and the LTA registration letter of 25 September 2026'
 };
+
+/* ---- Deregistration value ------------------------------------------------------------
+   This is the one part of "what is it worth" that Fortress can compute rather than ask
+   for, because it is a published formula applied to figures on his own registration
+   record. It is ALSO the number most likely to be misread, so every consumer of it says
+   what it is NOT.
+
+   COE rebate = quota premium paid x unused months / 120.       (LTA, OneMotoring)
+
+   PARF is a percentage of the ARF PAID. His record says Actual ARF Paid $0.00 and
+   Minimum PARF Benefit $0.00 - the VES and EV rebates of 26,422.00 between them wiped
+   the ARF out entirely. So the PARF leg of his deregistration value is nil, and the whole
+   floor is the COE rebate. That is not an inference about policy; it is two lines on the
+   letter read together with LTA's published definition.
+
+   DEREGISTRATION VALUE IS A FLOOR, NOT A RESALE PRICE. It is what LTA refunds for taking
+   the car off the road. Selling the car to a buyer transfers the remaining COE as well as
+   the car, so a market price sits ABOVE this line - by how much, Fortress has no idea and
+   does not guess. CK's own entered values are shown against it. */
+const PARF_RULE = {
+  /* bands for cars first registered on or after 13 Feb 2026, which is his case */
+  registeredFrom:'2026-02-13',
+  bands:[ {upToYears:5, pct:30}, {upToYears:6, pct:25}, {upToYears:7, pct:20},
+          {upToYears:8, pct:15}, {upToYears:9, pct:10}, {upToYears:10, pct:5} ],
+  cap:30000,
+  coeFormula:'COE rebate = QP or PQP of 10-year COE paid x total unused period of COE / 120 months',
+  source:'LTA OneMotoring, "Preferential Additional Registration Fee (PARF) & COE Rebate", checked 28 Sep 2026',
+  url:'https://onemotoring.lta.gov.sg/content/onemotoring/home/buying/rebates/parf-coe-rebate.html'
+};
+function carDeregValue(){
+  const C = (typeof carPosition==='function') ? carPosition() : null;
+  if(!C || !C.registered || C.coePremiumPaid==null) return null;
+  const r2 = n => Math.round(n*100)/100;
+  const qp = C.coePremiumPaid, total = C.coeMonths || 120;
+  const parfPct = y => { const b = PARF_RULE.bands.find(b=>y<=b.upToYears); return b? b.pct : 0; };
+  const rows = [];
+  for(let y=0; y<=10; y++){
+    const monthsLeft = Math.max(total - y*12, 0);
+    const coe = r2(qp * monthsLeft / total);
+    /* PARF is a percentage of ARF PAID, and nothing was paid */
+    const parf = r2((C.arfPaid||0) * parfPct(y)/100);
+    const capped = Math.min(parf, PARF_RULE.cap);
+    rows.push({ year:(+C.registeredOn.slice(0,4))+y, held:y, monthsLeft,
+                coeRebate:coe, parfPct:parfPct(y), parfRebate:capped,
+                total:r2(coe+capped) });
+  }
+  /* what the up-front rebates cost him at the other end, as arithmetic on his own figures */
+  const rebatesTaken = r2((C.vesRebate||0) + (C.evRebate||0));
+  const arfNotional  = rebatesTaken;              // they exactly extinguished it - see the card
+  const parfForgone  = r2(arfNotional * PARF_RULE.bands[0].pct/100);
+  return { rows, qp, total, arfPaid:C.arfPaid, minimumParf:C.minimumParfBenefit,
+    parfIsNil: (C.arfPaid||0)===0,
+    rebatesTaken, arfNotional, parfForgone, netAhead: r2(rebatesTaken - parfForgone),
+    coeExpiry:C.coeExpiry, rule:PARF_RULE, source:C.ltaSource };
+}
 
 /* ---- Singapore property tax -------------------------------------------------------
    CK supplied the non-owner-occupied bands and asked them to be verified. They check out
@@ -2208,20 +2367,239 @@ function carPosition(){
   const stmtDate = snap ? snap.statementDate : null;
   const depositAfterStatement = (C.depositPaid && stmtDate && C.vsaDate) ? C.vsaDate > stmtDate : null;
 
+  /* what has actually been paid, from the bank messages rather than from the invoice */
+  const payments = (C.payments||[]).slice().sort((a,b)=> a.date+a.time < b.date+b.time ? -1 : 1);
+  const balancePayments = payments.filter(p=>p.against==='balance');
+  const depositPayment  = payments.find(p=>p.against==='deposit') || null;
+  const paidToBalance = r2(balancePayments.reduce((a,p)=>a+p.amount,0));
+  const balanceClears = Math.abs(paidToBalance - C.balanceDue) < 0.005;
+  const lastPaymentOn = payments.length ? payments[payments.length-1].date : null;
+  const totalOwnMoney = r2(C.deposit + C.balanceDue);
+  const totalPaid = r2(payments.reduce((a,p)=>a+p.amount,0));
+  const fullyEvidenced = Math.abs(totalPaid - totalOwnMoney) < 0.005;
+  /* How much of his own cash has left an account since the statement Fortress is reading.
+     Every payment is dated, so this is a sum of dated facts rather than an "at least". */
+  const paidSinceStatement = r2(payments.filter(p=>!stmtDateEarly(p.date)).reduce((a,p)=>a+p.amount,0));
+  function stmtDateEarly(d){ const sd = (typeof latest==='function' && latest()) ? latest().statementDate : null;
+    return sd ? d <= sd : false; }
+
   const gaps = [];
   if(C.loanRatePct==null)      gaps.push('the interest rate');
   if(C.loanTenorYears==null)   gaps.push('the tenor');
   if(C.loanInstalment==null)   gaps.push('the monthly instalment');
   if(!C.loanLender)            gaps.push('the lender');
   const loanKnown = gaps.length===0;
-  const insuranceKnown = C.insurancePremium!=null;
+  const insuranceKnown = C.insurancePaid!=null;
+  /* If the subsidy was the full 3,000 and all of it went to this premium, the gross was
+     this. It is ARITHMETIC ON AN ASSUMPTION, labelled as such everywhere it is shown,
+     and it is not what insuranceGross holds - that stays null until the MSIG schedule
+     arrives. */
+  const insuranceGrossImplied = (C.insurancePaid!=null && C.insuranceIsNetOfSubsidy && C.insuranceSubsidy!=null)
+    ? r2(C.insurancePaid + C.insuranceSubsidy) : null;
+  /* Does the insurer's own figure less the subsidy equal what left his card? */
+  const insuranceReconciles = (C.insuranceGross!=null && C.insuranceSubsidy!=null && C.insurancePaid!=null)
+    ? Math.abs((C.insuranceGross - C.insuranceSubsidy) - C.insurancePaid) < 0.005 : null;
+  /* The quote is for one year and the car could not have been registered uninsured, so
+     cover was in force on the registration date. A one-year policy from there renews a
+     day short of a year later. The schedule's inception date has NOT been supplied, so
+     this is derived from the registration, and is labelled that way wherever it shows. */
+  const insuranceRenewalDerived = (C.insuranceRenewalDate==null && C.insurancePeriodYears===1 && C.registeredOn)
+    ? addDays(addMonths(C.registeredOn.slice(0,7),12)+'-'+C.registeredOn.slice(8,10), -1) : null;
+  const insuranceRenewalOn = C.insuranceRenewalDate || insuranceRenewalDerived;
+  const daysToInsuranceRenewal = insuranceRenewalOn ? daysUntil(insuranceRenewalOn) : null;
 
   return { ...C, paid, outstanding, netToWorth, discountOffRetail, discountPct,
     cashRequired, borrowedPct, reconciles, daysToDelivery,
     stmtDate, depositAfterStatement,
-    loanGaps:gaps, loanKnown, insuranceKnown,
+    payments, balancePayments, depositPayment, paidToBalance, balanceClears, lastPaymentOn,
+    totalOwnMoney, totalPaid, fullyEvidenced, paidSinceStatement,
+    loanGaps:gaps, loanKnown, insuranceKnown, insuranceGrossImplied, insuranceReconciles,
+    insuranceRenewalDerived, insuranceRenewalOn, daysToInsuranceRenewal,
     /* the identity above, checked rather than asserted */
     netEqualsDeposit: !C.balancePaid && Math.abs(netToWorth - C.deposit) < 0.005 };
+}
+
+/* ---- the car loan ------------------------------------------------------------------
+   Neither the invoice nor the sales agreement carries the loan's terms, so everything
+   here is driven by what CK enters on the Car tab. With nothing entered the function
+   returns a shape whose `known` is false and whose schedule is empty - every consumer
+   checks that and says "not available" rather than drawing an empty chart.
+
+   TWO RATE CONVENTIONS, because they are not the same loan.
+
+   FLAT: interest is charged on the ORIGINAL principal for the whole tenor, which is how
+   Singapore motor financing is usually quoted. Interest and principal are both constant
+   each month. The headline rate understates the real cost, because you keep paying
+   interest on money you have already repaid - so effectiveFromFlat() below solves for the
+   reducing-balance rate that produces the same instalment, by bisection on the annuity
+   formula. That is arithmetic, not an opinion, and it is the number worth looking at.
+
+   REDUCING: ordinary amortisation, the same annuity() the mortgage uses.
+
+   Fortress does NOT know which convention his agreement uses. The field defaults to
+   nothing and he picks; until he does, nothing is computed. */
+function effectiveFromFlat(principal, flatPct, months){
+  if(!(principal>0) || months<=0 || flatPct==null) return null;
+  const instal = (principal + principal*(flatPct/100)*(months/12)) / months;
+  /* find the annual reducing rate whose annuity payment equals that instalment */
+  let lo=0, hi=100;
+  for(let i=0;i<200;i++){
+    const mid=(lo+hi)/2, a=annuity(principal, mid, months);
+    if(a==null) return null;
+    if(a < instal) lo=mid; else hi=mid;
+  }
+  return Math.round((lo+hi)/2*10000)/10000;
+}
+function carLoan(){
+  const C = (typeof carPosition==='function') ? carPosition() : null;
+  const L = state.settings.carLoan || {};
+  const principal = C ? C.loanPrincipal : null;
+  const ratePct = L.ratePct ?? null, rateType = L.rateType ?? null;
+  const tenorYears = L.tenorYears ?? null, firstPayment = L.firstPayment ?? null;
+  const lender = L.lender || (C ? null : null);
+  const missing = [];
+  if(principal==null)  missing.push('the principal');
+  if(ratePct==null)    missing.push('the interest rate');
+  if(!rateType)        missing.push('whether the rate is flat or reducing-balance');
+  if(tenorYears==null) missing.push('the tenor');
+  if(!firstPayment)    missing.push('the first payment date');
+  const known = missing.length===0;
+  const base = { principal, ratePct, rateType, tenorYears, firstPayment, lender,
+                 missing, known, schedule:[], years:[] };
+  if(!known) return base;
+
+  const months = Math.round(tenorYears*12);
+  const r2 = n => Math.round(n*100)/100;
+  let instal, effPct;
+  if(rateType==='flat'){
+    const totalInterest = principal * (ratePct/100) * tenorYears;
+    instal = (principal + totalInterest) / months;
+    effPct = effectiveFromFlat(principal, ratePct, months);
+  } else {
+    instal = annuity(principal, ratePct, months);
+    effPct = ratePct;
+  }
+  const schedule = [];
+  let bal = principal;
+  const flatInterestPerMonth = rateType==='flat' ? principal*(ratePct/100)*tenorYears/months : null;
+  const flatPrincipalPerMonth = rateType==='flat' ? principal/months : null;
+  for(let i=0;i<months;i++){
+    const month = addMonths(firstPayment.slice(0,7), i);
+    let interest, princ;
+    if(rateType==='flat'){ interest = flatInterestPerMonth; princ = flatPrincipalPerMonth; }
+    else { interest = bal * (ratePct/100/12); princ = instal - interest; }
+    bal = bal - princ;
+    if(Math.abs(bal) < 0.005) bal = 0;
+    schedule.push({ n:i+1, month, instalment:r2(instal), interest:r2(interest),
+                    principal:r2(princ), balance:r2(Math.max(bal,0)) });
+  }
+  const totalInterest = r2(schedule.reduce((a,m)=>a+m.interest,0));
+  const totalPaid     = r2(schedule.reduce((a,m)=>a+m.instalment,0));
+  /* group by calendar year, which is the view he asked for */
+  const years = [];
+  schedule.forEach(m=>{
+    const y = +m.month.slice(0,4);
+    let row = years.find(x=>x.year===y);
+    if(!row){ row = { year:y, interest:0, principal:0, paid:0, closing:null, months:0 }; years.push(row); }
+    row.interest = r2(row.interest + m.interest);
+    row.principal = r2(row.principal + m.principal);
+    row.paid = r2(row.paid + m.instalment);
+    row.closing = m.balance; row.months++;
+  });
+  const today = new Date().toISOString().slice(0,10).slice(0,7);
+  const paidSoFar = schedule.filter(m=>m.month <= today);
+  const nowRow = paidSoFar.length ? paidSoFar[paidSoFar.length-1] : null;
+  return { ...base, months, instalment:r2(instal), effectivePct:effPct,
+    interestPremium: (rateType==='flat' && effPct!=null) ? Math.round((effPct-ratePct)*10000)/10000 : null,
+    schedule, years, totalInterest, totalPaid,
+    interestShareOfPrincipal: principal>0 ? totalInterest/principal*100 : null,
+    balanceNow: nowRow ? nowRow.balance : principal,
+    monthsElapsed: paidSoFar.length, monthsLeft: months - paidSoFar.length,
+    lastMonth: schedule[schedule.length-1].month,
+    ruleOf78Note:'Settling a flat-rate loan early usually costs more than the straight-line balance above, because lenders rebate unearned interest on a sum-of-digits basis rather than pro rata. Fortress does not model that: the rebate rule is in your agreement and not on any document supplied.' };
+}
+
+/* ---- what the car is worth, year by year -------------------------------------------
+   Fortress has NO valuation model for a car and will not build one. Resale depends on
+   the COE market, the PARF rebate, mileage and condition, none of which it holds. Every
+   figure here is one CK typed in, and the card says so in those words.
+
+   What Fortress DOES add is the arithmetic around his figures: the loan balance at the
+   same date, the equity between them, whether he is in negative equity, and the total
+   cost of ownership to that point. That is the part worth automating. */
+function carValues(){
+  const C = (typeof carPosition==='function') ? carPosition() : null;
+  const L = (typeof carLoan==='function') ? carLoan() : null;
+  const entered = (state.settings.carValues || []).slice()
+                    .filter(v=>v && v.year!=null && v.value!=null)
+                    .sort((a,b)=>a.year-b.year);
+  const startYear = C && C.estimatedDelivery ? +C.estimatedDelivery.slice(0,4) : null;
+  const cost = C ? C.price : null;
+  const rows = entered.map(v=>{
+    /* the loan balance at December of that year, from the schedule if there is one */
+    let bal = null;
+    if(L && L.known){
+      const upto = L.schedule.filter(m=>+m.month.slice(0,4) <= v.year);
+      bal = upto.length ? upto[upto.length-1].balance : L.principal;
+      if(v.year < +L.firstPayment.slice(0,4)) bal = L.principal;
+    }
+    const interestToDate = (L && L.known)
+      ? Math.round(L.years.filter(y=>y.year<=v.year).reduce((a,y)=>a+y.interest,0)*100)/100 : null;
+    const equity = bal!=null ? Math.round((v.value - bal)*100)/100 : null;
+    const lostFromCost = cost!=null ? Math.round((cost - v.value)*100)/100 : null;
+    const lostPct = (cost!=null && cost>0) ? lostFromCost/cost*100 : null;
+    const yearsHeld = startYear!=null ? v.year - startYear : null;
+    return { ...v, balance:bal, equity, negativeEquity: equity!=null && equity<0,
+             interestToDate, lostFromCost, lostPct, yearsHeld,
+             perYear: (yearsHeld!=null && yearsHeld>0 && lostFromCost!=null)
+                        ? Math.round(lostFromCost/yearsHeld*100)/100 : null };
+  });
+  return { rows, cost, startYear, hasValues: rows.length>0,
+    loanKnown: !!(L && L.known),
+    source:'Every value in this table is one you entered. Fortress holds no car valuation model and derives none.' };
+}
+
+/* ---- running costs -------------------------------------------------------------------
+   Split hard: what the DEALER has already covered (documented, dated, and worth a lot),
+   and what CK pays (mostly unknown, and entered by him). Nothing is estimated. */
+function carRunningCosts(){
+  const C = (typeof carPosition==='function') ? carPosition() : null; if(!C) return null;
+  const E = state.settings.carCosts || {};
+  const r2 = n => Math.round(n*100)/100;
+  /* included by BYD / the dealer, straight off the sales agreement's options table */
+  const included = (C.optionsIncluded||[]).slice();
+  const entered = [
+    { key:'electricity',   label:'Electricity / charging', per:'month', value:E.electricity ?? null },
+    { key:'parking',       label:'Season parking',          per:'month', value:E.parking ?? null },
+    { key:'ercp',          label:'ERP and road usage',      per:'month', value:E.ercp ?? null },
+    { key:'roadTaxYear',   label:'Road tax', per:'year',
+      value:E.roadTaxYear ?? (C.roadTaxYear ?? null),
+      fromDoc:E.roadTaxYear==null && C.roadTaxYear!=null,
+      note:C.roadTaxYear!=null?`LTA has it at ${money(C.roadTaxYear,2)} for ${dayLabel(C.roadTaxFrom)} to ${dayLabel(C.roadTaxTo)}`:null },
+    { key:'insuranceYear', label:'Insurance at renewal, without the subsidy', per:'year',
+      value:E.insuranceYear ?? null,
+      /* the gross is DOCUMENTED but it is this year's price, not next year's - so it is
+         offered as a reference and never auto-filled as the renewal */
+      reference:C.insuranceGross ?? null,
+      note:C.insuranceGross!=null?`this year's gross was ${money(C.insuranceGross,2)}; the renewal is repriced and your NCD moves, so Fortress will not fill this in`:null },
+    { key:'tyresYear',     label:'Tyres and wear items',    per:'year', value:E.tyresYear ?? null },
+    { key:'otherYear',     label:'Anything else',           per:'year', value:E.otherYear ?? null }
+  ];
+  const known = entered.filter(x=>x.value!=null);
+  const gaps  = entered.filter(x=>x.value==null);
+  const monthly = r2(known.filter(x=>x.per==='month').reduce((a,x)=>a+x.value,0)
+                   + known.filter(x=>x.per==='year').reduce((a,x)=>a+x.value,0)/12);
+  const annual  = r2(monthly*12);
+  const L = (typeof carLoan==='function') ? carLoan() : null;
+  const instalment = (L && L.known) ? L.instalment : null;
+  return { included, entered, known, gaps, monthly, annual,
+    complete: gaps.length===0,
+    instalment,
+    allInMonthly: instalment!=null ? r2(instalment + monthly) : null,
+    /* year one is special: servicing, road tax and most of the insurance were bought by
+       the dealer, so it flatters every later year */
+    yearOneInsurance: C.insurancePaid ?? null,
+    source:C.source };
 }
 
 /* ---- What the property really nets, once the costs Fortress HOLDS are taken off ------
@@ -3666,9 +4044,34 @@ function retireAt55(){
   const ersFundable = Math.min(ersHeadroom, oaFrs);
   const rateGap = (CPF_RULES.raPct - CPF_RULES.oaPct)/100;
 
+  /* (e) the housing refund as a SOURCE for that top-up.
+     Selling the flat sends the CPF principal plus its accrued interest back to CPF, not
+     to the bank. From 55 that money lands in the RA up to the FRS and in the OA beyond
+     it - and OA money is exactly what a top-up to the ERS is made from. So a sale is the
+     one event that could fund the whole ERS headroom, which the projected OA alone
+     cannot.
+
+     Three things this must not pretend:
+       - it is CONDITIONAL on selling. Fortress is not suggesting a sale; it is saying
+         what the refund would do IF one happened.
+       - the refund is projected to the 55th birthday with cpfClaimOn(), the same monthly
+         accrual and annual compounding the Property tab uses, not held at the statement.
+       - it changes what he RECEIVES, never what he is WORTH. CPF money moving from a
+         house back into a CPF account is not new money. */
+  const refundAt55 = (A.date55 && typeof cpfClaimOn==='function') ? cpfClaimOn(A.date55) : null;
+  const refund = refundAt55 ? refundAt55.claim : null;
+  const ersGapAfterOa = Math.max(0, ersHeadroom - ersFundable);
+  const ersFundableWithRefund = refund!=null ? Math.min(ersHeadroom, oaFrs + refund) : null;
+  const refundUsedForErs = ersFundableWithRefund!=null ? Math.max(0, ersFundableWithRefund - ersFundable) : null;
+  const refundFillsErs = refund!=null && refund >= ersGapAfterOa - 0.005;
+  const refundSurplus = (refund!=null && refundUsedForErs!=null) ? Math.round((refund - refundUsedForErs)*100)/100 : null;
+
   return { A, F, B, ersRule, sumsPublished: B.published && F.published, plan:P,
     oa, sa, now, at55, pledged, freed, extraIfPledged, yrs, rows:(P?P.rows:null), ev,
     raFrs, oaFrs, ersHeadroom, ersFundable, ersYearlyGain: ersFundable * rateGap, rateGap,
+    refundAt55, refund, ersGapAfterOa, ersFundableWithRefund, refundUsedForErs,
+    refundFillsErs, refundSurplus,
+    ersYearlyGainWithRefund: ersFundableWithRefund!=null ? ersFundableWithRefund * rateGap : null,
     reliefOnErs: 0,                                // relief stops at the FRS - verified
     saAlreadyOverFrs: sa > F.value };
 }
@@ -4251,7 +4654,18 @@ function retirementChecks(){
       add({ id:'car-insurance', cat:'standing',
         tone:'warn',
         title:'Car insurance not priced', head:`at least one year must be bought through the dealer`,
-        detail:`${esc(C.insurerRequirement)} ${esc(C.insuranceProposalStatus)} A ${money(C.insuranceSubsidy,0)} subsidy is already netted into the package price, so it does not reduce what you pay the insurer. <b>Fortress carries no premium for this car</b> and will not guess one &mdash; the sales agreement prices the vehicle &ldquo;exclusive of insurance premiums&rdquo;, so this is a real cost sitting outside every total on this page.`,
+        detail:`${esc(C.insurerRequirement)} ${esc(C.insuranceProposalStatus)} <b>Fortress carries no premium for this car</b> and will not guess one &mdash; the sales agreement prices the vehicle &ldquo;exclusive of insurance premiums&rdquo;, so this is a real cost sitting outside every total on this page.`,
+        source:C.insuranceSource });
+    }
+    /* Priced, but the period is not on any document - so the renewal date, and the fact
+       that the renewal carries no subsidy, is the thing left to track. */
+    if(C && C.insuranceKnown && C.insuranceRenewalOn){
+      const d = C.daysToInsuranceRenewal;
+      add({ id:'car-insurance-renewal', cat:'dated', date:C.insuranceRenewalOn, days:d,
+        tone: d!=null && d<=30 ? 'warn' : 'info',
+        title:`Car insurance renews${C.insuranceRenewalDerived?' \u2014 date derived, not documented':''}`,
+        head:`gross was ${money(C.insuranceGross,2)}; you paid ${money(C.insurancePaid,2)} after the subsidy`,
+        detail:`The ${money(C.insuranceSubsidy,0)} dealer subsidy was a one-off, so <b>plan from the ${money(C.insuranceGross,2)} gross, not the ${money(C.insurancePaid,2)} you actually paid</b> &mdash; ${fmt(C.insuranceGross/C.insurancePaid,0)} times as much. Fortress will not predict the renewal: your no-claim discount starts at ${pct(C.insuranceNcdPct,0)} and MSIG reprices annually. ${C.insuranceRenewalDerived?`<b>This date is derived</b> from the one-year term and the ${esc(dayLabel(C.registeredOn))} registration, because the schedule's inception date has not been supplied.`:''}`,
         source:C.insuranceSource });
     }
   }
@@ -4424,6 +4838,7 @@ function toggleReminder(id){
 const TABS=[
   {id:'dash', label:'Summary', icon:'<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>'},
   {id:'prop', label:'Property', icon:'<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.8V21h14V9.8"/><path d="M10 21v-6h4v6"/>'},
+  {id:'car', label:'Car', icon:'<path d="M3 13.5h18"/><path d="M5.5 13.5 7 8.2a2 2 0 0 1 1.9-1.4h6.2A2 2 0 0 1 17 8.2l1.5 5.3"/><path d="M4 13.5V18h16v-4.5"/><circle cx="7.5" cy="16" r="1.2"/><circle cx="16.5" cy="16" r="1.2"/>'},
   {id:'cpf', label:'CPF', icon:'<path d="M4 8h16v11H4z"/><path d="M4 8l8-5 8 5"/><path d="M9 19v-5h6v5"/><circle cx="12" cy="11" r="1.2"/>'},
   {id:'retire', label:'Retire', icon:'<path d="M12 3v9"/><path d="M8.5 6.5 12 3l3.5 3.5"/><circle cx="12" cy="16.5" r="4.5"/><path d="M12 14.6v1.9l1.4 1"/>'},
   {id:'al', label:'AL', icon:'<path d="M4 19h16"/><path d="M6 19V9l6-5 6 5v10"/><path d="M10 19v-5h4v5"/>'},
@@ -4532,47 +4947,12 @@ function viewDash(){
       <p class="note">${state.settings.homeValue?'':'The property the mortgage funds is <b>not</b> counted — enter its value in the Property tab and a third total appears. '}Excludes the CHF forward's ${money(w.fwdMtm,0)} mark-to-market, which DBS holds outside net assets until it settles.</p>
       ${(()=>{ const C=(typeof carPosition==='function')?carPosition():null; if(!C) return '';
         return `<p class="note"><b>The car's three lines net to ${money(C.netToWorth,2)} &mdash; exactly the deposit you have already paid.</b> ${money(C.price,0)} of car, less ${money(C.loanPrincipal,0)} borrowed, less ${money(C.outstanding,0)} still owed to the dealer. That identity is the point: at cost, a part-paid purchase moves nothing except the cash already handed over.
-        ${C.depositAfterStatement?`<b>But the deposit left your bank after the ${esc(C.stmtDate)} statement Fortress is reading</b>, so if it came from a tracked account these totals run ${money(C.deposit,0)} ahead of your real balance until the next statement is imported. Fortress does not know which account paid it and will not adjust a balance it has not observed.`:''}
+        ${C.paidSinceStatement>0?`<b>But all ${money(C.paidSinceStatement,2)} of it left your accounts in September, after the ${esc(C.stmtDate)} statement Fortress is reading</b> &mdash; ${money(C.deposit,0)} on ${esc(dayLabel(C.depositPayment?C.depositPayment.date:null))} and ${money(C.paidToBalance,0)} on ${esc(dayLabel(C.lastPaymentOn))}. The DBS figure above is a month-end photograph and shows none of it. <b>Whether those accounts sit inside the two portfolios Fortress tracks is not established</b>: the September messages name a DBS account and a DBS/POSB card, neither of which is an investment portfolio, and the deposit receipt names no bank at all. Fortress will not deduct from a balance it has not observed. Import the September statement and this resolves itself.`:''}
         <b>&ldquo;At cost&rdquo; is not a valuation.</b> Fortress has no market value for this car and does not estimate one; a car is worth less than its invoice from the day it is registered, so this line is generous and the true figure is lower.</p>`; })()}
       ${w.al?`<p class="note"><b>The Air Liquide shares sit outside the margin account.</b> ${fmt(w.alShares,0)} shares registered directly with the company — they cannot be pledged, cannot raise your lending value and cannot answer a margin call in the hours one allows. Counted in wealth, excluded from headroom, exactly like CPF. See the AL tab.</p>`:''}
       ${w.cpf?`<p class="note"><b>CPF is counted last and separately on purpose.</b> It cannot be pledged, cannot be drawn to meet a margin call, and cannot service either loan — so it belongs in your net worth but nowhere in the margin arithmetic above.${w.cpfClaim?` A further ${money(w.cpfClaim,0)} of CPF already sits in the property and returns to your CPF, not to your bank, when the house is sold — see the Property tab.`:''}</p>`:''}
       </div>`; })()}
   </div>
-  ${(()=>{ const C=(typeof carPosition==='function')?carPosition():null; if(!C) return '';
-    return `<div class="card">
-    <h2>Car purchase<span class="pill">${esc(C.make)} ${esc(C.model)} &middot; VSA ${esc(C.vsaNo)}</span></h2>
-    <div class="tiles">
-      <div class="tile"><div class="v">${money(C.price,0)}</div><div class="l">What it costs</div><div class="d">${money(C.retailPrice,0)} list, less ${money(C.discountOffRetail,0)} (${pct(C.discountPct,1)})</div></div>
-      <div class="tile"><div class="v ${C.outstanding>0?'neg':'pos'}">${money(C.outstanding,0)}</div><div class="l">Still owed to the dealer</div><div class="d">${C.daysToDelivery!=null?(C.daysToDelivery>=0?`delivery est. ${esc(dayLabel(C.estimatedDelivery))}, ${fmt(C.daysToDelivery,0)} days`:`delivery was estimated ${esc(dayLabel(C.estimatedDelivery))}`):'no delivery date'}</div></div>
-      <div class="tile"><div class="v">${money(C.loanPrincipal,0)}</div><div class="l">Borrowed</div><div class="d">${pct(C.borrowedPct,1)} of the price &middot; ${esc(C.loanDescribedAs)}</div></div>
-      <div class="tile"><div class="v">${money(C.cashRequired,0)}</div><div class="l">Your own cash</div><div class="d">${money(C.deposit,0)} paid, ${money(C.outstanding,0)} to go</div></div>
-    </div>
-
-    <div style="margin-top:12px"><span class="k" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">How the invoice settles</span></div>
-    <div class="kv"><span class="k">Retail price<br><span style="font-size:11px;opacity:.72">${esc(C.dealer)}</span></span><span class="v">${money(C.retailPrice,2)}</span></div>
-    <div class="kv"><span class="k">Less discount</span><span class="v pos">&minus;${money(C.additionalDiscount,2)}</span></div>
-    ${C.optionsTotal?`<div class="kv"><span class="k">Options<br><span style="font-size:11px;opacity:.72">${money(C.optionsTotal,2)} of options, discounted by ${money(C.optionsDiscount,2)} &mdash; net nil</span></span><span class="v">${money(C.optionsTotal-C.optionsDiscount,2)}</span></div>`:''}
-    <div class="kv"><span class="k"><b>Nett price</b></span><span class="v"><b>${money(C.price,2)}</b></span></div>
-    <div class="kv"><span class="k">Deposit${C.depositPaid?' &mdash; paid':''}<br><span style="font-size:11px;opacity:.72">non-refundable, except if the loan is declined</span></span><span class="v pos">&minus;${money(C.deposit,2)}</span></div>
-    <div class="kv"><span class="k">Loan<br><span style="font-size:11px;opacity:.72">${esc(C.loanDescribedAs)}</span></span><span class="v pos">&minus;${money(C.loanPrincipal,2)}</span></div>
-    <div class="kv"><span class="k"><b>Balance due</b><br><span style="font-size:11px;opacity:.72">${esc(C.balanceDueRule)}</span></span><span class="v"><b class="${C.outstanding>0?'neg':'pos'}">${money(C.balanceDue,2)}</b></span></div>
-    ${C.reconciles?`<div class="banner b-good" style="margin-top:10px"><span class="ic">&#10003;</span><div><b>The two documents agree to the cent.</b>The sales agreement of ${esc(dayLabel(C.vsaDate))} and the invoice of ${esc(dayLabel(C.invoiceDate))} both put the nett price at ${money(C.price,2)}, and ${money(C.price,2)} less ${money(C.loanPrincipal,2)} less ${money(C.deposit,2)} is ${money(C.balanceDue,2)} &mdash; the balance the invoice states. Fortress re-ran that rather than trusting it.</div></div>`
-    :`<div class="banner b-serious" style="margin-top:10px"><span class="ic">&#9888;</span><div><b>The invoice does not add up.</b>Price less loan less deposit does not equal the stated balance due. Check it against the dealer before paying.</div></div>`}
-
-    ${!C.loanKnown?`<div class="warnbox" style="margin-top:12px"><b>Fortress holds the loan's size and nothing else.</b>
-      <p style="margin:6px 0">The invoice records ${money(C.loanPrincipal,2)} and describes it only as &ldquo;${esc(C.loanDescribedAs)}&rdquo;. The sales agreement's <em>Hire Purchase Amount</em> and <em>Finance Company</em> fields are both blank. So ${C.loanGaps.map(g=>esc(g)).join(', ')} are <b>not available</b> &mdash; and without them there is no instalment to model, no interest to add to your carry, and no maturity to put in Reminders.</p>
-      <p style="margin:6px 0">This is the one gap worth closing, and it is the largest thing Fortress does not know about your position. Send the hire-purchase agreement and the instalment, the interest and the maturity all follow &mdash; and the cost can then be set beside your ${(()=>{const e=(typeof effectiveLoanTerms==='function')?effectiveLoanTerms():null; return e&&e.ratePct!=null?`${pct(e.ratePct,2)} mortgage`:'other borrowing';})()} and your ${(()=>{const a=(typeof latest==='function')?agg(latest()):null; const l=a&&a.loans?a.loans[0]:null; return l&&l.ratePct!=null?`${pct(l.ratePct,2)} margin loan`:'margin loan';})()}, which is the comparison that decides whether borrowing this was worth it. <b>Fortress will not assume a rate in the meantime.</b> You borrowed ${pct(C.borrowedPct,1)} of the price; whether that was capped by a rule or chosen by you is not on either document.</p></div>`:''}
-
-    ${!C.insuranceKnown?`<div class="warnbox"><b>No insurance premium is in Fortress, and the car cannot be registered without cover.</b>
-      <p style="margin:6px 0">${esc(C.insuranceProposalStatus)} The sales agreement prices the car <em>&ldquo;exclusive of insurance premiums&rdquo;</em> and requires that ${esc(C.insurerRequirement.charAt(0).toLowerCase()+C.insurerRequirement.slice(1))}</p>
-      <p style="margin:6px 0">The ${money(C.insuranceSubsidy,0)} subsidy on the agreement is <b>already netted to zero inside the package price</b> &mdash; it is a discount you have had, not a credit against the insurer's bill. So the premium is a real cost that appears nowhere on this page. Source: ${esc(C.insuranceSource)}.</p></div>`:''}
-
-    <div style="margin-top:12px"><span class="k" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">What the price already includes</span></div>
-    <p class="note" style="margin-top:4px">${C.includes.map(x=>esc(x)).join(', ')} &mdash; with the COE subject to bidding (${fmt(C.coeBids,0)} guaranteed bids against a ${money(C.coeRebateSum,0)} rebate sum). Excluded: ${C.excludes.map(x=>esc(x)).join(', ')}. ${C.registrationNo?`Registered as ${esc(C.registrationNo)}.`:'<b>Not yet registered</b>, so Fortress has no registration number, no registration date and no confirmed COE premium.'}</p>
-    <p class="note"><b>On the dealer's own remarks.</b> ${C.dealerRemarks.map(x=>esc(x)).join('. ')}.</p>
-    <p class="note">Billed to ${esc(C.billedTo)}. Source: ${esc(C.source)}.</p>
-  </div>`; })()}
-
   ${(()=>{ const mm=latestManual();
     const mtg = mm?.mortgageBalance ?? null;
     const totDebt = a.debt + (mtg||0);
@@ -5936,6 +6316,216 @@ function cpfPlan(){
 }
 
 /* ================= CPF tab ================= */
+function viewCar(){
+  const C=(typeof carPosition==='function')?carPosition():null;
+  if(!C) return `<div class="card"><h2>Car</h2><p class="note">No car is recorded.</p></div>`;
+  const L=carLoan(), V=carValues(), R=carRunningCosts();
+  return `
+  ${(()=>{ const C=(typeof carPosition==='function')?carPosition():null; if(!C) return '';
+    return `<div class="card">
+    <h2>Car purchase<span class="pill">${esc(C.make)} ${esc(C.model)} &middot; VSA ${esc(C.vsaNo)}</span></h2>
+    <div class="tiles">
+      <div class="tile"><div class="v">${money(C.price,0)}</div><div class="l">What it costs</div><div class="d">${money(C.retailPrice,0)} list, less ${money(C.discountOffRetail,0)} (${pct(C.discountPct,1)})</div></div>
+      ${C.outstanding>0
+        ? `<div class="tile"><div class="v neg">${money(C.outstanding,0)}</div><div class="l">Still owed to the dealer</div><div class="d">${C.daysToDelivery!=null?(C.daysToDelivery>=0?`delivery est. ${esc(dayLabel(C.estimatedDelivery))}, ${fmt(C.daysToDelivery,0)} days`:`delivery was estimated ${esc(dayLabel(C.estimatedDelivery))}`):'no delivery date'}</div></div>`
+        : `<div class="tile"><div class="v pos">Paid</div><div class="l">Balance to the dealer</div><div class="d">${money(C.paidToBalance,0)} settled ${esc(dayLabel(C.lastPaymentOn))}</div></div>`}
+      <div class="tile"><div class="v">${money(C.loanPrincipal,0)}</div><div class="l">Borrowed</div><div class="d">${pct(C.borrowedPct,1)} of the price &middot; ${esc(C.loanDescribedAs)}</div></div>
+      <div class="tile"><div class="v">${money(C.totalOwnMoney,0)}</div><div class="l">Your own cash</div><div class="d">${C.outstanding>0?`${money(C.deposit,0)} paid, ${money(C.outstanding,0)} to go`:`all paid &middot; ${pct(100-C.borrowedPct,1)} of the price`}</div></div>
+    </div>
+
+    <div style="margin-top:12px"><span class="k" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">How the invoice settles</span></div>
+    <div class="kv"><span class="k">Retail price<br><span style="font-size:11px;opacity:.72">${esc(C.dealer)}</span></span><span class="v">${money(C.retailPrice,2)}</span></div>
+    <div class="kv"><span class="k">Less discount</span><span class="v pos">&minus;${money(C.additionalDiscount,2)}</span></div>
+    ${C.optionsTotal?`<div class="kv"><span class="k">Options<br><span style="font-size:11px;opacity:.72">${money(C.optionsTotal,2)} of options, discounted by ${money(C.optionsDiscount,2)} &mdash; net nil</span></span><span class="v">${money(C.optionsTotal-C.optionsDiscount,2)}</span></div>`:''}
+    <div class="kv"><span class="k"><b>Nett price</b></span><span class="v"><b>${money(C.price,2)}</b></span></div>
+    <div class="kv"><span class="k">Deposit${C.depositPaid?' &mdash; paid':''}<br><span style="font-size:11px;opacity:.72">non-refundable, except if the loan is declined</span></span><span class="v pos">&minus;${money(C.deposit,2)}</span></div>
+    <div class="kv"><span class="k">Loan<br><span style="font-size:11px;opacity:.72">${esc(C.loanDescribedAs)}</span></span><span class="v pos">&minus;${money(C.loanPrincipal,2)}</span></div>
+    <div class="kv"><span class="k"><b>Balance due</b><br><span style="font-size:11px;opacity:.72">${esc(C.balanceDueRule)}</span></span><span class="v"><b class="${C.outstanding>0?'neg':'pos'}">${money(C.balanceDue,2)}</b></span></div>
+    ${C.payments.length?`<div style="margin-top:12px"><span class="k" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">What you actually paid</span></div>
+    ${C.payments.map(p=>`<div class="kv"><span class="k">${esc(dayLabel(p.date))} ${esc(p.time)}${p.against==='deposit'?' &middot; <b>deposit</b>':''}<br><span style="font-size:11px;opacity:.72">${p.via} to ${esc(p.payee)}</span></span><span class="v pos">${money(p.amount,2)}</span></div>`).join('')}
+    <div class="kv"><span class="k">Paid against the balance</span><span class="v"><b class="${C.balanceClears?'pos':'neg'}">${money(C.paidToBalance,2)}</b>${C.balanceClears?'':`<br><span style="font-size:11px;opacity:.72">against ${money(C.balanceDue,2)} due</span>`}</span></div>
+    <div class="kv"><span class="k"><b>Total paid, all receipts</b></span><span class="v"><b class="${C.fullyEvidenced?'pos':''}">${money(C.totalPaid,2)}</b>${C.fullyEvidenced?'':`<br><span style="font-size:11px;opacity:.72">against ${money(C.totalOwnMoney,2)} of your own money</span>`}</span></div>`:''}
+
+    ${C.balanceClears?`<div class="banner b-good" style="margin-top:10px"><span class="ic">&#10003;</span><div><b>The car is paid for &mdash; ${money(C.paidToBalance,2)} on ${esc(dayLabel(C.lastPaymentOn))}, to the cent.</b>
+      ${C.balancePayments.map(p=>`${money(p.amount,0)} by ${esc(p.method)} at ${esc(p.time)}`).join(', then ')} &mdash; together exactly the ${money(C.balanceDue,2)} the invoice states as payable before registration. With the ${money(C.deposit,0)} deposit that is ${money(C.totalOwnMoney,2)} of your own money against a ${money(C.price,2)} car, the other ${money(C.loanPrincipal,2)} being the loan.</div></div>`:''}
+
+    ${(C.depositDateEvidenced && C.depositPayment)?`<div class="banner b-good"><span class="ic">&#10003;</span><div><b>Every dollar of the ${money(C.totalOwnMoney,2)} is now accounted for by a dated receipt.</b>
+      ${esc(C.depositResolution)} <b>The ${money(C.deposit,2)} question is closed</b> &mdash; that amount is the deposit <em>and</em> coincidentally one of the payments that cleared the balance, which is what made it ambiguous; two separate dated receipts now show both.</div></div>`
+    :(!C.depositDateEvidenced && C.balancePayments.length)?`<div class="warnbox"><b>One thing to check, because it is worth ${money(C.deposit,2)}.</b>
+      <p style="margin:6px 0">${esc(C.depositCheck||'')}</p>
+      <p style="margin:6px 0"><b>Fortress has taken the balance as cleared</b>, on this reasoning: the invoice of ${esc(dayLabel(C.invoiceDate))} already credits the deposit as received <em>and</em> still shows ${money(C.balanceDue,2)} outstanding. Had the ${esc(C.balancePayments[0].time)} transfer of ${money(C.balancePayments[0].amount,0)} reached the dealer first, that line would have read ${money(C.balanceDue-C.balancePayments[0].amount,2)}. So the invoice predates that transfer, the deposit predates it too, and the later card payment cannot be the deposit. That is inference from the documents, not something either one states.</p></div>`:''}
+
+    ${C.reconciles?`<div class="banner b-good" style="margin-top:10px"><span class="ic">&#10003;</span><div><b>The two documents agree to the cent.</b>The sales agreement of ${esc(dayLabel(C.vsaDate))} and the invoice of ${esc(dayLabel(C.invoiceDate))} both put the nett price at ${money(C.price,2)}, and ${money(C.price,2)} less ${money(C.loanPrincipal,2)} less ${money(C.deposit,2)} is ${money(C.balanceDue,2)} &mdash; the balance the invoice states. Fortress re-ran that rather than trusting it.</div></div>`
+    :`<div class="banner b-serious" style="margin-top:10px"><span class="ic">&#9888;</span><div><b>The invoice does not add up.</b>Price less loan less deposit does not equal the stated balance due. Check it against the dealer before paying.</div></div>`}
+
+    ${!C.loanKnown?`<div class="warnbox" style="margin-top:12px"><b>Fortress holds the loan's size and nothing else.</b>
+      <p style="margin:6px 0">The invoice records ${money(C.loanPrincipal,2)} and describes it only as &ldquo;${esc(C.loanDescribedAs)}&rdquo;. The sales agreement's <em>Hire Purchase Amount</em> and <em>Finance Company</em> fields are both blank. So ${C.loanGaps.map(g=>esc(g)).join(', ')} are <b>not available</b> &mdash; and without them there is no instalment to model, no interest to add to your carry, and no maturity to put in Reminders.</p>
+      <p style="margin:6px 0">This is the one gap worth closing, and it is the largest thing Fortress does not know about your position. Send the hire-purchase agreement and the instalment, the interest and the maturity all follow &mdash; and the cost can then be set beside your ${(()=>{const e=(typeof effectiveLoanTerms==='function')?effectiveLoanTerms():null; return e&&e.ratePct!=null?`${pct(e.ratePct,2)} mortgage`:'other borrowing';})()} and your ${(()=>{const a=(typeof latest==='function')?agg(latest()):null; const l=a&&a.loans?a.loans[0]:null; return l&&l.ratePct!=null?`${pct(l.ratePct,2)} margin loan`:'margin loan';})()}, which is the comparison that decides whether borrowing this was worth it. <b>Fortress will not assume a rate in the meantime.</b> You borrowed ${pct(C.borrowedPct,1)} of the price; whether that was capped by a rule or chosen by you is not on either document.</p></div>`:''}
+
+    ${C.insuranceKnown?`<div style="margin-top:12px"><span class="k" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">Insurance</span></div>
+    <div class="kv"><span class="k">Premium paid<br><span style="font-size:11px;opacity:.72">${esc(C.insurer)} &middot; ${esc(dayLabel(C.insurancePaidOn))} &middot; ${esc(C.insurancePaidFrom)}</span></span><span class="v">${money(C.insurancePaid,2)}</span></div>
+    <div class="kv"><span class="k">Gross premium<br><span style="font-size:11px;opacity:.72">one year, including ${pct(C.insuranceGstPct,0)} GST</span></span><span class="v">${money(C.insuranceGross,2)}</span></div>
+    <div class="kv"><span class="k">Less dealer subsidy</span><span class="v pos">&minus;${money(C.insuranceSubsidy,2)}</span></div>
+    <div class="kv"><span class="k"><b>What you paid</b></span><span class="v"><b class="${C.insuranceReconciles?'pos':'neg'}">${money(C.insurancePaid,2)}</b></span></div>
+    <div class="kv"><span class="k">Excess<br><span style="font-size:11px;opacity:.72">what you bear on each claim</span></span><span class="v">${money(C.insuranceExcess,2)}</span></div>
+    <div class="kv"><span class="k">No-claim discount<br><span style="font-size:11px;opacity:.72">first policy, so nothing accrued yet${C.insuranceNcdProtectorQuoted?'':'; NCD protector was not quoted'}</span></span><span class="v">${pct(C.insuranceNcdPct,0)}</span></div>
+    ${C.insuranceReconciles?`<div class="banner b-good" style="margin-top:10px"><span class="ic">&#10003;</span><div><b>The quote reconciles to the card charge to the cent, and it confirms what Fortress had only inferred.</b>
+      ${money(C.insuranceGross,2)} gross less the ${money(C.insuranceSubsidy,2)} subsidy is ${money(C.insurancePaid,2)} &mdash; exactly what left your card on ${esc(dayLabel(C.insurancePaidOn))}. The previous build derived ${money(C.insuranceGrossImplied,2)} from the payment and the subsidy, called it <em>arithmetic on an assumption</em> and refused to carry it as the premium. MSIG's own quote is ${money(C.insuranceGross,2)}. The inference was right; it is now a figure from the insurer.</div></div>`:''}
+    <p class="note"><b>Fortress had the subsidy wrong before this, and it is worth naming.</b> It read the subsidy off the sales agreement's options table &mdash; where it appears as a ${money(C.insuranceSubsidy,0)} item discounted to nil &mdash; and concluded it was absorbed into the car price rather than credited against the insurer's bill. Your payment showed the opposite and this quote settles it: the ${money(C.insuranceSubsidy,0)} went to the premium.</p>
+    <p class="note"><b>The insurer is ${esc(C.insurer)}.</b> ${esc(C.insuranceProposalStatus)} The sales agreement requires that ${esc(C.insurerRequirement.charAt(0).toLowerCase()+C.insurerRequirement.slice(1))}</p>
+    <div class="warnbox"><b>Year two is the number to brace for, and it is not ${money(C.insurancePaid,2)}.</b>
+      <p style="margin:6px 0">The subsidy was a one-off from the dealer. At renewal you face the gross premium, which this year was <b>${money(C.insuranceGross,2)}</b> &mdash; ${fmt(C.insuranceGross/C.insurancePaid,0)} times what you actually paid. <b>Fortress will not predict the renewal figure</b>: your no-claim discount starts at ${pct(C.insuranceNcdPct,0)} and moves with your claims record, and MSIG reprices each year. What it can say is that the ${money(C.insuranceGross,2)} is the honest base to plan from, not the ${money(C.insurancePaid,2)}.</p>
+      ${C.insuranceRenewalDerived?`<p style="margin:6px 0"><b>Renewal falls around ${esc(dayLabel(C.insuranceRenewalOn))}</b>${C.daysToInsuranceRenewal!=null&&C.daysToInsuranceRenewal>0?`, ${fmt(C.daysToInsuranceRenewal,0)} days away`:''}. <b>That date is derived, not documented</b> &mdash; the quote is for one year and the car could not have been registered without cover in force, so a year from the ${esc(dayLabel(C.registeredOn))} registration is the best Fortress can do. The policy schedule carries the real inception date and would pin it.</p>`:''}</div>
+    <p class="note">Source: ${esc(C.insuranceSource)}.</p>`
+    :`<div class="warnbox"><b>No insurance premium is in Fortress, and the car cannot be registered without cover.</b>
+      <p style="margin:6px 0">${esc(C.insuranceProposalStatus)} The sales agreement prices the car <em>&ldquo;exclusive of insurance premiums&rdquo;</em> and requires that ${esc(C.insurerRequirement.charAt(0).toLowerCase()+C.insurerRequirement.slice(1))}</p></div>`}
+
+    <div style="margin-top:12px"><span class="k" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">What the price already includes</span></div>
+    <p class="note" style="margin-top:4px">${C.includes.map(x=>esc(x)).join(', ')} &mdash; with the COE subject to bidding (${fmt(C.coeBids,0)} guaranteed bids against a ${money(C.coeRebateSum,0)} rebate sum). Excluded: ${C.excludes.map(x=>esc(x)).join(', ')}. ${C.registered?`<b>Registered ${esc(dayLabel(C.registeredOn))}</b>, and the COE came in at ${money(C.coePremiumPaid,2)}.`:'<b>Not yet registered</b>, so Fortress has no registration date and no confirmed COE premium.'}</p>
+    ${C.registered?`<div style="margin-top:12px"><span class="k" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">The registration record</span></div>
+    <div class="kv"><span class="k">Registered<br><span style="font-size:11px;opacity:.72">first registration, ownership from the same day</span></span><span class="v">${esc(dayLabel(C.registeredOn))}</span></div>
+    <div class="kv"><span class="k">COE<br><span style="font-size:11px;opacity:.72">Category ${esc(C.coeCategory)} &middot; expires ${esc(dayLabel(C.coeExpiry))}</span></span><span class="v">${money(C.coePremiumPaid,2)}</span></div>
+    <div class="kv"><span class="k">Open Market Value</span><span class="v">${money(C.omv,2)}</span></div>
+    <div class="kv"><span class="k">ARF paid<br><span style="font-size:11px;opacity:.72">wiped out by the rebates below</span></span><span class="v">${money(C.arfPaid,2)}</span></div>
+    <div class="kv"><span class="k">VES rebate</span><span class="v pos">${money(C.vesRebate,2)}</span></div>
+    <div class="kv"><span class="k">EV rebate</span><span class="v pos">${money(C.evRebate,2)}</span></div>
+    <div class="kv"><span class="k">Road tax<br><span style="font-size:11px;opacity:.72">${esc(dayLabel(C.roadTaxFrom))} to ${esc(dayLabel(C.roadTaxTo))}${C.giroRoadTax?', on GIRO':''}</span></span><span class="v">${money(C.roadTaxYear,2)}</span></div>
+    <div class="kv"><span class="k">Electric &middot; ${fmt(C.powerKw,0)} kW / ${fmt(C.powerBhp,0)} bhp<br><span style="font-size:11px;opacity:.72">${fmt(C.co2gkm,1)} g/km CO&#8322; &middot; ${fmt(C.unladenKg,0)} kg unladen</span></span><span class="v">${esc(C.vehicleType.split(' - ')[1]||C.vehicleType)}</span></div>
+    <div class="warnbox" style="margin-top:10px"><b>The COE is ${pct(C.coePremiumPaid/C.price*100,1)} of what you paid.</b>
+      <p style="margin:6px 0">${money(C.coePremiumPaid,0)} of the ${money(C.price,0)} price is a ten-year licence to put a car on the road; only ${money(C.price-C.coePremiumPaid,0)} of it is the car. That matters for how you read every other figure on this tab: the part that holds its value on a published formula is the COE, and it runs down in a straight line to nothing on ${esc(dayLabel(C.coeExpiry))}.</p></div>
+    <p class="note"><b>Not recorded here, on purpose.</b> Your NRIC, registered address, chassis and motor numbers, the COE certificate number, LTA's transaction references &mdash; and the registration plate. A plate is public on the road, but a plate next to a net-worth figure is an identifier, and nothing on this page needs it. Ask and it goes in. Source: ${esc(C.ltaSource)}.</p>`:''}
+    <p class="note"><b>On the dealer's own remarks.</b> ${C.dealerRemarks.map(x=>esc(x)).join('. ')}.</p>
+    <p class="note">Billed to ${esc(C.billedTo)}. Source: ${esc(C.source)}.</p>
+  </div>`; })()}
+
+  ${(()=>{ /* ---- the loan ---- */
+    return `<div class="card">
+    <h2>The loan<span class="pill">${money(C.loanPrincipal,0)}${L.known?` &middot; ${esc(L.rateType==='flat'?'flat':'reducing')} ${pct(L.ratePct,2)} &middot; ${fmt(L.tenorYears,0)} yr`:' &middot; terms not entered'}</span></h2>
+    ${L.known?`
+    <div class="tiles">
+      <div class="tile"><div class="v">${money(L.instalment,2)}</div><div class="l">A month</div><div class="d">${fmt(L.months,0)} payments from ${esc(dayLabel(L.firstPayment))}</div></div>
+      <div class="tile"><div class="v neg">${money(L.totalInterest,0)}</div><div class="l">Interest over the life</div><div class="d">${pct(L.interestShareOfPrincipal,1)} of what you borrowed</div></div>
+      <div class="tile"><div class="v">${money(L.balanceNow,0)}</div><div class="l">Outstanding now</div><div class="d">${L.monthsElapsed>0?`${fmt(L.monthsElapsed,0)} paid, ${fmt(L.monthsLeft,0)} to go`:'no payment due yet'}</div></div>
+      <div class="tile"><div class="v ${L.rateType==='flat'?'neg':''}">${L.effectivePct!=null?pct(L.effectivePct,2):'\u2014'}</div><div class="l">${L.rateType==='flat'?'True (reducing) rate':'Rate'}</div><div class="d">${L.rateType==='flat'&&L.interestPremium!=null?`${fmt(L.interestPremium,2)} points above the quoted ${pct(L.ratePct,2)}`:'as quoted'}</div></div>
+    </div>
+
+    ${L.rateType==='flat'?`<div class="warnbox" style="margin-top:12px"><b>Your ${pct(L.ratePct,2)} flat rate is really ${pct(L.effectivePct,2)}.</b>
+      <p style="margin:6px 0">A flat rate charges interest on the <em>original</em> ${money(L.principal,0)} for all ${fmt(L.tenorYears,0)} years, even though you have repaid most of it by the end. Fortress solved for the reducing-balance rate that produces the same ${money(L.instalment,2)} instalment: <b>${pct(L.effectivePct,2)}</b>. That is the number to compare against anything else you borrow${(()=>{const e=(typeof effectiveLoanTerms==='function')?effectiveLoanTerms():null; return e&&e.ratePct!=null?` &mdash; your mortgage is ${pct(e.ratePct,2)}`:'';})()}${(()=>{const a=(typeof latest==='function')?agg(latest()):null; const l=a&&a.loans?a.loans[0]:null; return l&&l.ratePct!=null?` and your margin loan ${pct(l.ratePct,2)}`:'';})()}.</p>
+      <p style="margin:6px 0">This is arithmetic on your own figures, not a claim about the market: bisection on the annuity formula until the payment matches. Nothing here is taken from anywhere else.</p></div>`:''}
+
+    <div style="margin-top:12px"><span class="k" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">Balance and interest, year by year</span></div>
+    ${lineChart([
+      {name:'Balance', color:'var(--critical)', values:L.years.map(y=>({x:String(y.year).slice(2), y:Math.round(y.closing)}))},
+      {name:'Interest paid that year', color:'var(--warn)', values:L.years.map(y=>({x:String(y.year).slice(2), y:Math.round(y.interest)}))}
+    ],{yFmt:v=>v>=1000?fmt(v/1000,0)+'k':fmt(v,0)})}
+    <table class="tbl" style="margin-top:8px"><thead><tr><th>Year</th><th class="r">Paid</th><th class="r">Interest</th><th class="r">Principal</th><th class="r">Closing balance</th></tr></thead><tbody>
+    ${L.years.map(y=>`<tr><td>${esc(String(y.year))}${y.months<12?`<br><span class="k" style="font-size:11px">${fmt(y.months,0)} months</span>`:''}</td><td class="r">${money(y.paid,0)}</td><td class="r neg">${money(y.interest,0)}</td><td class="r">${money(y.principal,0)}</td><td class="r"><b>${money(y.closing,0)}</b></td></tr>`).join('')}
+    <tr style="border-top:2px solid var(--grid)"><td><b>Total</b></td><td class="r"><b>${money(L.totalPaid,0)}</b></td><td class="r neg"><b>${money(L.totalInterest,0)}</b></td><td class="r"><b>${money(L.principal,0)}</b></td><td class="r"><b>0</b></td></tr>
+    </tbody></table>
+
+    <details class="more" style="margin-top:10px"><summary>Every month (${fmt(L.months,0)} rows)</summary>
+    <table class="tbl"><thead><tr><th>#</th><th>Month</th><th class="r">Instalment</th><th class="r">Interest</th><th class="r">Principal</th><th class="r">Balance</th></tr></thead><tbody>
+    ${L.schedule.map(m=>`<tr><td>${fmt(m.n,0)}</td><td>${esc(dayMonthLabel(m.month))}</td><td class="r">${money(m.instalment,2)}</td><td class="r neg">${money(m.interest,2)}</td><td class="r">${money(m.principal,2)}</td><td class="r">${money(m.balance,2)}</td></tr>`).join('')}
+    </tbody></table></details>
+
+    ${L.rateType==='flat'?`<p class="note"><b>Do not read the balance column as a settlement figure.</b> ${esc(L.ruleOf78Note)}</p>`:''}
+    <p class="note">These figures come from the terms you entered below, not from any document Fortress has read. ${C.loanKnown?'':'<b>The hire-purchase agreement has still not been supplied</b>, so nothing here is sourced &mdash; send it and Fortress will seed the terms properly and flag any difference.'}</p>`
+    :`<div class="warnbox"><b>Fortress knows you borrowed ${money(C.loanPrincipal,2)} and nothing else about it.</b>
+      <p style="margin:6px 0">The invoice describes it only as &ldquo;${esc(C.loanDescribedAs)}&rdquo;; the sales agreement's <em>Hire Purchase Amount</em> and <em>Finance Company</em> fields are blank. Missing: ${L.missing.map(m=>esc(m)).join(', ')}.</p>
+      <p style="margin:6px 0"><b>Nothing is assumed in the meantime.</b> There is no instalment in your carry, no interest in any total, and no maturity in Reminders. Enter the terms below and all of it appears at once &mdash; or send the agreement and Fortress will read it.</p></div>`}
+
+    <div style="margin-top:14px"><span class="k" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">Enter the loan terms</span></div>
+    <label class="fld">Lender</label>
+    <input type="text" id="clLender" value="${esc(L.lender||'')}" placeholder="as named on the hire-purchase agreement">
+    <label class="fld">Interest rate (% a year)</label>
+    <input type="number" id="clRate" step="0.01" inputmode="decimal" value="${L.ratePct ?? ''}" placeholder="e.g. 2.78">
+    <label class="fld">Rate type &mdash; this changes everything, so Fortress will not pick for you</label>
+    <select id="clType">
+      <option value=""${!L.rateType?' selected':''}>not entered</option>
+      <option value="flat"${L.rateType==='flat'?' selected':''}>Flat &mdash; interest on the original amount (usual for car loans)</option>
+      <option value="reducing"${L.rateType==='reducing'?' selected':''}>Reducing balance &mdash; interest on what is still owed</option>
+    </select>
+    <label class="fld">Tenor (years)</label>
+    <input type="number" id="clTenor" step="1" inputmode="numeric" value="${L.tenorYears ?? ''}" placeholder="e.g. 7">
+    <label class="fld">First payment date</label>
+    <input type="date" id="clFirst" value="${esc(L.firstPayment||'')}">
+    <button class="btn ghost" style="margin-top:8px;width:auto;padding:6px 14px" onclick="saveCarLoan()">Save loan terms</button>
+  </div>`; })()}
+
+  ${(()=>{ /* ---- resale value ---- */
+    return `<div class="card">
+    <h2>What it is worth if you sell<span class="pill">${V.hasValues?`${fmt(V.rows.length,0)} year${V.rows.length===1?'':'s'} entered`:'nothing entered'}</span></h2>
+    <div class="warnbox"><b>Every figure in this table is one you entered. Fortress has no car valuation model and will not invent one.</b>
+      <p style="margin:6px 0">Resale in Singapore turns on the COE market, the PARF rebate, mileage and condition &mdash; none of which Fortress holds, and the car is ${C.registrationNo?'registered':'<b>not registered yet</b>, so the ARF and the COE premium that would set the rebate floor do not exist'}. What it <em>does</em> add is the arithmetic around your numbers: the loan balance on the same date, the gap between them, and what the car has cost you by then.</p></div>
+    ${(()=>{ const D=(typeof carDeregValue==='function')?carDeregValue():null; if(!D) return '';
+      return `<div style="margin-top:12px"><span class="k" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">The floor Fortress CAN compute</span></div>
+      <p class="note" style="margin-top:4px"><b>Deregistration value is a published formula on your own registration record, so this part is arithmetic and not opinion.</b> ${esc(D.rule.coeFormula)} You paid ${money(D.qp,2)} for a ${fmt(D.total,0)}-month Category ${esc(C.coeCategory)} COE running to ${esc(dayLabel(D.coeExpiry))}. Source: ${esc(D.rule.source)}.</p>
+      ${D.parfIsNil?`<div class="warnbox"><b>Your PARF rebate is nil, and that is the most important thing on this card.</b>
+        <p style="margin:6px 0">PARF pays back a percentage of the ARF you <em>paid</em>. Your record says <b>Actual ARF Paid ${money(D.arfPaid,2)}</b> and <b>Minimum PARF Benefit ${money(D.minimumParf,2)}</b>: the ${money(D.rebatesTaken,2)} of VES and EV rebates extinguished the ARF completely. So there is no ARF to get a percentage of, and the whole floor below is the COE rebate alone.</p>
+        <p style="margin:6px 0"><b>You are still well ahead on the trade.</b> Those rebates took ${money(D.rebatesTaken,2)} off the car up front. Had you paid the ARF instead, the PARF band for a car registered from ${esc(dayLabel(D.rule.registeredFrom))} is ${pct(D.rule.bands[0].pct,0)} within five years &mdash; about ${money(D.parfForgone,2)} back at the end, and less the longer you hold it. Taking ${money(D.rebatesTaken,0)} now against roughly ${money(D.parfForgone,0)} later leaves you some ${money(D.netAhead,0)} up, before any time value. <b>That comparison is arithmetic on your own figures, not advice.</b></p></div>`:''}
+      <table class="tbl" style="margin-top:8px"><thead><tr><th>Year</th><th class="r">COE months left</th><th class="r">COE rebate</th><th class="r">PARF</th><th class="r">Floor</th></tr></thead><tbody>
+      ${D.rows.filter(r=>r.held>0).map(r=>`<tr><td>${esc(String(r.year))}<br><span class="k" style="font-size:11px">year ${fmt(r.held,0)}</span></td><td class="r">${fmt(r.monthsLeft,0)}</td><td class="r">${money(r.coeRebate,0)}</td><td class="r ${r.parfRebate>0?'':'k'}">${r.parfRebate>0?money(r.parfRebate,0):'nil'}</td><td class="r"><b>${money(r.total,0)}</b></td></tr>`).join('')}
+      </tbody></table>
+      <p class="note"><b>This is a floor, not a price.</b> It is what LTA refunds for taking the car off the road. Sell it to a buyer and the remaining COE goes with it, so a real sale should fetch <em>more</em> than this &mdash; how much more depends on the used market, and <b>Fortress has no view on that whatsoever</b>. Your own figures below are the ones to compare against it.</p>`; })()}
+
+    ${V.hasValues?`
+    ${V.loanKnown?lineChart([
+      {name:'Your value', color:'var(--s3)', values:V.rows.map(r=>({x:String(r.year).slice(2), y:Math.round(r.value)}))},
+      {name:'Loan owed', color:'var(--critical)', values:V.rows.map(r=>({x:String(r.year).slice(2), y:Math.round(r.balance==null?0:r.balance)}))}
+    ],{yFmt:v=>v>=1000?fmt(v/1000,0)+'k':fmt(v,0)}):lineChart([
+      {name:'Your value', color:'var(--s3)', values:V.rows.map(r=>({x:String(r.year).slice(2), y:Math.round(r.value)}))}
+    ],{yFmt:v=>v>=1000?fmt(v/1000,0)+'k':fmt(v,0)})}
+    <table class="tbl" style="margin-top:8px"><thead><tr><th>Year</th><th class="r">Your value</th><th class="r">Lost from cost</th><th class="r">Loan owed</th><th class="r">If you sold</th></tr></thead><tbody>
+    ${V.rows.map(r=>`<tr><td>${esc(String(r.year))}${r.yearsHeld!=null?`<br><span class="k" style="font-size:11px">year ${fmt(r.yearsHeld,0)}</span>`:''}</td>
+      <td class="r">${money(r.value,0)}</td>
+      <td class="r neg">${r.lostFromCost!=null?`${money(r.lostFromCost,0)}<br><span class="k" style="font-size:11px">${pct(r.lostPct,1)}${r.perYear!=null?` &middot; ${money(r.perYear,0)}/yr`:''}</span>`:'\u2014'}</td>
+      <td class="r">${r.balance!=null?money(r.balance,0):'\u2014'}</td>
+      <td class="r">${r.equity!=null?`<b class="${r.negativeEquity?'neg':'pos'}">${money(r.equity,0)}</b>${r.negativeEquity?'<br><span class="k" style="font-size:11px">you would owe more than it fetches</span>':''}`:'<span class="k" style="font-size:11px">needs the loan terms</span>'}</td></tr>`).join('')}
+    </tbody></table>
+    ${(()=>{ const neg=V.rows.filter(r=>r.negativeEquity);
+      if(!neg.length) return V.loanKnown?`<p class="note"><b>You are never in negative equity on these figures.</b> At every year you entered, the car is worth more than the loan against it, so a sale would clear the finance and leave you something.</p>`:'';
+      return `<div class="banner b-warn" style="margin-top:10px"><span class="ic">&#9888;</span><div><b>On your own figures you are underwater until ${esc(String(neg[neg.length-1].year+1))}.</b>In ${neg.map(r=>esc(String(r.year))).join(', ')} the loan owed is more than the car fetches, so selling would mean finding the difference in cash &mdash; ${money(Math.max(...neg.map(r=>-r.equity)),0)} at the worst point. That is not a reason not to sell; it is the number to have ready if you do.</div></div>`; })()}
+    `:`<p class="note">Enter a value for any year below and the table, the chart and the equity arithmetic all appear.</p>`}
+
+    <div style="margin-top:14px"><span class="k" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">Add or change a year</span></div>
+    <label class="fld">Year</label>
+    <input type="number" id="cvYear" step="1" inputmode="numeric" placeholder="${C.estimatedDelivery?esc(String(+C.estimatedDelivery.slice(0,4)+1)):'e.g. 2027'}">
+    <label class="fld">What you think it would fetch (S$) &mdash; leave blank to delete that year</label>
+    <input type="number" id="cvValue" step="100" inputmode="decimal" placeholder="e.g. 150000">
+    <button class="btn ghost" style="margin-top:8px;width:auto;padding:6px 14px" onclick="saveCarValue()">Save this year</button>
+    <p class="note" style="margin-top:8px">${esc(V.source)}</p>
+  </div>`; })()}
+
+  ${(()=>{ /* ---- running costs ---- */
+    if(!R) return '';
+    const incValued = R.included.filter(i=>i.value!=null);
+    return `<div class="card">
+    <h2>What it costs to run<span class="pill">${R.complete?'all inputs entered':`${fmt(R.gaps.length,0)} of ${fmt(R.entered.length,0)} not entered`}</span></h2>
+    <div class="tiles">
+      <div class="tile"><div class="v">${R.known.length?money(R.monthly,0):'\u2014'}</div><div class="l">Running cost a month</div><div class="d">${R.known.length?`from the ${fmt(R.known.length,0)} figure${R.known.length===1?'':'s'} you entered`:'nothing entered yet'}</div></div>
+      <div class="tile"><div class="v">${R.instalment!=null?money(R.instalment,0):'\u2014'}</div><div class="l">Loan instalment</div><div class="d">${R.instalment!=null?'from the terms you entered':'terms not entered'}</div></div>
+      <div class="tile"><div class="v ${R.allInMonthly!=null?'neg':''}">${R.allInMonthly!=null?money(R.allInMonthly,0):'\u2014'}</div><div class="l">All in, a month</div><div class="d">${R.complete&&R.instalment!=null?'complete':'<b>a floor, not the answer</b>'}</div></div>
+      <div class="tile"><div class="v pos">${money(incValued.reduce((a,i)=>a+i.value,0),0)}</div><div class="l">Given by BYD, with a price on it</div><div class="d">${fmt(R.included.length,0)} items included, ${fmt(incValued.length,0)} of them priced</div></div>
+    </div>
+
+    <div style="margin-top:12px"><span class="k" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">What BYD already covered</span></div>
+    ${R.included.map(i=>`<div class="kv"><span class="k">${esc(i.item)}${i.note?`<br><span style="font-size:11px;opacity:.72">${esc(i.note)}</span>`:''}</span><span class="v ${i.value!=null?'pos':''}">${i.value!=null?money(i.value,2):'included'}</span></div>`).join('')}
+    <p class="note"><b>The service package is the one that matters.</b> Ten years or 200,000 km of scheduled servicing is prepaid, which is why there is no maintenance line for you to fill in below &mdash; on the agreement's terms there is nothing scheduled left to pay. Wear items, tyres and anything outside the schedule are still yours, and they have their own line. ${incValued.length?`Only ${incValued.map(i=>esc(i.item.toLowerCase())).join(' and ')} carry a stated value; the rest are priced at nil on the agreement and Fortress will not put a number on them.`:''}</p>
+
+    <div style="margin-top:12px"><span class="k" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">What you pay</span></div>
+    ${R.entered.map(x=>`<div class="kv"><span class="k">${esc(x.label)}<br><span style="font-size:11px;opacity:.72">per ${esc(x.per)}${x.note?' &middot; '+x.note:''}</span></span><span class="v ${x.value==null?'':'neg'}">${x.value!=null?money(x.value,2):'<span style="opacity:.6;font-weight:400">not available</span>'}</span></div>`).join('')}
+    ${R.yearOneInsurance!=null?`<p class="note"><b>Year one is not a guide to year two.</b> Insurance cost you ${money(R.yearOneInsurance,2)} because BYD paid ${money(C.insuranceSubsidy,0)} of it, road tax is covered for eighteen months, and servicing is prepaid for ten years. Two of those three run out. Enter the renewal figures above as you learn them and this card stops flattering the car.</p>`:''}
+    ${!R.complete?`<div class="warnbox"><b>${fmt(R.gaps.length,0)} of these are not entered, so the monthly figure above is a floor and not the answer.</b>
+      <p style="margin:6px 0">Missing: ${R.gaps.map(g=>esc(g.label.toLowerCase())).join(', ')}. Fortress will not estimate any of them &mdash; charging habits, parking and driving patterns are yours and it has no basis for a guess.</p></div>`:''}
+
+    <div style="margin-top:14px"><span class="k" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">Enter what you pay</span></div>
+    ${R.entered.map(x=>`<label class="fld">${esc(x.label)} (S$ per ${esc(x.per)})</label>
+    <input type="number" id="cc_${esc(x.key)}" step="1" inputmode="decimal" value="${x.value ?? ''}" placeholder="${x.reference!=null?esc('this year it was '+fmt(x.reference,2)):'not entered'}">`).join('')}
+    <button class="btn ghost" style="margin-top:8px;width:auto;padding:6px 14px" onclick="saveCarCosts()">Save running costs</button>
+  </div>`; })()}
+  `;
+}
+
 function viewCpf(){
   const c = latestCpf();
   const R = CPF_RULES;
@@ -6183,6 +6773,45 @@ function cpfForms(){
     <button class="btn" style="margin-top:12px" onclick="saveCpfHome()">Save</button>
     ${cpfHomeDates().length?`<div style="margin-top:12px">${cpfHomeDates().slice().reverse().map(d=>`<div class="kv"><span class="k">${esc(d)}</span><span class="v">${money((state.cpfHome[d].principalWithdrawn||0)+(state.cpfHome[d].accruedInterest||0),2)} <button class="btn ghost" style="width:auto;padding:2px 8px;font-size:11px;margin-left:8px" onclick="delCpfHome('${esc(d)}')">×</button></span></div>`).join('')}</div>`:''}
   </div>`;
+}
+/* ---- Car tab inputs. Each validates, refuses nonsense loudly, and writes only what was
+   actually entered. Clearing a field sets it back to null rather than to zero - "not
+   entered" and "zero" are different answers and the cards show them differently. ---- */
+function saveCarLoan(){
+  const t=id=>{ const e=document.getElementById(id); return e? e.value.trim() : ''; };
+  const n=id=>{ const e=document.getElementById(id); if(!e) return null; return e.value===''? null : +e.value; };
+  const rate=n('clRate'), tenor=n('clTenor'), type=t('clType'), first=t('clFirst'), lender=t('clLender');
+  if(rate!=null && !(rate>=0 && rate<=30)){ alert('Enter the interest rate as a percentage, e.g. 2.78.'); return; }
+  if(tenor!=null && !(tenor>0 && tenor<=10)){ alert('Enter the tenor in years, e.g. 7.'); return; }
+  if(first && !/^\d{4}-\d{2}-\d{2}$/.test(first)){ alert('The first payment date must be a real date.'); return; }
+  if(type && type!=='flat' && type!=='reducing'){ alert('Rate type must be flat or reducing balance.'); return; }
+  state.settings.carLoan = { lender: lender||null, ratePct: rate, rateType: type||null,
+                             tenorYears: tenor, firstPayment: first||null,
+                             enteredOn: new Date().toISOString().slice(0,10) };
+  saveAll(); render();
+}
+function saveCarValue(){
+  const y=document.getElementById('cvYear'), v=document.getElementById('cvValue');
+  if(!y) return;
+  const year = y.value===''? null : +y.value;
+  if(year==null || !(year>=2000 && year<=2100)){ alert('Enter a four-digit year, e.g. 2028.'); return; }
+  const val = v.value===''? null : +v.value;
+  if(val!=null && !(val>=0 && val<=1e7)){ alert('That value looks wrong — enter what you think the car would fetch, e.g. 150000.'); return; }
+  const rows = (state.settings.carValues||[]).filter(r=>r.year!==year);
+  if(val!=null) rows.push({ year, value: val, enteredOn: new Date().toISOString().slice(0,10) });
+  state.settings.carValues = rows.sort((a,b)=>a.year-b.year);
+  saveAll(); render();
+}
+function saveCarCosts(){
+  const keys=['electricity','parking','ercp','roadTaxYear','insuranceYear','tyresYear','otherYear'];
+  const out={};
+  for(const k of keys){
+    const e=document.getElementById('cc_'+k); if(!e) continue;
+    const v = e.value===''? null : +e.value;
+    if(v!=null && !(v>=0 && v<=1e6)){ alert('One of those figures looks wrong. Enter amounts in dollars.'); return; }
+    out[k]=v;
+  }
+  state.settings.carCosts = out; saveAll(); render();
 }
 function setCpfYears(v){ state.settings.cpfYears = +v||10; saveAll(); render(); }
 function setCpfContrib(on){ state.settings.cpfContrib = !!on; saveAll(); render(); }
@@ -6737,6 +7366,21 @@ function viewRetire(){
       From 55 you may move Ordinary Account savings into the Retirement Account up to ${money(Rt.ersRule,0)}. That is up to <b>${money(Rt.ersHeadroom,0)}</b> of headroom above the FRS${Rt.oaFrs!=null?`, of which your projected OA could fund <b>${money(Rt.ersFundable,0)}</b>`:''}. Money moved swaps ${pct(CPF_RULES.oaPct,1)} for ${pct(CPF_RULES.raPct,1)} — about <b>${money(Rt.ersYearlyGain,0)} a year</b> of rate difference on that amount — and buys a larger lifelong payout.
       <br><br><b>It earns you no tax relief.</b> That is the part most write-ups get wrong: relief on cash top-ups stops at the prevailing Full Retirement Sum, and CPF's own worked example shows the relief as $0 once the recipient has reached it. Do this for the payout and the rate, never for the deduction.</div>
 
+    ${(Rt.refund!=null && Rt.ersHeadroom>0)?`<div class="warnbox"><b>Lever 2b &mdash; the money in the house, and what it is actually for.</b>
+      <p style="margin:6px 0">${money(Rt.refund,2)} of CPF will be sitting in the flat by ${esc(dayLabel(Rt.A.date55))} &mdash; up from ${money(Rt.refundAt55.claimAtStatement,2)} on your ${esc(dayLabel(Rt.refundAt55.asOf))} statement, because CPF charges itself ${pct(Rt.refundAt55.ratePct,1)} on the money as though it had never left. <b>Selling sends it back to CPF, not to your bank.</b></p>
+      <div class="kv"><span class="k">ERS headroom above the FRS</span><span class="v">${money(Rt.ersHeadroom,2)}</span></div>
+      <div class="kv"><span class="k">Your projected OA alone could fund</span><span class="v">${money(Rt.ersFundable,2)}</span></div>
+      <div class="kv"><span class="k">Still short after that</span><span class="v ${Rt.ersGapAfterOa>0?'neg':'pos'}">${money(Rt.ersGapAfterOa,2)}</span></div>
+      ${Rt.ersGapAfterOa>0
+        ? `<div class="kv"><span class="k">The housing refund would cover</span><span class="v">${money(Rt.refundUsedForErs,2)}</span></div>
+           <div class="kv"><span class="k"><b>Together</b></span><span class="v"><b class="${Rt.refundFillsErs?'pos':''}">${money(Rt.ersFundableWithRefund,2)}</b></span></div>
+           <p style="margin:6px 0">${Rt.refundFillsErs?`<b>A sale would close the gap.</b> From 55 the refund lands in the Retirement Account up to the Full Retirement Sum and in the Ordinary Account beyond it &mdash; and OA money is what a top-up to the ERS is made of.`:`<b>Even together they fall short</b> of the full ${money(Rt.ersHeadroom,0)}.`}</p>`
+        : `<div class="banner b-good" style="margin-top:10px"><span class="ic">&#10003;</span><div><b>You do not need to sell the flat to reach the Enhanced Retirement Sum.</b>
+             Your projected Ordinary Account covers the whole ${money(Rt.ersHeadroom,0)} headroom on its own, with ${money(Rt.oaFrs-Rt.ersHeadroom,0)} still left over. The housing refund is <b>not</b> the funding source for this lever &mdash; it is additional.</div></div>
+           <p style="margin:6px 0"><b>So what the refund actually is, for you, is cash.</b> If you sold at or after 55 with the ERS already full, essentially the whole ${money(Rt.refund,0)} would land in your Ordinary Account, where it is withdrawable on demand. That is a liquidity fact, not a retirement-income one &mdash; the payout lever is already maxed without it.</p>`}
+      <p style="margin:6px 0"><b>Three things this is not.</b> It is <b>not a suggestion to sell</b> &mdash; Fortress is saying what the refund would do <em>if</em> you sold. It is <b>not new money</b>: CPF cash moving out of a house and back into a CPF account changes what you <em>receive</em>, not what you are <em>worth</em>, and the Summary tab already counts it. And it is <b>not reachable before 55</b> &mdash; sell earlier and the refund sits locked in your CPF accounts until you get there.</p>
+      <p style="margin:6px 0">Projected with the same monthly-accrual, annually-compounded method the Property tab uses, anchored to your statement rather than re-derived. ${esc(Rt.refundAt55.basis)}</p></div>`:''}
+
     <p class="note">The two levers point in opposite directions and you can only pick one. Pledging trades lifelong income for cash now; topping up to the ERS trades cash now for lifelong income. Fortress deliberately does not recommend either, because the right answer depends on your health, your other income and how much you value certainty — none of which it holds.</p>
     <p class="note">Sources: ${esc(R.age55Source)}; ${esc(R.pledgeSource)}; ${esc(R.ersSource)}.</p>
   </div>`:''}
@@ -7108,7 +7752,7 @@ function gapsCard(tab){
 function render(){
   renderTabs();
   document.getElementById('stamp').textContent = VERSION;
-  const v={dash:viewDash,prop:viewProp,cpf:viewCpf,retire:viewRetire,al:viewAl,trends:viewTrends,fx:viewFX,hist:viewHist,set:viewSet}[state.settings.tab]||viewDash;
+  const v={dash:viewDash,prop:viewProp,car:viewCar,cpf:viewCpf,retire:viewRetire,al:viewAl,trends:viewTrends,fx:viewFX,hist:viewHist,set:viewSet}[state.settings.tab]||viewDash;
   const tab = state.settings.tab;
   /* A tab used to be all-or-nothing. One unguarded null inside one card's template
      literal threw, render() aborted, innerHTML was never assigned - and the screen simply
