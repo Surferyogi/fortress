@@ -78,14 +78,59 @@ const near = (a, b, tol = 0.005) => a != null && b != null && Math.abs(a - b) <=
   const txt = await page.evaluate(() => document.getElementById('main').textContent);
   const html = await page.evaluate(() => document.getElementById('main').innerHTML);
   ok('the Retire tab draws with no refusal card', !html.includes('could not be drawn'));
-  ok('it states he need not sell to reach the ERS', /do not need to sell the flat/i.test(txt));
-  ok('it does NOT claim the refund funds the top-up', !/A sale would close the gap/i.test(txt));
-  ok('it reframes the refund as liquidity, not income', /liquidity fact, not a retirement-income one/i.test(txt));
-  ok('it refuses to suggest selling',     /not a suggestion to sell/i.test(txt));
-  ok('it says the refund is not new money', /not new money/i.test(txt));
-  ok('it says the refund is unreachable before 55', /not reachable before 55/i.test(txt));
+  ok('it states the refund changes nothing on the table', /None on the table above/i.test(txt));
+  ok('it does NOT claim the refund funds the top-up', !/enough to close it/i.test(txt));
+  ok('it reframes the refund as cash, not income', /as cash in your OA, not as income/i.test(txt));
+  ok('it refuses to suggest selling',     /Not a suggestion to sell/i.test(txt));
+  ok('it says the refund is not new money', /Not new money/i.test(txt));
+  ok('it says the refund is unreachable before 55', /Not reachable before 55/i.test(txt));
   ok('it shows the projected refund',     /531,283/.test(txt));
-  ok('it shows the statement figure too', /505,640\.64/.test(txt));
+  ok('it shows the statement figure too', /505,64\d/.test(txt));
+
+  console.log('\n-- the rewrite brief: every milestone answers impact and action, briefly --');
+  const rows = await page.evaluate(() => retireTimeline().map(r => ({ t: r.title, i: r.impact, a: r.act, n: r.then })));
+  ok('every milestone carries an Impact', rows.every(r => r.i && r.i.length > 0), rows.filter(r => !r.i).map(r => r.t));
+  ok('every milestone carries a Do',      rows.every(r => r.a && r.a.length > 0), rows.filter(r => !r.a).map(r => r.t));
+  const words = s => s.replace(/<[^>]*>/g, '').split(/\s+/).filter(Boolean).length;
+  /* CK's brief: every Do must carry what FOLLOWS from doing it. A row with no
+     consequence is a row that should not be on the page. */
+  ok('every milestone carries a consequence', rows.every(r => r.n && r.n.length > 0), rows.filter(r => !r.n).map(r => r.t));
+  ok('no consequence line runs past 40 words', rows.every(r => words(r.n) <= 40), rows.map(r => [r.t, words(r.n)]).filter(x => x[1] > 40));
+  ok('no Impact line runs past 30 words', rows.every(r => words(r.i) <= 30), rows.map(r => [r.t, words(r.i)]).filter(x => x[1] > 30));
+  ok('no Do line runs past 30 words',     rows.every(r => words(r.a) <= 30), rows.map(r => [r.t, words(r.a)]).filter(x => x[1] > 30));
+  /* Impact and Do must survive simplify(), which sweeps every .note into a disclosure.
+     They use .say precisely so they stay on screen; this is the guard for that. */
+  const visible = await page.evaluate(() => {
+    state.settings.simple = true; state.settings.tab = 'retire'; render();
+    return document.getElementById('main').innerText;
+  });
+  ok('Impact lines are visible in simple mode', /Impact:/.test(visible));
+  ok('Do lines are visible in simple mode',     /Do:/.test(visible));
+  ok('So lines are visible in simple mode',     /So:/.test(visible));
+  ok('the decision table is visible too',       /Cash at 55/.test(visible));
+
+  console.log('\n-- 2.5% against 4%: the cost of waiting, and the cost of moving --');
+  const V = await page.evaluate(() => JSON.parse(JSON.stringify(oaVsRa())));
+  ok('the movable amount is the ERS headroom', near(V.movable, 228200.00), V.movable);
+  ok('the rest stays in the OA either way',    near(V.staysInOa, 267771.66 - 228200, 0.02), V.staysInOa);
+  ok('the gap is 1.5 points',                  near(V.gapPct, 1.5), V.gapPct);
+  ok('year one costs 3,423',                   near(V.firstYear, 3423, 1), V.firstYear);
+  ok('by 65 it is 45,676',                     near(V.byPayout, 45676, 2), V.byPayout);
+  ok('each row recomputes as compound interest',
+     V.rows.every(r => Math.abs(r.low - V.movable * Math.pow(1 + V.oaPct / 100, r.years)) < 1 &&
+                       Math.abs(r.high - V.movable * Math.pow(1 + V.raPct / 100, r.years)) < 1), 'compounding');
+  ok('the difference widens with every row',
+     V.rows.every((r, i) => i === 0 || r.diff > V.rows[i - 1].diff), V.rows.map(r => r.diff));
+  ok('the extra interest is noted as already absorbed', V.extraAbsorbed === true, V.extraAbsorbed);
+
+  console.log('\n-- and the page states the irreversibility in CPF\'s own words --');
+  ok('it says there is no lock-in PERIOD',     /no lock-in/i.test(txt));
+  ok('it says the move is permanent',          /permanent/i.test(txt));
+  ok('it quotes CPF on irreversibility',       /are irreversible as they are a long-term commitment/i.test(txt));
+  ok('it quotes CPF on no other withdrawal',   /cannot be withdrawn for any other purposes/i.test(txt));
+  ok('it contrasts the OA, which is free',     /as many withdrawals as you like/i.test(txt));
+  ok('the cost-of-waiting table is on the page', /You give up/i.test(txt));
+  ok('it reframes the real trade',             /not really 2\.5% against 4\.0%/i.test(txt));
 
   console.log('\n-- the OPPOSITE case: shrink the OA and the gap language must appear --');
   const G = await page.evaluate(() => {
@@ -99,7 +144,7 @@ const near = (a, b, tol = 0.005) => a != null && b != null && Math.abs(a - b) <=
     const t = document.getElementById('main').textContent;
     const refused = /could not be drawn/.test(document.getElementById('main').innerHTML);
     state.cpf = keep; render();
-    return { r, gapShown: /would cover/i.test(t), noSellShown: /do not need to sell the flat/i.test(t), refused };
+    return { r, gapShown: /would cover/i.test(t), noSellShown: /None on the table above/i.test(t), refused };
   });
   ok('with a thin OA there IS a gap',     G.r.ersGapAfterOa > 0, G.r.ersGapAfterOa);
   ok('the refund is then actually used',  G.r.refundUsedForErs > 0, G.r.refundUsedForErs);
