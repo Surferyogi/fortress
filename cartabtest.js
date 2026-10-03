@@ -52,8 +52,57 @@ const near = (a, b, tol = 0.005) => a != null && b != null && Math.abs(a - b) <=
   ok('loan reports itself unknown',        E.L.known === false, E.L.known);
   ok('loan schedule is empty, not fabricated', E.L.schedule.length === 0, E.L.schedule.length);
   ok('it still knows the principal from the invoice', near(E.L.principal, 105000.00), E.L.principal);
-  ok('and names every missing term',       E.L.missing.length === 4, E.L.missing);
-  ok('no instalment is invented',          E.L.instalment === undefined || E.L.instalment == null, E.L.instalment);
+  /* With nothing entered the card is no longer blank: HL Bank's approval supplies four of
+     the five terms, so the loan is PRICED but not DATED. The distinction is the whole
+     point - everything that needs only the four is computed, everything that needs a
+     calendar is withheld. */
+  ok('the one missing term is the first payment date',
+     E.L.missing.length === 1 && /first payment/i.test(E.L.missing[0]), E.L.missing);
+  ok('priced is true even though known is false', E.L.priced === true && E.L.known === false, [E.L.priced, E.L.known]);
+  ok('the terms came from the document, not from an entry', E.L.sourced === true, E.L.sourced);
+  ok('lender HL Bank',                     E.L.lender === 'HL Bank', E.L.lender);
+  ok('flat 2.28% over 84 months',          near(E.L.ratePct, 2.28) && E.L.rateType === 'flat' && E.L.months === 84,
+                                           [E.L.ratePct, E.L.rateType, E.L.months]);
+  /* 105,000 x 2.28% x 7 = 16,758.00 of interest; 121,758.00 over 84 months is 1,449.50 */
+  ok('total interest 16,758.00',           near(E.L.totalInterest, 16758.00), E.L.totalInterest);
+  ok('total repayable 121,758.00',         near(E.L.totalPaid, 121758.00), E.L.totalPaid);
+  ok('the derived instalment is 1,449.50', near(E.L.instalmentDerived, 1449.50), E.L.instalmentDerived);
+  ok('the bank states 1,450.00',           near(E.L.instalmentStated, 1450.00), E.L.instalmentStated);
+  ok('and the rounding gap over the loan is 42.00', near(E.L.instalmentRounding, 42.00), E.L.instalmentRounding);
+  ok('the true reducing rate is 4.29%',    near(E.L.effectivePct, 4.2945, 0.0005), E.L.effectivePct);
+  ok('which is 2.01 points above the quoted rate', near(E.L.interestPremium, 2.0145, 0.0005), E.L.interestPremium);
+  ok('it is nearly double the headline',   E.L.effectivePct / E.L.ratePct > 1.8, E.L.effectivePct / E.L.ratePct);
+  /* and the half of the card that needs a calendar stays switched off */
+  ok('no dated schedule without a start date', E.L.schedule.length === 0 && E.L.years.length === 0,
+                                           [E.L.schedule.length, E.L.years.length]);
+  ok('no outstanding balance is claimed',  E.L.balanceNow === undefined, E.L.balanceNow);
+  ok('no entry conflicts, nothing being overridden', E.L.conflicts.length === 0, E.L.conflicts);
+
+  /* The owner must be able to correct his own file, and the file must say when he has.
+     An earlier draft of this build let the document win silently - which would have made
+     the form below a lie, and would have left two of this suite's code paths unreachable.
+     Entry wins; the difference is reported. */
+  console.log('\n-- what CK enters beats the document, and is never applied quietly --');
+  const CF = await page.evaluate(() => {
+    const before = state.settings.carLoan;
+    state.settings.carLoan = { ratePct: 3.10, tenorYears: 5, lender: 'Another Bank' };
+    const L = JSON.parse(JSON.stringify(carLoan()));
+    state.settings.tab = 'car'; render();
+    const txt = document.getElementById('main').textContent;
+    if (before) state.settings.carLoan = before; else delete state.settings.carLoan;
+    render();
+    return { L, txt };
+  });
+  ok('the entered rate is the one used',      near(CF.L.ratePct, 3.10), CF.L.ratePct);
+  ok('the entered tenor is the one used',     near(CF.L.tenorYears, 5), CF.L.tenorYears);
+  ok('the entered lender is the one used',    CF.L.lender === 'Another Bank', CF.L.lender);
+  ok('the rate basis still falls back to the document', CF.L.rateType === 'flat', CF.L.rateType);
+  ok('all three differences are reported',    CF.L.conflicts.length === 3, CF.L.conflicts.map(c => c.field));
+  ok('each one carries both figures',         CF.L.conflicts.every(c => c.document != null && c.entered != null), CF.L.conflicts);
+  ok('and the page says so in words',         /does not match the approval/i.test(CF.txt));
+  ok('naming the document figure alongside', /the approval says/i.test(CF.txt));
+  ok('the override is restored cleanly',
+     await page.evaluate(() => carLoan().ratePct) === 2.28);
   ok('resale table is empty',              E.V.hasValues === false, E.V.hasValues);
   /* road tax is no longer a gap: LTA documents it at 1,474.00 a year, so it arrives
      pre-filled from the registration record while staying overridable. */
@@ -190,6 +239,7 @@ const near = (a, b, tol = 0.005) => a != null && b != null && Math.abs(a - b) <=
   ok('it is no longer on the Summary tab', await page.evaluate(() => { state.settings.tab = 'dash'; render(); const t = document.getElementById('main').textContent; state.settings.tab = 'car'; render(); return !/How the invoice settles/.test(t); }));
   ok('the loan card is there',          /The loan/.test(txt));
   ok('the flat-rate truth is stated',   /is really/.test(txt) && /5\.19%/.test(txt));
+  ok('what the reader entered overrides the document', /does not match the approval/i.test(txt) || /2\.78/.test(txt));
   ok('the monthly schedule renders',    (txt.match(/Nov 2026/g) || []).length >= 1);
   ok('the resale card is there',        /What it is worth if you sell/.test(txt));
   ok('the running-cost card is there',  /What it costs to run/.test(txt));

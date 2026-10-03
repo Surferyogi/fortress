@@ -55,13 +55,36 @@ const near = (a, b, tol = 0.005) => a != null && b != null && Math.abs(a - b) <=
   ok('borrowed share of the price is 58.5%', near(C.borrowedPct, 58.53, 0.05), C.borrowedPct);
   ok('total own money = deposit + balance', near(C.totalOwnMoney, 16350 + 58038), C.totalOwnMoney);
 
-  console.log('\n-- ZERO ASSUMPTION: what neither document states stays null --');
-  ok('lender is null',            C.loanLender === null, C.loanLender);
-  ok('interest rate is null',     C.loanRatePct === null, C.loanRatePct);
-  ok('tenor is null',             C.loanTenorYears === null, C.loanTenorYears);
-  ok('instalment is null',        C.loanInstalment === null, C.loanInstalment);
-  ok('loanKnown is false',        C.loanKnown === false, C.loanKnown);
-  ok('all four gaps are named',   C.loanGaps.length === 4, C.loanGaps);
+  /* The loan was the largest hole in this tab for three builds: the invoice called it
+     "Bank Financing" and the sales agreement left Hire Purchase Amount and Finance
+     Company blank. HL Bank's own approval closed four of the five terms. The fifth did
+     not arrive with it, and the point of this block is that the fifth stays open. */
+  console.log('\n-- the loan, as HL Bank states it --');
+  ok('the lender is named',       C.loanLender === 'HL Bank', C.loanLender);
+  ok('flat rate 2.28%',           near(C.loanRatePct, 2.28), C.loanRatePct);
+  ok('and it is flat, not reducing', C.loanRateType === 'flat', C.loanRateType);
+  ok('tenor 7 years',             near(C.loanTenorYears, 7), C.loanTenorYears);
+  ok('which is 84 months',        C.loanTenorMonths === 84, C.loanTenorMonths);
+  ok('instalment 1,450.00 as stated', near(C.loanInstalmentStated, 1450.00), C.loanInstalmentStated);
+  ok('loanPriced is true',        C.loanPriced === true, C.loanPriced);
+
+  console.log('\n-- ZERO ASSUMPTION: the one term nobody stated is still not invented --');
+  ok('the first payment date is null', C.loanFirstPayment == null, C.loanFirstPayment);
+  ok('so loanKnown stays false',  C.loanKnown === false, C.loanKnown);
+  ok('and it is the only gap left', C.loanGaps.length === 1 && /first payment/i.test(C.loanGaps[0]), C.loanGaps);
+
+  console.log('\n-- the approval ties to THIS car, and its private fields are not stored --');
+  ok('the price on the approval matches the invoice', near(C.loanApprovalPrice, C.price), [C.loanApprovalPrice, C.price]);
+  ok('the guarantor is held by relationship, not by name',
+     C.loanGuarantor === 'your wife', C.loanGuarantor);
+  ok('the application reference is nowhere on the object',
+     !JSON.stringify(C).includes('164873'));
+  ok('the bank\u2019s own description of the car is kept verbatim',
+     /SEAL ELECTRIC/.test(C.loanModelOnApproval || ''), C.loanModelOnApproval);
+  ok('and is NOT silently merged into the model Fortress shows',
+     C.model === 'Seal 6 Premium', C.model);
+
+  console.log('\n-- the rest of the registration record --');
   ok('the schedule inception date is still not documented', C.insuranceRenewalDate === null, C.insuranceRenewalDate);
   ok('registration number is null', C.registrationNo === null, C.registrationNo);
   ok('the COE premium is now documented', near(C.coePremiumPaid, 131890.00), C.coePremiumPaid);
@@ -69,8 +92,8 @@ const near = (a, b, tol = 0.005) => a != null && b != null && Math.abs(a - b) <=
   ok('ARF paid is zero, as LTA states',   near(C.arfPaid, 0), C.arfPaid);
   ok('minimum PARF benefit is zero',      near(C.minimumParfBenefit, 0), C.minimumParfBenefit);
   ok('the registration plate is still NOT recorded', C.registrationNo === null, C.registrationNo);
-  ok('no invented monthly figure anywhere on the position',
-     !Object.keys(C).some(k => /monthly|instal/i.test(k) && C[k] != null),
+  ok('the only instalment on the position is the one the bank stated',
+     Object.keys(C).filter(k => /monthly|instal/i.test(k) && C[k] != null).join(',') === 'loanInstalmentStated',
      Object.keys(C).filter(k => /monthly|instal/i.test(k)).map(k => [k, C[k]]));
 
   console.log('\n-- the two payments of 24 Sep clear the balance to the cent --');
@@ -127,6 +150,14 @@ const near = (a, b, tol = 0.005) => a != null && b != null && Math.abs(a - b) <=
   ok('no mobile number',         !src.includes('86008084'));
   ok("no dealer bank account",   !src.includes('0-853128-007') && !src.includes('853128'));
   ok('family named by relationship, not by name', /you and your wife/.test(src) && !/Sophia/i.test(src));
+  /* new with the HL Bank approval: it carries a guarantor's full name and an application
+     reference, and this page is served from GitHub Pages. Neither is needed to say what
+     the loan costs, so neither is here. */
+  ok("no guarantor's name from the approval",
+     !/Chen\s*Yuqing/i.test(src) && !/YUQING/i.test(src));
+  ok('the guarantor is held by relationship instead', /loanGuarantor:'your wife'/.test(src));
+  ok('no HL Bank application reference', !/\b164873\b/.test(src));
+  ok('the lender itself IS named, because it is not an identifier', /HL Bank/.test(src));
 
   console.log('\n-- the net-worth ledger carries all three lines --');
   await page.evaluate(() => { state.settings.tab = 'dash'; render(); });
@@ -169,10 +200,16 @@ const near = (a, b, tol = 0.005) => a != null && b != null && Math.abs(a - b) <=
   /* the purchase card moved to the Car tab in v2026:SEP:28; the net-worth ledger rows
      above are still read from Summary, which is why the tab is switched only here */
   const txt = await page.evaluate(() => { state.settings.tab = 'car'; render(); return document.getElementById('main').textContent; });
-  ok('states the loan size is all it holds',   /holds the loan's size and nothing else/i.test(txt));
-  ok('names the missing loan terms',           /the interest rate/i.test(txt) && /the tenor/i.test(txt));
-  ok('makes no unsourced claim about market lending practice',
-     !/flat rate/i.test(txt) && !/roughly double/i.test(txt));
+  ok('no longer claims the loan is a blank',  !/holds the loan's size and nothing else/i.test(txt));
+  ok('names the lender on the page',           /HL Bank/.test(txt));
+  ok('names the one term still missing',       /first payment date/i.test(txt));
+  /* The flat-rate premium is now a claim the page DOES make - but it is arithmetic on
+     CK's own figures, not a statement about what the market charges. The negative test
+     that mattered has moved: the page must still make no claim about market practice. */
+  ok('states the flat-rate premium as solved arithmetic',
+     /real rate is 4\.29%/i.test(txt) && /solved for the reducing-balance rate/i.test(txt));
+  ok('still makes no unsourced claim about market lending practice',
+     !/roughly double/i.test(txt) && !/typical(ly)? (car|hire)/i.test(txt));
   ok('refuses to assume a rate',               /will not assume a rate/i.test(txt));
   ok('shows the premium paid',                 /Premium paid/i.test(txt));
   ok('still owns the earlier subsidy mistake', /had the subsidy wrong before this/i.test(txt));

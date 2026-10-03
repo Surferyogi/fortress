@@ -148,7 +148,7 @@ details.gap[open]>summary::after{content:'  \2212'}
 <script>
 'use strict';
 /* ================= constants / helpers ================= */
-const VERSION = 'v2026:OCT:03-09:45';
+const VERSION = 'v2026:OCT:03-10:54';
 const PDFJS_URL = 'pdf.min.js';           // vendored — no CDN dependency
 const PDFJS_WORKER = 'pdf.worker.min.js';
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';  // fallback only
@@ -741,13 +741,16 @@ const MCST_SEED = {
 const CAR_SEED = {
   /* The BYD Seal 6 Premium bought in September 2026. Two documents describe it and they
      agree to the cent, which is why the payment position below can be stated rather than
-     estimated. What NEITHER document contains is the loan's terms - no lender, no rate,
-     no tenor, no instalment - so Fortress holds the principal and refuses the rest.
+     estimated. The loan's terms were the long-standing hole - no lender, no rate, no
+     tenor, no instalment - and HL Bank's own approval of 2026 has now closed four of the
+     five. The fifth, the first payment date, is still not on any document supplied, and
+     Fortress still refuses to guess it.
 
      Deliberately NOT here, because this file is served from a public GitHub Pages site:
      the NRIC on both documents, the engine and chassis numbers, the home address and
-     phone number on the proposal form, and the dealer's own bank account number from the
-     invoice. None of them is needed to state what this car costs. */
+     phone number on the proposal form, the dealer's own bank account number from the
+     invoice, HL Bank's application reference, and the guarantor's name - she is CK's wife
+     and is recorded as that. None of them is needed to state what this car costs. */
   make:'BYD', model:'Seal 6 Premium', colour:'Arctic White', yearOfManufacture:2026,
   dealer:'E-AUTO, a division of Vantage Automotive Limited (Sime Darby Motors)',
   salesConsultant:'Egnus Neo Soon Guat',
@@ -760,8 +763,36 @@ const CAR_SEED = {
   optionsTotal:4000.00, optionsDiscount:4000.00,
   price:179388.00,                       // net package price, and the invoice's nett price
   deposit:16350.00, depositPaid:true, depositRefundableIfNoLoan:true,
-  loanPrincipal:105000.00, loanLender:null, loanRatePct:null, loanTenorYears:null,
-  loanInstalment:null, loanFirstPayment:null,
+  loanPrincipal:105000.00,
+
+  /* ---- THE LOAN, from HL Bank's own approval. ----------------------------------------
+     The invoice called it only "Bank Financing" and both the sales agreement's Hire
+     Purchase Amount and Finance Company fields were blank, so for three builds Fortress
+     held the principal and said in terms that it knew nothing else. The approval email
+     states the lender, the tenor, the rate and its basis, and the instalment, and the
+     purchase price on it - S$179,388 - matches the invoice exactly, which is what lets
+     these terms be attached to this car rather than merely to an application.
+
+     The approval does NOT state when the first instalment falls due, and nothing else
+     supplied does either. Without that one date there is no calendar to hang a schedule
+     on, so the month-by-month table, the outstanding balance and the equity arithmetic
+     stay switched off. Everything that does not need a date - the instalment, the total
+     interest, the true reducing-balance rate - is computed and shown.
+
+     The approval also describes the car as "BYD, SEAL ELECTRIC, DYNAMIC 61.4 KWH (A)",
+     where the sales agreement says "Seal 6 Premium". Fortress records both and resolves
+     neither: it has no document that settles which description is the right one. The
+     "(A)" is consistent with the Category A COE on the LTA letter it does hold. */
+  loanLender:'HL Bank',
+  loanLenderFull:'HL Bank, on an application submitted through Vantage Automotive Limited',
+  loanRatePct:2.28, loanRateType:'flat',
+  loanTenorYears:7, loanTenorMonths:84,
+  loanInstalmentStated:1450.00,
+  loanGuarantor:'your wife',
+  loanApprovalPrice:179388.00,
+  loanModelOnApproval:'BYD, SEAL ELECTRIC, DYNAMIC 61.4 KWH (A)',
+  loanSource:'HL Bank hire-purchase approval email, received on CK\u2019s phone',
+  loanFirstPayment:null,
   loanDescribedAs:'Bank Financing',
   balanceDue:58038.00, balanceDueRule:'Inclusive of GST - payable before registration',
   balancePaid:true,
@@ -2351,10 +2382,13 @@ function mcstPosition(){
 }
 
 /* ---- the car purchase -------------------------------------------------------------
-   Everything here is arithmetic on figures both documents state. The three things that
-   would let Fortress model this properly - the loan's rate, its tenor and its monthly
-   instalment - are on NEITHER document, so `loanKnown` is false and every consumer says
-   so rather than assuming a market rate.
+   Everything here is arithmetic on figures the documents state. The loan's rate, tenor,
+   lender and instalment were on NEITHER the invoice nor the sales agreement, and for three
+   builds `loanKnown` was false and every consumer said so rather than assuming a market
+   rate. HL Bank's approval closed four of those five. The first payment date is still on
+   nothing supplied, so `loanKnown` stays false - but `loanPriced` is now true, and that is
+   the flag the cards use to say what the loan costs without pretending to know when it
+   started.
 
    The net-worth treatment is the delicate part and it is worth naming. While the balance
    is still owed, the car's three lines net to exactly the deposit already paid:
@@ -2400,12 +2434,18 @@ function carPosition(){
   function stmtDateEarly(d){ const sd = (typeof latest==='function' && latest()) ? latest().statementDate : null;
     return sd ? d <= sd : false; }
 
+  /* What is still missing about the loan, checked field by field rather than asserted.
+     Four of the five closed when HL Bank's approval arrived; the fifth did not. */
   const gaps = [];
-  if(C.loanRatePct==null)      gaps.push('the interest rate');
-  if(C.loanTenorYears==null)   gaps.push('the tenor');
-  if(C.loanInstalment==null)   gaps.push('the monthly instalment');
-  if(!C.loanLender)            gaps.push('the lender');
+  if(!C.loanLender)                 gaps.push('the lender');
+  if(C.loanRatePct==null)           gaps.push('the interest rate');
+  if(C.loanTenorYears==null)        gaps.push('the tenor');
+  if(C.loanInstalmentStated==null)  gaps.push('the monthly instalment');
+  if(!C.loanFirstPayment)           gaps.push('the first payment date');
   const loanKnown = gaps.length===0;
+  /* "priced" is the weaker and more useful test: enough to say what the loan costs, even
+     without a calendar to put the payments on. */
+  const loanPriced = !!(C.loanLender && C.loanRatePct!=null && C.loanRateType && C.loanTenorYears!=null);
   const insuranceKnown = C.insurancePaid!=null;
   /* If the subsidy was the full 3,000 and all of it went to this premium, the gross was
      this. It is ARITHMETIC ON AN ASSUMPTION, labelled as such everywhere it is shown,
@@ -2430,7 +2470,7 @@ function carPosition(){
     stmtDate, depositAfterStatement,
     payments, balancePayments, depositPayment, paidToBalance, balanceClears, lastPaymentOn,
     totalOwnMoney, totalPaid, fullyEvidenced, paidSinceStatement,
-    loanGaps:gaps, loanKnown, insuranceKnown, insuranceGrossImplied, insuranceReconciles,
+    loanGaps:gaps, loanKnown, loanPriced, insuranceKnown, insuranceGrossImplied, insuranceReconciles,
     insuranceRenewalDerived, insuranceRenewalOn, daysToInsuranceRenewal,
     /* the identity above, checked rather than asserted */
     netEqualsDeposit: !C.balancePaid && Math.abs(netToWorth - C.deposit) < 0.005 };
@@ -2470,19 +2510,72 @@ function effectiveFromFlat(principal, flatPct, months){
 function carLoan(){
   const C = (typeof carPosition==='function') ? carPosition() : null;
   const L = state.settings.carLoan || {};
+
+  /* Two sources. What CK types wins, because it is his file and a bank can re-quote - but
+     it never wins quietly: where his entry differs from the lender's own approval the card
+     says so, in both figures, the same way the Property tab handles the two "previous"
+     rates on the UOB letter. The document fills everything he has not typed, which is the
+     usual case and the reason this card can say anything at all. */
+  const doc = C ? {
+    lender: C.loanLender ?? null, ratePct: C.loanRatePct ?? null,
+    rateType: C.loanRateType ?? null, tenorYears: C.loanTenorYears ?? null,
+    instalmentStated: C.loanInstalmentStated ?? null, source: C.loanSource ?? null
+  } : { lender:null, ratePct:null, rateType:null, tenorYears:null, instalmentStated:null, source:null };
+
+  const pick = (k) => (L[k] ?? null) ?? doc[k] ?? null;
+  const ratePct = pick('ratePct'), rateType = pick('rateType');
+  const tenorYears = pick('tenorYears'), lender = pick('lender');
   const principal = C ? C.loanPrincipal : null;
-  const ratePct = L.ratePct ?? null, rateType = L.rateType ?? null;
-  const tenorYears = L.tenorYears ?? null, firstPayment = L.firstPayment ?? null;
-  const lender = L.lender || (C ? null : null);
-  const missing = [];
-  if(principal==null)  missing.push('the principal');
-  if(ratePct==null)    missing.push('the interest rate');
-  if(!rateType)        missing.push('whether the rate is flat or reducing-balance');
-  if(tenorYears==null) missing.push('the tenor');
-  if(!firstPayment)    missing.push('the first payment date');
-  const known = missing.length===0;
+  const firstPayment = L.firstPayment ?? (C ? (C.loanFirstPayment ?? null) : null);
+
+  const conflicts = [];
+  [['ratePct','the interest rate'],['rateType','the rate basis'],
+   ['tenorYears','the tenor'],['lender','the lender']].forEach(([k,label])=>{
+    if(doc[k]!=null && L[k]!=null && String(doc[k])!==String(L[k]))
+      conflicts.push({ field:k, label, document:doc[k], entered:L[k], using:'entered' });
+  });
+
+  /* Pricing a loan and dating it are different jobs. Everything a reader actually asks of
+     this card - the instalment, the interest over the life, the true rate behind a flat
+     one - needs only the first four. Only the calendar needs the fifth. Separating them
+     is what lets a loan with four of five terms say something instead of nothing. */
+  const missingTerms = [], missingDates = [];
+  if(principal==null)  missingTerms.push('the principal');
+  if(ratePct==null)    missingTerms.push('the interest rate');
+  if(!rateType)        missingTerms.push('whether the rate is flat or reducing-balance');
+  if(tenorYears==null) missingTerms.push('the tenor');
+  if(!firstPayment)    missingDates.push('the first payment date');
+  const missing = missingTerms.concat(missingDates);
+  const priced = missingTerms.length===0;
+  const known = priced && missingDates.length===0;
+
   const base = { principal, ratePct, rateType, tenorYears, firstPayment, lender,
-                 missing, known, schedule:[], years:[] };
+                 doc, conflicts, sourced: doc.ratePct!=null, source: doc.source,
+                 instalmentStated: doc.instalmentStated,
+                 missing, missingTerms, missingDates, priced, known,
+                 schedule:[], years:[] };
+
+  /* Priced but not dated: say everything that does not need a calendar, and nothing that
+     does. The schedule and the year table stay empty, so every caller that walks them -
+     carValues() above all - behaves exactly as it did when nothing was known. */
+  if(priced && !known){
+    const months = Math.round(tenorYears*12);
+    const r2 = n => Math.round(n*100)/100;
+    const totalInterest = r2(principal * (ratePct/100) * tenorYears);
+    const instal = rateType==='flat' ? (principal + totalInterest) / months
+                                     : annuity(principal, ratePct, months);
+    const effPct = rateType==='flat' ? effectiveFromFlat(principal, ratePct, months) : ratePct;
+    const stated = doc.instalmentStated;
+    return { ...base, months, instalment:r2(instal), instalmentDerived:Math.round(instal*10000)/10000,
+      effectivePct:effPct,
+      interestPremium: (rateType==='flat' && effPct!=null) ? Math.round((effPct-ratePct)*10000)/10000 : null,
+      totalInterest, totalPaid: r2(principal + totalInterest),
+      interestShareOfPrincipal: principal>0 ? totalInterest/principal*100 : null,
+      /* the lender rounds its own instalment; show the gap rather than pick a side */
+      instalmentRounding: stated!=null ? r2((stated - instal) * months) : null,
+      instalmentStatedTotal: stated!=null ? r2(stated * months) : null,
+      ruleOf78Note:'Settling a flat-rate loan early usually costs more than a straight-line balance, because lenders rebate unearned interest on a sum-of-digits basis rather than pro rata. Fortress does not model that: the rebate rule is in your agreement and not on any document supplied.' };
+  }
   if(!known) return base;
 
   const months = Math.round(tenorYears*12);
@@ -4735,7 +4828,7 @@ function retirementChecks(){
       add({ id:'car-balance', cat:'dated', date:C.estimatedDelivery, days:d,
         tone: d!=null && d<=7 ? 'serious' : (d!=null && d<=21 ? 'warn' : 'info'),
         title:'Car balance due before registration', head:`${money(C.outstanding,2)} to ${esc(C.dealer.split(',')[0])}`,
-        detail:`${money(C.price,2)} for the ${esc(C.make)} ${esc(C.model)}, less ${money(C.loanPrincipal,2)} of financing and the ${money(C.deposit,2)} deposit already paid. <b>${esc(C.balanceDueRule)}</b> &mdash; and delivery is estimated ${esc(dayLabel(C.estimatedDelivery))}, so this is cash you need to have somewhere it can move. ${C.loanKnown?'':`<b>Fortress does not hold the loan's terms.</b> The invoice says only &ldquo;${esc(C.loanDescribedAs)}&rdquo; and neither document names ${C.loanGaps.map(g=>esc(g)).join(', ')}, so no instalment is modelled anywhere.`}`,
+        detail:`${money(C.price,2)} for the ${esc(C.make)} ${esc(C.model)}, less ${money(C.loanPrincipal,2)} of financing and the ${money(C.deposit,2)} deposit already paid. <b>${esc(C.balanceDueRule)}</b> &mdash; and delivery is estimated ${esc(dayLabel(C.estimatedDelivery))}, so this is cash you need to have somewhere it can move. ${C.loanKnown?'':(C.loanPriced?`The loan's terms came from ${esc(C.loanLender)}'s approval; only ${C.loanGaps.map(g=>esc(g)).join(', ')} is still missing, so no dated schedule is modelled.`:`<b>Fortress does not hold the loan's terms.</b> The invoice says only &ldquo;${esc(C.loanDescribedAs)}&rdquo; and neither document names ${C.loanGaps.map(g=>esc(g)).join(', ')}, so no instalment is modelled anywhere.`)}`,
         source:C.source });
     }
     if(C && !C.insuranceKnown){
@@ -5026,7 +5119,7 @@ function viewDash(){
       <div class="kv"><span class="k"><b>Incl. property</b></span><span class="v"><b>${money(w.dbsUob+state.settings.homeValue,2)}</b></span></div>`:''}
       ${(()=>{ const C=(typeof carPosition==='function')?carPosition():null; if(!C) return '';
         return `<div class="kv" style="margin-top:6px"><span class="k">Car at cost<br><span style="font-size:11px;opacity:.72">${esc(C.make)} ${esc(C.model)} &middot; what you paid, <b>not</b> a valuation</span></span><span class="v">+${money(C.price,2)}</span></div>
-        <div class="kv"><span class="k">Car loan${C.loanKnown?'':`<br><span style="font-size:11px;opacity:.72">principal only &mdash; ${C.loanGaps.map(g=>esc(g)).join(', ')} not known</span>`}</span><span class="v neg">&minus;${money(C.loanPrincipal,2)}</span></div>
+        <div class="kv"><span class="k">Car loan${C.loanKnown?'':`<br><span style="font-size:11px;opacity:.72">${C.loanPriced?`${esc(C.loanLender)} &middot; ${pct(C.loanRatePct,2)} flat &middot; ${fmt(C.loanTenorMonths,0)} months &mdash; ${C.loanGaps.map(g=>esc(g)).join(', ')} not known`:`principal only &mdash; ${C.loanGaps.map(g=>esc(g)).join(', ')} not known`}</span>`}</span><span class="v neg">&minus;${money(C.loanPrincipal,2)}</span></div>
         ${C.outstanding>0?`<div class="kv"><span class="k">Owed to the dealer<br><span style="font-size:11px;opacity:.72">${esc(C.balanceDueRule)}</span></span><span class="v neg">&minus;${money(C.outstanding,2)}</span></div>`:''}`; })()}
       ${w.al?`<div class="kv" style="margin-top:6px"><span class="k">Air Liquide shares (not collateral)</span><span class="v">+${money(w.al,2)}</span></div>`:''}
       ${w.cpf?`<div class="kv"${w.al?'':' style="margin-top:6px"'}><span class="k">CPF balances (restricted)</span><span class="v">+${money(w.cpf,2)}</span></div>`:''}
@@ -6446,8 +6539,8 @@ function viewCar(){
     ${C.reconciles?`<div class="banner b-good" style="margin-top:10px"><span class="ic">&#10003;</span><div><b>The two documents agree to the cent.</b>The sales agreement of ${esc(dayLabel(C.vsaDate))} and the invoice of ${esc(dayLabel(C.invoiceDate))} both put the nett price at ${money(C.price,2)}, and ${money(C.price,2)} less ${money(C.loanPrincipal,2)} less ${money(C.deposit,2)} is ${money(C.balanceDue,2)} &mdash; the balance the invoice states. Fortress re-ran that rather than trusting it.</div></div>`
     :`<div class="banner b-serious" style="margin-top:10px"><span class="ic">&#9888;</span><div><b>The invoice does not add up.</b>Price less loan less deposit does not equal the stated balance due. Check it against the dealer before paying.</div></div>`}
 
-    ${!C.loanKnown?`<div class="warnbox assume" style="margin-top:12px"><b>Fortress holds the loan's size and nothing else.</b>
-      <p style="margin:6px 0">The invoice records ${money(C.loanPrincipal,2)} and describes it only as &ldquo;${esc(C.loanDescribedAs)}&rdquo;. The sales agreement's <em>Hire Purchase Amount</em> and <em>Finance Company</em> fields are both blank. So ${C.loanGaps.map(g=>esc(g)).join(', ')} are <b>not available</b> &mdash; and without them there is no instalment to model, no interest to add to your carry, and no maturity to put in Reminders.</p>
+    ${!C.loanKnown?`<div class="warnbox assume" style="margin-top:12px"><b>${C.loanPriced?`One thing about the loan is still missing: ${C.loanGaps.map(g=>esc(g)).join(', ')}.`:`Fortress holds the loan's size and nothing else.`}</b>
+      <p style="margin:6px 0">${C.loanPriced?`The lender, the rate, the tenor and the instalment all came from ${esc(C.loanLender)}'s own approval and are on the loan card below. What no document supplied states is when the first instalment falls due &mdash; and without that there is no calendar to hang a schedule on, so the month-by-month table, the balance outstanding today and the equity against a resale value stay switched off.`:`The invoice records ${money(C.loanPrincipal,2)} and describes it only as &ldquo;${esc(C.loanDescribedAs)}&rdquo;. The sales agreement's <em>Hire Purchase Amount</em> and <em>Finance Company</em> fields are both blank. So ${C.loanGaps.map(g=>esc(g)).join(', ')} are <b>not available</b> &mdash; and without them there is no instalment to model, no interest to add to your carry, and no maturity to put in Reminders.`}</p>
       <p style="margin:6px 0">This is the one gap worth closing, and it is the largest thing Fortress does not know about your position. Send the hire-purchase agreement and the instalment, the interest and the maturity all follow &mdash; and the cost can then be set beside your ${(()=>{const e=(typeof effectiveLoanTerms==='function')?effectiveLoanTerms():null; return e&&e.ratePct!=null?`${pct(e.ratePct,2)} mortgage`:'other borrowing';})()} and your ${(()=>{const a=(typeof latest==='function')?agg(latest()):null; const l=a&&a.loans?a.loans[0]:null; return l&&l.ratePct!=null?`${pct(l.ratePct,2)} margin loan`:'margin loan';})()}, which is the comparison that decides whether borrowing this was worth it. <b>Fortress will not assume a rate in the meantime.</b> You borrowed ${pct(C.borrowedPct,1)} of the price; whether that was capped by a rule or chosen by you is not on either document.</p></div>`:''}
 
     ${C.insuranceKnown?`<div style="margin-top:12px"><span class="k" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">Insurance</span></div>
@@ -6488,7 +6581,7 @@ function viewCar(){
 
   ${(()=>{ /* ---- the loan ---- */
     return `<div class="card">
-    <h2>The loan<span class="pill">${money(C.loanPrincipal,0)}${L.known?` &middot; ${esc(L.rateType==='flat'?'flat':'reducing')} ${pct(L.ratePct,2)} &middot; ${fmt(L.tenorYears,0)} yr`:' &middot; terms not entered'}</span></h2>
+    <h2>The loan<span class="pill">${money(C.loanPrincipal,0)}${(L.known||L.priced)?` &middot; ${esc(L.rateType==='flat'?'flat':'reducing')} ${pct(L.ratePct,2)} &middot; ${fmt(L.tenorYears,0)} yr${L.priced&&!L.known?' &middot; no start date':''}`:' &middot; terms not entered'}</span></h2>
     ${L.known?`
     <div class="tiles">
       <div class="tile"><div class="v">${money(L.instalment,2)}</div><div class="l">A month</div><div class="d">${fmt(L.months,0)} payments from ${esc(dayLabel(L.firstPayment))}</div></div>
@@ -6517,12 +6610,42 @@ function viewCar(){
     </tbody></table></details>
 
     ${L.rateType==='flat'?`<p class="note act"><b>Do not read the balance column as a settlement figure.</b> ${esc(L.ruleOf78Note)}</p>`:''}
-    <p class="note assume">These figures come from the terms you entered below, not from any document Fortress has read. ${C.loanKnown?'':'<b>The hire-purchase agreement has still not been supplied</b>, so nothing here is sourced &mdash; send it and Fortress will seed the terms properly and flag any difference.'}</p>`
+    <p class="note how">${L.sourced?`The lender, rate, basis and tenor came from ${esc(L.lender)}'s own approval; the first payment date is yours.`:'These figures come from the terms you entered below, not from any document Fortress has read.'}</p>`
+    :L.priced?`
+    <div class="tiles">
+      <div class="tile"><div class="v">${money(L.instalmentStated ?? L.instalment,2)}</div><div class="l">A month</div><div class="d">${fmt(L.months,0)} payments${L.instalmentStated!=null?', as the bank states it':''}</div></div>
+      <div class="tile"><div class="v neg">${money(L.totalInterest,0)}</div><div class="l">Interest over the life</div><div class="d">${pct(L.interestShareOfPrincipal,1)} of what you borrowed</div></div>
+      <div class="tile"><div class="v neg">${L.effectivePct!=null?pct(L.effectivePct,2):'\u2014'}</div><div class="l">${L.rateType==='flat'?'True (reducing) rate':'Rate'}</div><div class="d">${L.rateType==='flat'&&L.interestPremium!=null?`${fmt(L.interestPremium,2)} points above the quoted ${pct(L.ratePct,2)}`:'as quoted'}</div></div>
+      <div class="tile"><div class="v">${money(L.totalPaid,0)}</div><div class="l">Total repayable</div><div class="d">${money(L.principal,0)} borrowed</div></div>
+    </div>
+
+    <div class="kv"><span class="k">Lender</span><span class="v">${esc(L.lender||'\u2014')}</span></div>
+    <div class="kv"><span class="k">Quoted rate</span><span class="v">${pct(L.ratePct,2)} ${esc(L.rateType==='flat'?'flat':'reducing balance')}</span></div>
+    <div class="kv"><span class="k">Tenor</span><span class="v">${fmt(L.months,0)} months</span></div>
+    <div class="kv"><span class="k">First payment</span><span class="v">not on any document supplied</span></div>
+
+    ${L.rateType==='flat'?`<div class="warnbox act" style="margin-top:12px"><b>The ${pct(L.ratePct,2)} on the approval is not what this loan costs you. The real rate is ${pct(L.effectivePct,2)}.</b>
+      <p style="margin:6px 0">A flat rate charges interest on the <em>original</em> ${money(L.principal,0)} for all ${fmt(L.tenorYears,0)} years, even though you have repaid most of it by the end. Fortress solved for the reducing-balance rate that produces the same instalment: <b>${pct(L.effectivePct,2)}</b> &mdash; ${fmt(L.interestPremium,2)} points above the headline. That is the number to compare against anything else you owe${(()=>{const e=(typeof effectiveLoanTerms==='function')?effectiveLoanTerms():null; return e&&e.ratePct!=null?`: your mortgage is ${pct(e.ratePct,2)}`:'';})()}${(()=>{const a=(typeof latest==='function')?agg(latest()):null; const l=a&&a.loans?a.loans[0]:null; return l&&l.ratePct!=null?` and your margin loan ${pct(l.ratePct,2)}`:'';})()}.</p>
+      <p style="margin:6px 0"><b>What follows from that.</b> This is the dearest money you owe apart from the MCST's late-payment charge. If you ever have spare cash and a choice of what to repay, it is priced here &mdash; but read the settlement caution below first, because a flat-rate loan does not get cheaper to settle in proportion to what you have paid off.</p></div>`:''}
+
+    <p class="note how"><b>The instalment reconciles to the cent, and the rounding is the bank's.</b> ${money(L.principal,0)} &times; ${pct(L.ratePct,2)} &times; ${fmt(L.tenorYears,0)} years = ${money(L.totalInterest,2)} of interest, so ${money(L.totalPaid,2)} over ${fmt(L.months,0)} months is <b>${money(L.instalmentDerived,2)}</b> a month. ${L.instalmentStated!=null?`The approval states ${money(L.instalmentStated,2)} &mdash; ${money(Math.abs(L.instalmentStated-L.instalmentDerived),2)} a month more, ${money(Math.abs(L.instalmentRounding),2)} over the whole loan. Fortress shows the bank's figure and names the difference; which month absorbs it is in the agreement, which has not been supplied.`:''}</p>
+
+    <p class="note act"><b>Do: send the first payment date and the rest of this card switches on.</b> That one field is all that is missing. With it Fortress draws the month-by-month schedule, the year-by-year interest and principal, the balance outstanding today, and the equity against whatever the car is worth &mdash; all of which need a calendar to sit on. Enter it below, or send the hire-purchase agreement and Fortress will read it.</p>
+
+    ${L.rateType==='flat'?`<p class="note act"><b>Do not read any balance you work out yourself as a settlement figure.</b> ${esc(L.ruleOf78Note)}</p>`:''}
+
+    ${L.conflicts.length?`<div class="warnbox act"><b>Every figure above uses what you entered, and it does not match the approval.</b>
+      <p style="margin:6px 0">${L.conflicts.map(c=>`${esc(c.label)}: you entered <b>${esc(String(c.entered))}</b>, the approval says <b>${esc(String(c.document))}</b>.`).join(' ')} Yours wins, because a bank can re-quote and this is your file &mdash; but clear the field below if the approval is still the right one, and the card will go back to it.</p></div>`:''}
+
+    <p class="note how">Source: ${esc(L.source||'the lender\u2019s approval')}. The purchase price on it, ${money(C.loanApprovalPrice,0)}, matches this invoice exactly, which is what ties these terms to this car rather than to an application. The application reference and the guarantor's name are on that email and are deliberately not stored here &mdash; the guarantor is ${esc(C.loanGuarantor||'your wife')}.</p>
+
+    <p class="note assume"><b>The approval describes the car differently from the sales agreement.</b> It says &ldquo;${esc(C.loanModelOnApproval||'')}&rdquo;; the agreement says &ldquo;${esc(C.make)} ${esc(C.model)}&rdquo;. Fortress records both and resolves neither &mdash; it holds no document that settles which description is right. The &ldquo;(A)&rdquo; is consistent with the Category ${esc(C.coeCategory)} COE on the LTA letter it does hold.</p>`
     :`<div class="warnbox assume"><b>Fortress knows you borrowed ${money(C.loanPrincipal,2)} and nothing else about it.</b>
       <p style="margin:6px 0">The invoice describes it only as &ldquo;${esc(C.loanDescribedAs)}&rdquo;; the sales agreement's <em>Hire Purchase Amount</em> and <em>Finance Company</em> fields are blank. Missing: ${L.missing.map(m=>esc(m)).join(', ')}.</p>
       <p style="margin:6px 0"><b>Nothing is assumed in the meantime.</b> There is no instalment in your carry, no interest in any total, and no maturity in Reminders. Enter the terms below and all of it appears at once &mdash; or send the agreement and Fortress will read it.</p></div>`}
 
-    <div style="margin-top:14px"><span class="k" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">Enter the loan terms</span></div>
+    <div style="margin-top:14px"><span class="k" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">${L.sourced?'The terms, as the approval states them':'Enter the loan terms'}</span></div>
+    ${L.sourced?`<p class="note how" style="margin-top:4px">These four came from the lender and are already in the figures above. Changing one here does not overwrite the document &mdash; Fortress keeps leading with the approval and shows the difference instead.</p>`:''}
     <label class="fld">Lender</label>
     <input type="text" id="clLender" value="${esc(L.lender||'')}" placeholder="as named on the hire-purchase agreement">
     <label class="fld">Interest rate (% a year)</label>
